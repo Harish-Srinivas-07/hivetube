@@ -1,0 +1,4 @@
+{
+  "WEB": {"id":"1", "clientName":"WEB", "clientVersion":"2.20260805.01.00", "platform":"DESKTOP", "ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0", "origin":"https://www.youtube.com"},
+  "WEB_MUSIC_ANALYTICS": {"id":"31", "clientName":"WEB_MUSIC_ANALYTICS", "clientVersion":"2.0", "origin":"https://charts.youtube.com"}
+}
