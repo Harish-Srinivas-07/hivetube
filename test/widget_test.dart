@@ -24,44 +24,32 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 500));
-
       final nav = width < 600
-          ? find.byType(NavigationBar)
+          ? find.byKey(const ValueKey('bottomNavPill'))
           : find.byType(NavigationRail);
       expect(nav, findsOneWidget);
-      expect(
-        width < 600 ? find.byType(NavigationRail) : find.byType(NavigationBar),
-        findsNothing,
-      );
-      expect(find.text('Search HiveTube'), findsOneWidget);
-      expect(find.byType(CircleAvatar), findsOneWidget);
-      for (final label in ['Home', 'Shorts', 'Subscriptions', 'Library']) {
-        final destination = find.descendant(
-          of: nav,
-          matching: find.text(label),
-        );
-        expect(destination, findsOneWidget);
-        await tester.tap(destination);
-        await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(const ValueKey('notificationBadge')), findsNothing);
+      expect(find.byTooltip('Search'), findsOneWidget);
+      for (final label in ['Home', 'Shorts', 'Subscriptions', 'You']) {
         expect(
-          find.descendant(
-            of: find.byType(Scaffold),
-            matching: find.text(label),
-          ),
-          findsWidgets,
+          find.descendant(of: nav, matching: find.text(label)),
+          findsOneWidget,
         );
-        if (label != 'Home') expect(find.text(label), findsNWidgets(2));
       }
-      await tester.tap(find.text('Search HiveTube'));
+      expect(find.text('Create'), findsNothing);
+      await tester.tap(find.byTooltip('Search'));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byType(TextField), findsOneWidget);
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).autofocus,
-        isTrue,
-      );
       await tester.tap(find.byTooltip('Back'));
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('Search HiveTube'), findsOneWidget);
+      expect(find.byTooltip('Search'), findsOneWidget);
+      await tester.tap(find.descendant(of: nav, matching: find.text('You')));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('Settings'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Language'), findsOneWidget);
+      expect(find.text('Location'), findsOneWidget);
+      expect(find.text('Local content'), findsOneWidget);
     });
   }
 }

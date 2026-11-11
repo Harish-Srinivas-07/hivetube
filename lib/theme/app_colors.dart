@@ -8,6 +8,10 @@ class AppColors {
     required this.textPrimary,
     required this.textSecondary,
     required this.divider,
+    required this.glassFill,
+    required this.glassBorder,
+    required this.glowTop,
+    required this.progressTrack,
   });
 
   static const transparent = Colors.transparent;
@@ -15,6 +19,19 @@ class AppColors {
   static const onPrimary = Color(0xFFFFFFFF);
   static const success = Color(0xFF2BA640);
   static const warning = Color(0xFFF5A623);
+  static const badge = primary;
+  static const onBadge = onPrimary;
+  static const progressFill = primary;
+  static const thumbnailBadge = Color(0xB3000000);
+  static const shelfTitleScrim = Color(0xD9000000);
+  static const thumbnailBadgeText = Colors.white;
+  static const shortsBackground = Color(0xFF000000);
+  static const shortsForeground = Color(0xFFFFFFFF);
+  static const shortsScrim = Color(0xD9000000);
+  static const shortsProgressTrack = Color(0x66FFFFFF);
+  static const shortsProgressBuffer = Color(0x99FFFFFF);
+  static const shortsProgressPlayed = Color(0xFFFFFFFF);
+  static const shortsSelected = Color(0xFFFF0033);
   static const error = Color(0xFFFF4E45);
 
   static const dark = AppColors._(
@@ -24,6 +41,10 @@ class AppColors {
     textPrimary: Color(0xFFF1F1F1),
     textSecondary: Color(0xFFAAAAAA),
     divider: Color(0xFF303030),
+    glassFill: Color(0x1AFFFFFF),
+    glassBorder: Color(0x24FFFFFF),
+    glowTop: Color(0x50A90022),
+    progressTrack: Color(0x80FFFFFF),
   );
   static const light = AppColors._(
     background: Color(0xFFFFFFFF),
@@ -32,6 +53,10 @@ class AppColors {
     textPrimary: Color(0xFF0F0F0F),
     textSecondary: Color(0xFF606060),
     divider: Color(0xFFE5E5E5),
+    glassFill: Color(0x0F000000),
+    glassBorder: Color(0x1A000000),
+    glowTop: Color(0x0FFF0033),
+    progressTrack: Color(0x80000000),
   );
 
   final Color background,
@@ -39,5 +64,9 @@ class AppColors {
       surfaceVariant,
       textPrimary,
       textSecondary,
-      divider;
+      divider,
+      glassFill,
+      glassBorder,
+      glowTop,
+      progressTrack;
 }

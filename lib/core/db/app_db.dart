@@ -20,6 +20,8 @@ class AppDb extends _$AppDb {
   Future<String?> getValue(String key) async => (await (select(
     prefs,
   )..where((p) => p.key.equals(key))).getSingleOrNull())?.value;
+  Future<int> deleteValue(String key) =>
+      (delete(prefs)..where((p) => p.key.equals(key))).go();
   Future<void> setValue(String key, String value) => into(
     prefs,
   ).insertOnConflictUpdate(PrefsCompanion.insert(key: key, value: value));
@@ -34,6 +36,7 @@ class HistoryEntry {
 abstract interface class HistoryRepo {
   Future<List<HistoryEntry>> recent();
   Future<Set<String>> dislikedChannels();
+  Future<void> save(HistoryEntry entry);
 }
 
 abstract interface class SubscriptionRepo {
@@ -41,10 +44,17 @@ abstract interface class SubscriptionRepo {
 }
 
 class EmptyHistoryRepo implements HistoryRepo {
+  final Map<String, HistoryEntry> _entries = {};
   @override
-  Future<List<HistoryEntry>> recent() async => [];
+  Future<List<HistoryEntry>> recent() async =>
+      _entries.values.toList().reversed.toList();
   @override
   Future<Set<String>> dislikedChannels() async => {};
+  @override
+  Future<void> save(HistoryEntry entry) async {
+    _entries.remove(entry.videoId);
+    _entries[entry.videoId] = entry;
+  }
 }
 
 class EmptySubscriptionRepo implements SubscriptionRepo {

@@ -2,6 +2,40 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_radius.dart';
 import 'app_text_styles.dart';
+import 'app_spacing.dart';
+
+class HiveGlass extends ThemeExtension<HiveGlass> {
+  const HiveGlass({
+    required this.blurSigma,
+    required this.glassFill,
+    required this.glassBorder,
+    required this.glow,
+  });
+  final double blurSigma;
+  final Color glassFill, glassBorder;
+  final Gradient glow;
+  @override
+  HiveGlass copyWith({
+    double? blurSigma,
+    Color? glassFill,
+    Color? glassBorder,
+    Gradient? glow,
+  }) => HiveGlass(
+    blurSigma: blurSigma ?? this.blurSigma,
+    glassFill: glassFill ?? this.glassFill,
+    glassBorder: glassBorder ?? this.glassBorder,
+    glow: glow ?? this.glow,
+  );
+  @override
+  HiveGlass lerp(covariant HiveGlass? other, double t) => other == null
+      ? this
+      : HiveGlass(
+          blurSigma: blurSigma + (other.blurSigma - blurSigma) * t,
+          glassFill: Color.lerp(glassFill, other.glassFill, t)!,
+          glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
+          glow: Gradient.lerp(glow, other.glow, t)!,
+        );
+}
 
 abstract final class AppTheme {
   static final light = _build(AppColors.light, Brightness.light);
@@ -34,6 +68,18 @@ abstract final class AppTheme {
     ).apply(bodyColor: colors.textPrimary, displayColor: colors.textPrimary);
     return ThemeData(
       useMaterial3: true,
+      extensions: [
+        HiveGlass(
+          blurSigma: AppSpacing.glassBlur,
+          glassFill: colors.glassFill,
+          glassBorder: colors.glassBorder,
+          glow: RadialGradient(
+            center: Alignment.topCenter,
+            radius: AppSpacing.glowRadius,
+            colors: [colors.glowTop, AppColors.transparent],
+          ),
+        ),
+      ],
       brightness: brightness,
       colorScheme: scheme,
       textTheme: text,
@@ -63,27 +109,6 @@ abstract final class AppTheme {
         shape: const RoundedRectangleBorder(borderRadius: AppRadius.smBorder),
       ),
       dividerTheme: DividerThemeData(color: colors.divider),
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: colors.surface,
-        surfaceTintColor: AppColors.transparent,
-        shadowColor: AppColors.transparent,
-        elevation: 0,
-        indicatorColor: AppColors.transparent,
-        iconTheme: WidgetStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: states.contains(WidgetState.selected)
-                ? colors.textPrimary
-                : colors.textSecondary,
-          ),
-        ),
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => AppTextStyles.label.copyWith(
-            color: states.contains(WidgetState.selected)
-                ? colors.textPrimary
-                : colors.textSecondary,
-          ),
-        ),
-      ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: colors.surface,
         elevation: 0,
@@ -96,13 +121,6 @@ abstract final class AppTheme {
         unselectedLabelTextStyle: AppTextStyles.label.copyWith(
           color: colors.textSecondary,
         ),
-      ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: colors.surface,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: colors.textSecondary,
-        selectedLabelStyle: text.labelSmall,
-        unselectedLabelStyle: text.labelSmall,
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: AppColors.primary,

@@ -1,4 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
+import 'streams/net_family.dart';
+import 'settings/app_settings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'db/app_db.dart';
@@ -17,6 +20,16 @@ final dbProvider = Provider<AppDb>((ref) {
   ref.onDispose(db.close);
   return db;
 });
+final networkFamilyProvider = FutureProvider<NetworkFamily>((ref) async {
+  final db = ref.watch(dbProvider);
+  final value = await db.getValue('network_prefer_ipv4');
+  final network = NetworkFamily(
+    preferIpv4: value != 'false',
+    savePreference: (v) => db.setValue('network_prefer_ipv4', v.toString()),
+  );
+  ref.onDispose(network.close);
+  return network;
+});
 final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
   final dio = Dio(
     BaseOptions(
@@ -24,13 +37,24 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       receiveTimeout: const Duration(seconds: 20),
     ),
   );
-  ref.onDispose(() => dio.close(force: true));
+  final settings = ref.watch(appSettingsProvider);
+  final network = await ref.watch(networkFamilyProvider.future);
+  void resetAdapter() {
+    dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () => network.client,
+    );
+  }
+
+  resetAdapter();
+  network.onChanged = resetAdapter;
   return InnertubeHttp(
     dio,
     await InnertubeClients.load(
       dio,
       await rootBundle.loadString('assets/innertube_clients.json'),
     ),
+    hl: settings.hl,
+    gl: settings.gl,
   );
 });
 final visitorDataProvider = FutureProvider<String>((ref) async {
@@ -39,7 +63,8 @@ final visitorDataProvider = FutureProvider<String>((ref) async {
   http.refreshVisitor = () async {
     http.visitorData = await service.get(force: true);
   };
-  final value = await service.get();
+  final settings = ref.watch(appSettingsProvider);
+  final value = await service.get(force: settings.revision > 0);
   http.visitorData = value;
   return value;
 });

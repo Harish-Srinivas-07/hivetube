@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
 import 'home_cache.dart';
 import 'home_mixer.dart';
@@ -58,11 +58,20 @@ class HomeController extends AsyncNotifier<HomeData> {
   final Map<String, ({DateTime fetched, List<VideoItem> items})> _rssCache = {};
   @override
   FutureOr<HomeData> build() {
+    if (_token.isCancelled) _token = CancelToken();
+    final buildToken = _token;
     ref.onDispose(() {
       _debounce?.cancel();
-      _token.cancel();
+      buildToken.cancel();
     });
-    final cache = ref.read(initialHomeCacheProvider);
+    final settings = ref.watch(appSettingsProvider);
+    final initial = ref.read(initialAppSettingsProvider);
+    final cache =
+        settings.cacheKey == initial.cacheKey &&
+            settings.localContent == initial.localContent &&
+            settings.revision == 0
+        ? ref.read(initialHomeCacheProvider)
+        : null;
     if (cache != null) {
       Future<void>(() => _backgroundRefresh());
       return HomeData(videos: cache.videos, shorts: cache.shorts);
@@ -158,66 +167,130 @@ class HomeController extends AsyncNotifier<HomeData> {
       }
     }
 
-    if (chip != 'All') {
-      final page = await isolate(chip, () => _page(api, chip, token));
-      return HomeData(
-        chip: chip,
-        videos: page?.items ?? [],
-        continuations: {
-          if (page?.continuation != null) chip: page!.continuation!,
-        },
-        errors: errors,
-      );
+    final settings = ref.read(appSettingsProvider);
+    if (api.search.http.hl != settings.hl ||
+        api.search.http.gl != settings.gl) {
+      throw StateError('Regional session changed');
     }
     final history = await ref.read(historyRepoProvider).recent();
     final disliked = await ref.read(historyRepoProvider).dislikedChannels();
     final channels = await ref.read(subscriptionRepoProvider).channelIds();
-    final country = ui.PlatformDispatcher.instance.locale.countryCode ?? 'US';
-    final topics = ['Music', 'Gaming', 'Live', 'News'];
     final watchedIds = history.map((e) => e.videoId).toSet();
-    final results = await Future.wait<dynamic>([
-      isolate('Home', () => api.browse.home(cancelToken: token)),
-      isolate(
-        'Trending',
-        () => api.charts.trending(country, cancelToken: token),
-      ),
-      isolate('Shorts', () => api.reel.shorts(cancelToken: token)),
-      isolate(
-        'Subscriptions',
-        () => _subscriptions(api, channels, token, errors),
-      ),
-      ...topics.map(
-        (q) => isolate(q, () => api.search.videos(q, cancelToken: token)),
-      ),
-      ...history
-          .take(6)
-          .map(
-            (h) => isolate(
-              'Related',
-              () => api.next.related(h.videoId, cancelToken: token),
-            ),
+    final uploadsFuture = _subscriptions(
+      api,
+      channels,
+      token,
+      errors,
+    ).then((items) => items.where((v) => !watchedIds.contains(v.id)).toList());
+    if (chip == 'Recently uploaded') {
+      return HomeData(chip: chip, videos: await uploadsFuture, errors: errors);
+    }
+    const topics = <String, String>{
+      'Music': 'music',
+      'Gaming': 'gaming',
+      'Live': 'live',
+      'News': 'news today',
+      'Podcasts': 'podcast',
+      'Sports': 'sports highlights',
+      'Comedy': 'comedy',
+      'Cooking': 'cooking recipes',
+      'Science': 'science',
+    };
+    final selectedTopics = chip == 'All'
+        ? topics.entries.toList()
+        : topics.entries.where((e) => e.key == chip).toList();
+    final queries = <({String query, bool live, bool regional})>[];
+    for (final topic in selectedTopics) {
+      final variants = regionalQueries(topic.value, settings);
+      for (var i = 0; i < variants.length; i++) {
+        queries.add((
+          query: variants[i],
+          live: topic.key == 'Live',
+          regional: variants.length > 1 && i == 0,
+        ));
+      }
+    }
+    final feedFuture = chip == 'All'
+        ? isolate('Home', () => api.browse.home(cancelToken: token))
+        : Future<VideoPage?>.value(null);
+    final chartsFuture = chip == 'All'
+        ? isolate(
+            'Trending',
+            () => api.charts.trending(settings.gl, cancelToken: token),
+          )
+        : Future<List<VideoItem>?>.value(null);
+    final kioskFuture = chip == 'All'
+        ? Future.wait([
+            isolate('Live', () => api.browse.live(cancelToken: token)),
+            isolate('Gaming', () => api.browse.gaming(cancelToken: token)),
+            isolate('Podcasts', () => api.browse.podcasts(cancelToken: token)),
+          ])
+        : Future<List<VideoPage?>>.value([]);
+    final pagesFuture = Future.wait(
+      queries.map(
+        (q) => isolate(
+          q.query,
+          () => api.search.videos(
+            q.query,
+            params: q.live ? 'EgJAAQ%3D%3D' : null,
+            cancelToken: token,
           ),
-    ]);
-    final feed = results[0] as VideoPage?;
-    final trending = results[1] as List<VideoItem>? ?? [];
-    final shorts = results[2] as List<ShortItem>? ?? [];
-    final uploads = (results[3] as List<VideoItem>? ?? [])
-        .where((v) => !watchedIds.contains(v.id))
-        .toList();
-    final topicPages = results.skip(4).take(4).toList();
-    final relatedPages = results.skip(8).toList();
-    final related = relatedPages
-        .whereType<VideoPage>()
-        .map((e) => e.items)
-        .toList();
-    final topicItems = topicPages
-        .whereType<VideoPage>()
-        .map((e) => e.items)
-        .toList();
+        ),
+      ),
+    );
+    final shortsFuture = Future.wait(
+      queries.map(
+        (q) => isolate(
+          'Shorts',
+          () => api.search.shorts(q.query, cancelToken: token),
+        ),
+      ),
+    );
+    final relatedFuture = chip == 'All'
+        ? Future.wait(
+            history
+                .take(6)
+                .map(
+                  (h) => isolate(
+                    'Related',
+                    () => api.next.related(h.videoId, cancelToken: token),
+                  ),
+                ),
+          )
+        : Future<List<VideoPage?>>.value([]);
+    final feed = await feedFuture;
+    final trending = await chartsFuture ?? <VideoItem>[];
+    final pages = await pagesFuture;
+    final shortPages = await shortsFuture;
+    final relatedPages = await relatedFuture;
+    final kioskPages = await kioskFuture;
+    final uploads = await uploadsFuture;
     final personal = channels.isNotEmpty || history.isNotEmpty;
+    final sources = <List<VideoItem>>[
+      for (final page in relatedPages) page?.items ?? [],
+      if (chip == 'All') uploads,
+      for (final page in kioskPages) page?.items ?? [],
+      for (final page in pages) page?.items ?? [],
+    ];
+    final weights = <int>[
+      for (final _ in relatedPages) 2,
+      if (chip == 'All') 2,
+      for (final _ in kioskPages) 1,
+      for (final _ in queries) personal ? 1 : 2,
+    ];
+    // Plain English remains a weight-one secondary source when a regional query exists.
+    for (var i = 0; i < queries.length; i++) {
+      if (!queries[i].regional && i > 0 && queries[i - 1].regional) {
+        weights[relatedPages.length +
+                (chip == 'All' ? 1 : 0) +
+                kioskPages.length +
+                i] =
+            1;
+      }
+    }
     final mixed = mixHome(
-      [...related, uploads, ...topicItems],
-      [...related.map((_) => 2), 2, ...topicItems.map((_) => personal ? 1 : 2)],
+      sources,
+      weights,
       history: history,
       disliked: disliked,
     );
@@ -227,19 +300,32 @@ class HomeController extends AsyncNotifier<HomeData> {
       history: history,
       disliked: disliked,
     );
+    final shortSeen = <String>{};
+    final shorts = <ShortItem>[
+      for (final page in shortPages)
+        for (final item in page ?? <ShortItem>[])
+          if (!watchedIds.contains(item.id) && shortSeen.add(item.id)) item,
+    ];
     final cursors = <String, String>{};
-    for (var i = 0; i < topics.length; i++) {
-      final page = topicPages[i];
-      if (page is VideoPage && page.continuation != null) {
-        cursors['topic:${topics[i]}'] = page.continuation!;
+    for (var i = 0; i < queries.length; i++) {
+      if (pages[i]?.continuation != null) {
+        cursors['${queries[i].live ? 'liveSearch' : 'search'}:${queries[i].query}'] =
+            pages[i]!.continuation!;
       }
     }
     for (var i = 0; i < relatedPages.length; i++) {
-      final page = relatedPages[i];
-      if (page is VideoPage && page.continuation != null) {
-        cursors['related:${history[i].videoId}'] = page.continuation!;
+      if (relatedPages[i]?.continuation != null) {
+        cursors['related:${history[i].videoId}'] =
+            relatedPages[i]!.continuation!;
       }
     }
+    for (var i = 0; i < kioskPages.length; i++) {
+      if (kioskPages[i]?.continuation != null) {
+        cursors[['Live', 'Gaming', 'Podcasts'][i]] =
+            kioskPages[i]!.continuation!;
+      }
+    }
+    if (token.isCancelled) throw StateError('Home request cancelled');
     if (feed?.continuation != null) cursors['home'] = feed!.continuation!;
     if (videos.isEmpty &&
         shorts.isEmpty &&
@@ -247,15 +333,18 @@ class HomeController extends AsyncNotifier<HomeData> {
         errors.isNotEmpty) {
       throw StateError('Could not load Home');
     }
-    await ref
-        .read(dbProvider)
-        .setValue(
-          'home_cache',
-          HomeCache(videos, shorts, DateTime.now()).encode(),
-        );
+    if (chip == 'All') {
+      await ref
+          .read(dbProvider)
+          .setValue(
+            homeCacheKey(settings),
+            HomeCache(videos, shorts, DateTime.now()).encode(),
+          );
+    }
     return HomeData(
       videos: videos,
       shorts: shorts,
+      chip: chip,
       trending: trending,
       continuations: cursors,
       errors: errors.toSet().toList(),
@@ -269,6 +358,17 @@ class HomeController extends AsyncNotifier<HomeData> {
     String? cursor,
   ]) => switch (source) {
     'home' => api.browse.home(continuation: cursor, cancelToken: token),
+    _ when source.startsWith('liveSearch:') => api.search.videos(
+      source.substring(11),
+      params: 'EgJAAQ%3D%3D',
+      continuation: cursor,
+      cancelToken: token,
+    ),
+    _ when source.startsWith('search:') => api.search.videos(
+      source.substring(7),
+      continuation: cursor,
+      cancelToken: token,
+    ),
     'Live' => api.browse.live(continuation: cursor, cancelToken: token),
     'Gaming' => api.browse.gaming(continuation: cursor, cancelToken: token),
     'Podcasts' => api.browse.podcasts(continuation: cursor, cancelToken: token),

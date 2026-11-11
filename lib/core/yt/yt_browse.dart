@@ -6,6 +6,19 @@ import 'parser.dart';
 class YtBrowse {
   YtBrowse(this.http);
   final InnertubeHttp http;
+  Future<List<ShortItem>> channelShorts(
+    String channelId, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async => parseShorts(
+    await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': channelId, 'params': 'EgZzaG9ydHPyBgUKA5oBAA%3D%3D'}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    ),
+  );
   Future<VideoPage> home({String? continuation, CancelToken? cancelToken}) =>
       _browse('FEwhat_to_watch', null, continuation, cancelToken);
   Future<VideoPage> live({String? continuation, CancelToken? cancelToken}) =>

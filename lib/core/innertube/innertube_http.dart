@@ -2,7 +2,8 @@ import 'package:dio/dio.dart';
 import 'clients.dart';
 
 class InnertubeHttp {
-  InnertubeHttp(this.dio, this.clients);
+  InnertubeHttp(this.dio, this.clients, {this.hl = 'en', this.gl = 'IN'});
+  final String hl, gl;
   final Dio dio;
   final InnertubeClients clients;
   String? visitorData;
@@ -17,19 +18,12 @@ class InnertubeHttp {
   }) async {
     final c = clients[clientName];
     final origin = c['origin'] as String;
-    final context = {
-      'client': {
-        'clientName': c['clientName'],
-        'clientVersion': c['clientVersion'],
-        if (c['platform'] != null) 'platform': c['platform'],
-        'hl': 'en',
-        'gl': 'US',
-        'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
-        if (visitorData != null) 'visitorData': visitorData,
-      },
-      'user': {'lockedSafetyMode': false},
-      'request': {'useSsl': true, 'internalExperimentFlags': []},
-    };
+    final context = buildClientContext(
+      c,
+      hl: hl,
+      gl: gl,
+      visitorData: visitorData,
+    );
     final headers = {
       'Content-Type': 'application/json',
       'User-Agent': c['ua'] ?? clients['WEB']['ua'],
@@ -71,3 +65,22 @@ class InnertubeHttp {
     }
   }
 }
+
+Map<String, dynamic> buildClientContext(
+  Map<String, dynamic> client, {
+  required String hl,
+  required String gl,
+  String? visitorData,
+}) => {
+  'client': {
+    'clientName': client['clientName'],
+    'clientVersion': client['clientVersion'],
+    if (client['platform'] != null) 'platform': client['platform'],
+    'hl': hl,
+    'gl': gl,
+    'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+    'visitorData': ?visitorData,
+  },
+  'user': {'lockedSafetyMode': false},
+  'request': {'useSsl': true, 'internalExperimentFlags': []},
+};

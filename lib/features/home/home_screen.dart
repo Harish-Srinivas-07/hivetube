@@ -1,11 +1,21 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../shorts/shorts_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/yt/models.dart';
+import '../../core/db/app_db.dart';
+import '../../core/providers.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/glass_surface.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import 'home_controller.dart';
+
+final homeHistoryProvider = FutureProvider<List<HistoryEntry>>(
+  (ref) => ref.watch(historyRepoProvider).recent(),
+);
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -16,8 +26,19 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final controller = ScrollController();
   String chip = 'All';
-  bool hasLoaded = false;
-  static const chips = ['All', 'Live', 'Gaming', 'Podcasts', 'Music', 'News'];
+  static const chips = [
+    'All',
+    'Music',
+    'Gaming',
+    'Live',
+    'News',
+    'Podcasts',
+    'Sports',
+    'Comedy',
+    'Cooking',
+    'Science',
+    'Recently uploaded',
+  ];
   @override
   void initState() {
     super.initState();
@@ -38,47 +59,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final home = ref.watch(homeProvider);
-    if (home.hasValue) hasLoaded = true;
+    final history =
+        ref.watch(homeHistoryProvider).value ?? const <HistoryEntry>[];
+    final historyById = {for (final entry in history) entry.videoId: entry};
     return Listener(
       onPointerDown: (_) => ref.read(homeProvider.notifier).interact(),
       child: Scaffold(
+        backgroundColor: AppColors.transparent,
         body: Column(
           children: [
-            if (home.isLoading && !hasLoaded)
-              const _ChipSkeleton()
-            else
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: Row(
-                  children: [
-                    for (final item in chips)
-                      Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.sm),
-                        child: FilterChip(
-                          label: Text(item),
-                          selected: chip == item,
-                          showCheckmark: false,
-                          selectedColor: Theme.of(
-                            context,
-                          ).colorScheme.onSurface,
-                          labelStyle: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: chip == item
-                                    ? Theme.of(context).colorScheme.surface
-                                    : Theme.of(context).colorScheme.onSurface,
-                              ),
-                          onSelected: (_) {
-                            setState(() => chip = item);
-                            ref.read(homeProvider.notifier).select(item);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            _ChipRow(
+              selected: chip,
+              chips: chips,
+              onSelected: (item) {
+                setState(() => chip = item);
+                ref.read(homeProvider.notifier).select(item);
+              },
+            ),
             Expanded(
               child: home.when(
+                skipLoadingOnRefresh: false,
+                skipLoadingOnReload: false,
                 loading: () => const _HomeSkeleton(),
                 error: (_, _) => Center(
                   child: Column(
@@ -99,17 +100,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     controller: controller,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
+                      if (data.videos.isNotEmpty)
+                        _grid(
+                          data.videos.take(AppSpacing.homeLeadItems).toList(),
+                          historyById,
+                        ),
                       if (data.shorts.isNotEmpty)
                         SliverToBoxAdapter(
                           child: _Shorts(
                             items: data.shorts,
-                            onTap: () =>
-                                ref.read(homeProvider.notifier).interact(),
+                            onTap: (index) {
+                              ref.read(homeProvider.notifier).interact();
+                              ref
+                                  .read(shortsSelectionProvider)
+                                  .open(data.shorts, index);
+                              context.go('/shorts');
+                            },
                           ),
                         ),
                       if (data.trending.isNotEmpty) ...[
                         SliverToBoxAdapter(child: _Heading('Trending')),
-                        _grid(data.trending),
+                        _grid(data.trending, historyById),
                       ],
                       if (data.errors.isNotEmpty)
                         SliverToBoxAdapter(
@@ -125,7 +136,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SliverFillRemaining(
                           child: Center(child: Text('No videos found')),
                         ),
-                      _grid(data.videos),
+                      _grid(
+                        data.videos.skip(AppSpacing.homeLeadItems).toList(),
+                        historyById,
+                      ),
                       SliverToBoxAdapter(
                         child: Center(
                           child: Padding(
@@ -143,6 +157,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                       ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height:
+                              MediaQuery.sizeOf(context).width <
+                                  AppSpacing.navigationBreakpoint
+                              ? AppSpacing.navHeight +
+                                    AppSpacing.lg +
+                                    AppSpacing.lg +
+                                    MediaQuery.paddingOf(context).bottom
+                              : AppSpacing.lg,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -154,37 +180,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _grid(List<VideoItem> items) => SliverPadding(
-    padding: const EdgeInsets.all(AppSpacing.lg),
-    sliver: SliverLayoutBuilder(
-      builder: (context, constraints) {
-        final count =
-            constraints.crossAxisExtent < AppSpacing.navigationBreakpoint
-            ? 1
-            : (constraints.crossAxisExtent / AppSpacing.videoMaxWidth).ceil();
-        return SliverGrid(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _VideoCard(
-              items[index],
-              onTap: () => ref.read(homeProvider.notifier).interact(),
+  Widget _grid(List<VideoItem> items, Map<String, HistoryEntry> history) =>
+      SliverLayoutBuilder(
+        builder: (context, constraints) {
+          final wide =
+              MediaQuery.sizeOf(context).width >=
+              AppSpacing.navigationBreakpoint;
+          Widget card(int index) => _VideoCard(
+            items[index],
+            wide: wide,
+            history: history[items[index].id],
+            onTap: () {
+              ref.read(homeProvider.notifier).interact();
+              context.push('/watch/${items[index].id}').then((_) {
+                if (mounted) ref.invalidate(homeHistoryProvider);
+              });
+            },
+          );
+          if (!wide) {
+            return SliverList.builder(
+              itemCount: items.length,
+              itemBuilder: (_, index) => card(index),
+            );
+          }
+          final usable = constraints.crossAxisExtent - AppSpacing.lg * 2;
+          final columns = (usable / AppSpacing.videoMaxWidth).ceil();
+          final count = columns < 1 ? 1 : columns;
+          return SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            sliver: SliverGrid(
+              delegate: SliverChildBuilderDelegate(
+                (_, index) => card(index),
+                childCount: items.length,
+              ),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: count,
+                crossAxisSpacing: AppSpacing.lg,
+                mainAxisSpacing: AppSpacing.lg,
+                mainAxisExtent:
+                    (usable - (count - 1) * AppSpacing.lg) /
+                        count /
+                        AppSpacing.thumbnailRatio +
+                    AppSpacing.cardInfoHeight,
+              ),
             ),
-            childCount: items.length,
-          ),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: count,
-            crossAxisSpacing: AppSpacing.lg,
-            mainAxisSpacing: AppSpacing.lg,
-            mainAxisExtent:
-                (constraints.crossAxisExtent - (count - 1) * AppSpacing.lg) /
-                    count /
-                    AppSpacing.thumbnailRatio +
-                AppSpacing.xxxl +
-                AppSpacing.xxxl,
-          ),
-        );
-      },
-    ),
-  );
+          );
+        },
+      );
 }
 
 class _Heading extends StatelessWidget {
@@ -197,77 +239,280 @@ class _Heading extends StatelessWidget {
   );
 }
 
-class _VideoCard extends StatelessWidget {
-  const _VideoCard(this.item, {required this.onTap});
-  final VideoItem item;
-  final VoidCallback onTap;
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({
+    required this.selected,
+    required this.chips,
+    required this.onSelected,
+  });
+  final String selected;
+  final List<String> chips;
+  final ValueChanged<String> onSelected;
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AspectRatio(
-          aspectRatio: AppSpacing.thumbnailRatio,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: AppSpacing.homeChipHeight + AppSpacing.sm + AppSpacing.sm,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.sm,
+        ),
+        children: [
+          GlassSurface(
+            borderRadius: AppRadius.mdBorder,
+            child: Material(
+              color: AppColors.transparent,
+              child: InkWell(
                 borderRadius: AppRadius.mdBorder,
-                child: CachedNetworkImage(
-                  imageUrl: item.thumbUrl,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _, _) => const Icon(LucideIcons.imageOff),
+                onTap: () {},
+                child: const SizedBox(
+                  width: AppSpacing.homeChipHeight,
+                  height: AppSpacing.homeChipHeight,
+                  child: Icon(LucideIcons.compass),
                 ),
               ),
-              if (item.durationText.isNotEmpty)
-                Positioned(
-                  right: AppSpacing.sm,
-                  bottom: AppSpacing.sm,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: AppRadius.xsBorder,
-                    ),
-                    child: Text(
-                      item.durationText,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          item.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        Text(
-          [
-            item.channelName,
-            item.viewsText,
-            item.publishedText,
-          ].where((s) => s.isNotEmpty).join(' · '),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(width: AppSpacing.sm),
+          for (final item in chips)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: item == selected
+                  ? Material(
+                      color: scheme.onSurface,
+                      borderRadius: AppRadius.mdBorder,
+                      child: InkWell(
+                        borderRadius: AppRadius.mdBorder,
+                        onTap: () => onSelected(item),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                          ),
+                          child: Center(
+                            child: Text(
+                              item,
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(color: scheme.surface),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : GlassSurface(
+                      borderRadius: AppRadius.mdBorder,
+                      child: Material(
+                        color: AppColors.transparent,
+                        child: InkWell(
+                          borderRadius: AppRadius.mdBorder,
+                          onTap: () => onSelected(item),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md,
+                            ),
+                            child: Center(
+                              child: Text(
+                                item,
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(color: scheme.onSurface),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
-class _Shorts extends StatelessWidget {
+class _VideoCard extends StatelessWidget {
+  const _VideoCard(
+    this.item, {
+    required this.onTap,
+    required this.wide,
+    required this.history,
+  });
+  final VideoItem item;
+  final VoidCallback onTap;
+  final bool wide;
+  final HistoryEntry? history;
+  // The preview slot stays hidden until inline playback is supported.
+  static const showInlinePreviewControls = false;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final progress =
+        history != null &&
+            history!.position > Duration.zero &&
+            history!.duration > Duration.zero
+        ? (history!.position.inMilliseconds / history!.duration.inMilliseconds)
+              .clamp(0.0, 1.0)
+        : null;
+    final initial = item.channelName.trim().isEmpty
+        ? ''
+        : item.channelName.trim().characters.first.toUpperCase();
+    final colors = theme.brightness == Brightness.dark
+        ? AppColors.dark
+        : AppColors.light;
+    final thumbnail = CachedNetworkImage(
+      imageUrl: item.thumbUrl,
+      fit: BoxFit.cover,
+      errorWidget: (_, _, _) => const Icon(LucideIcons.imageOff),
+    );
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(
+            key: ValueKey('homeThumbnail:${item.id}'),
+            aspectRatio: AppSpacing.thumbnailRatio,
+            child: ClipRRect(
+              borderRadius: wide ? AppRadius.mdBorder : AppRadius.noneBorder,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  thumbnail,
+                  if (item.durationText.isNotEmpty)
+                    Positioned(
+                      right: AppSpacing.sm,
+                      bottom: AppSpacing.sm,
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          color: AppColors.thumbnailBadge,
+                          borderRadius: AppRadius.smBorder,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                            vertical: AppSpacing.xxs,
+                          ),
+                          child: Text(
+                            item.durationText,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: AppColors.thumbnailBadgeText,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (progress != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: LinearProgressIndicator(
+                        key: ValueKey('watchedProgress:${item.id}'),
+                        value: progress,
+                        minHeight: AppSpacing.progressHeight,
+                        color: AppColors.progressFill,
+                        backgroundColor: colors.progressTrack,
+                      ),
+                    ),
+                  if (showInlinePreviewControls)
+                    Positioned(
+                      right: AppSpacing.sm,
+                      top: AppSpacing.sm,
+                      child: Column(
+                        children: [
+                          IconButton(
+                            onPressed: () {},
+                            icon: const Icon(LucideIcons.volumeX),
+                            iconSize: AppSpacing.homeInlineIconSize,
+                            color: AppColors.thumbnailBadgeText,
+                          ),
+                          IconButton(
+                            onPressed: () {},
+                            icon: const Icon(LucideIcons.captions),
+                            iconSize: AppSpacing.homeInlineIconSize,
+                            color: AppColors.thumbnailBadgeText,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              wide ? 0 : AppSpacing.lg,
+              AppSpacing.md,
+              wide ? 0 : AppSpacing.sm,
+              AppSpacing.lg,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: AppSpacing.avatar / 2,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  foregroundImage: item.channelAvatarUrl.isEmpty
+                      ? null
+                      : CachedNetworkImageProvider(item.channelAvatarUrl),
+                  onForegroundImageError: item.channelAvatarUrl.isEmpty
+                      ? null
+                      : (_, _) {},
+                  child: Text(initial, style: theme.textTheme.titleSmall),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        [
+                          item.channelName,
+                          item.viewsText,
+                          item.publishedText,
+                        ].where((v) => v.isNotEmpty).join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'More options',
+                  onPressed: () {},
+                  iconSize: AppSpacing.homeMoreIcon,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: AppSpacing.topButton,
+                    minHeight: AppSpacing.topButton,
+                  ),
+                  icon: const Icon(LucideIcons.ellipsisVertical),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Shorts extends ConsumerWidget {
   const _Shorts({required this.items, required this.onTap});
   final List<ShortItem> items;
-  final VoidCallback onTap;
+  final ValueChanged<int> onTap;
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context, WidgetRef ref) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       const _Heading('Shorts'),
@@ -279,14 +524,47 @@ class _Shorts extends StatelessWidget {
           itemCount: items.length,
           separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
           itemBuilder: (context, index) => InkWell(
-            onTap: onTap,
+            onTap: () => onTap(index),
             child: SizedBox(
               width: AppSpacing.shortWidth,
               child: ClipRRect(
                 borderRadius: AppRadius.mdBorder,
-                child: CachedNetworkImage(
-                  imageUrl: items[index].thumbUrl,
-                  fit: BoxFit.cover,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: items[index].thumbUrl,
+                      fit: BoxFit.cover,
+                    ),
+                    Positioned(
+                      left: AppSpacing.sm,
+                      right: AppSpacing.sm,
+                      bottom: AppSpacing.sm,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: AppColors.shelfTitleScrim,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xs),
+                          child: ref
+                              .watch(shortMetadataProvider(items[index].id))
+                              .when(
+                                data: (value) => Text(
+                                  value?.title ?? items[index].title ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelLarge
+                                      ?.copyWith(
+                                        color: AppColors.thumbnailBadgeText,
+                                      ),
+                                ),
+                                loading: () => const LinearProgressIndicator(),
+                                error: (_, _) => const SizedBox.shrink(),
+                              ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -307,24 +585,6 @@ class _Block extends StatelessWidget {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: AppRadius.mdBorder,
-    ),
-  );
-}
-
-class _ChipSkeleton extends StatelessWidget {
-  const _ChipSkeleton();
-  @override
-  Widget build(BuildContext context) => const SizedBox(
-    height: AppSpacing.xxxl,
-    child: Row(
-      children: [
-        SizedBox(width: AppSpacing.lg),
-        _Block(width: AppSpacing.xxxl, height: AppSpacing.xxl),
-        SizedBox(width: AppSpacing.sm),
-        _Block(width: AppSpacing.xxxl, height: AppSpacing.xxl),
-        SizedBox(width: AppSpacing.sm),
-        _Block(width: AppSpacing.xxxl, height: AppSpacing.xxl),
-      ],
     ),
   );
 }

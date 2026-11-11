@@ -1,73 +1,55 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:hivetube/core/innertube/innertube_http.dart';
 import 'package:hivetube/core/innertube/clients.dart';
+import 'package:hivetube/core/innertube/innertube_http.dart';
 import 'package:hivetube/core/innertube/json_find.dart';
-import 'package:hivetube/core/yt/yt_browse.dart';
 import 'package:hivetube/core/yt/yt_charts.dart';
 import 'package:hivetube/core/yt/yt_reel.dart';
 import 'package:hivetube/core/yt/yt_search.dart';
-import 'package:hivetube/core/yt/yt_rss.dart';
 
 Future<void> main() async {
-  final dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
-    ),
+  final clients = InnertubeClients(
+    jsonDecode(await File('assets/innertube_clients.json').readAsString()),
   );
-  final http = InnertubeHttp(
-    dio,
-    InnertubeClients(
-      jsonDecode(await File('assets/innertube_clients.json').readAsString())
-          as Map<String, dynamic>,
-    ),
-  );
-  Future<void> run(String name, Future<int> Function() action) async {
+  for (final (hl, gl) in [('ta', 'IN'), ('hi', 'IN'), ('en', 'US')]) {
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 20),
+      ),
+    );
+    final http = InnertubeHttp(dio, clients, hl: hl, gl: gl);
+    stdout.writeln('\n--- hl=$hl gl=$gl ---');
     try {
-      stdout.writeln('$name: ${await action()}');
+      final visitor = await http.post('visitor_id', {});
+      http.visitorData =
+          safeNav(visitor, ['responseContext', 'visitorData']) as String?;
+      final search = await YtSearch(http).videos('music');
+      stdout.writeln('Y2 music (${search.items.length}):');
+      for (final item in search.items.take(5)) {
+        stdout.writeln('  ${item.title} | ${item.channelName}');
+      }
+      final charts = await YtCharts(http).trending(gl);
+      stdout.writeln('Y14 charts (${charts.length}):');
+      for (final item in charts.take(5)) {
+        stdout.writeln('  ${item.title} | ${item.channelName}');
+      }
+      final reel = YtReel(http);
+      final page = await reel.fetch();
+      final metadata = await Future.wait(
+        page.items.take(5).map((item) => reel.metadata(item.id)),
+      );
+      stdout.writeln('Y19 shorts (${page.items.length}):');
+      for (var i = 0; i < metadata.length; i++) {
+        final item = metadata[i];
+        stdout.writeln(
+          '  ${item?.title ?? '[unresolved ${page.items[i].id}]'} | ${item?.channelName ?? '[unresolved]'}',
+        );
+      }
     } catch (error) {
-      stdout.writeln('$name: FAILED ($error)');
+      stdout.writeln('FAILED: $error');
     }
+    dio.close();
   }
-
-  await run('Y1', () async {
-    final result = await http.post('visitor_id', {});
-    http.visitorData =
-        safeNav(result, ['responseContext', 'visitorData']) as String?;
-    return http.visitorData == null ? 0 : 1;
-  });
-  final browse = YtBrowse(http);
-  final search = await YtSearch(http).videos('lofi hip hop');
-  stdout.writeln('Y2: ${search.items.length}');
-  final channels = search.items
-      .map((e) => e.channelId)
-      .where((id) => id.startsWith('UC'))
-      .toSet();
-  var rssSucceeded = false;
-  for (final channel in channels) {
-    try {
-      final items = await YtRss(dio).uploads(channel);
-      stdout.writeln('Y17: ${items.length} (channel $channel)');
-      rssSucceeded = true;
-      break;
-    } catch (error) {
-      stdout.writeln('Y17 channel $channel: FAILED ($error)');
-    }
-  }
-  if (!rssSucceeded) {
-    stdout.writeln('Y17: FAILED (no reachable feed from search results)');
-  }
-  final reel = await YtReel(http).fetch();
-  stdout.writeln(
-    'Y19: ${reel.items.length}; continuations: ${reel.continuationCount}',
-  );
-  await Future.wait([
-    run('Y9', () async => (await browse.home()).items.length),
-    run('Y10', () async => (await browse.live()).items.length),
-    run('Y11', () async => (await browse.gaming()).items.length),
-    run('Y14', () async => (await YtCharts(http).trending('US')).length),
-  ]);
-  dio.close();
 }
