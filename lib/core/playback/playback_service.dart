@@ -1,16 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../providers.dart';
 import 'load_guard.dart';
 import 'playback_failure_monitor.dart';
+import 'audio_handler.dart';
 import '../db/app_db.dart';
 import '../streams/player_client.dart';
 import '../streams/relay_server.dart';
 import '../streams/stream_cache.dart';
 import '../streams/stream_selector.dart';
+import '../streams/net_family.dart';
+import '../innertube/innertube_http.dart';
 
 enum PlayerStatus {
   idle,
@@ -34,7 +41,7 @@ class PlayRequest {
   final Duration startAt;
 }
 
-class PlayerUiState {
+class PlaybackSnapshot {
   PlayerStatus status = PlayerStatus.idle;
   Duration position = Duration.zero,
       buffered = Duration.zero,
@@ -43,8 +50,13 @@ class PlayerUiState {
   int? videoWidth, videoHeight;
   int? quality;
   bool muted = false, loop = false;
+  bool recovering = false;
   StreamError? error;
   List<int> heights = [];
+  List<Map<String, dynamic>> captions = [];
+  int? selectedCaption;
+  bool captionError = false;
+  Uint8List? frozenFrame;
 }
 
 class PlaybackService extends ChangeNotifier {
@@ -57,13 +69,14 @@ class PlaybackService extends ChangeNotifier {
       unawaited(platform.setProperty('keep-open', 'yes'));
     }
     _listen();
+    _audioFocus.setMethodCallHandler(_onAudioFocus);
   }
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
   final Player player = Player();
   late final VideoController controller;
-  final PlayerUiState state = PlayerUiState();
+  final PlaybackSnapshot state = PlaybackSnapshot();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   PlayRequest? request;
   final _loadGuard = LoadGuard();
@@ -71,6 +84,35 @@ class PlaybackService extends ChangeNotifier {
   final _failureMonitor = PlaybackFailureMonitor();
   bool _switching = false, _disposed = false, _userPaused = false;
   bool _visible = true, _resumeAfterVisibility = false;
+  bool _resumeAfterFocus = false;
+  static const _audioFocus = MethodChannel('hivetube/audio_focus');
+
+  Future<void> _onAudioFocus(MethodCall call) async {
+    if (call.method == 'focusLoss') {
+      _resumeAfterFocus = player.state.playing && !_userPaused;
+      if (_resumeAfterFocus) await player.pause();
+    } else if (call.method == 'focusGain') {
+      if (_resumeAfterFocus && !_userPaused && request != null && _visible) {
+        _resumeAfterFocus = false;
+        await player.play();
+      }
+    } else if (call.method == 'noisy') {
+      _resumeAfterFocus = false;
+      await pause();
+    }
+  }
+
+  Future<bool> _activateAudioFocus() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      return await _audioFocus.invokeMethod<bool>('activate') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   DateTime? _lastWrite;
   Timer? _qualityTimer;
   Future<void> _commitTail = Future.value();
@@ -82,6 +124,11 @@ class PlaybackService extends ChangeNotifier {
     _subscriptions.add(
       player.stream.position.listen((value) {
         if (_switching) return;
+        if (state.frozenFrame != null &&
+            value != state.position &&
+            player.state.playing) {
+          state.frozenFrame = null;
+        }
         _failureMonitor.positionChanged(value);
         if (state.status == PlayerStatus.error &&
             value != state.position &&
@@ -135,7 +182,10 @@ class PlaybackService extends ChangeNotifier {
     );
     _subscriptions.add(
       player.stream.playing.listen((v) {
-        if (!_switching && state.status != PlayerStatus.error) {
+        unawaited(WakelockPlus.toggle(enable: v));
+        if (!_switching &&
+            state.status != PlayerStatus.error &&
+            (v || state.status != PlayerStatus.ended)) {
           state.status = v ? PlayerStatus.playing : PlayerStatus.paused;
           if (v) {
             _budget.playing(DateTime.now());
@@ -191,6 +241,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> play(PlayRequest value) async {
+    await _saveProgress();
     _failureMonitor.cancel();
     _userPaused = false;
     _visible = true;
@@ -206,16 +257,31 @@ class PlaybackService extends ChangeNotifier {
   }) async {
     final generation = _loadGuard.next();
     _switching = true;
+    if (!newRequest && state.position > Duration.zero) {
+      Uint8List? frame;
+      try {
+        frame = await player
+            .screenshot(format: 'image/png')
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      if (!_loadGuard.isCurrent(generation)) return;
+      state.frozenFrame = frame;
+    }
     request = value;
     state.status = recovery ? PlayerStatus.buffering : PlayerStatus.loading;
+    state.recovering = recovery;
     state.error = null;
     if (newRequest) {
+      state.frozenFrame = null;
       state.position = value.startAt;
       state.videoWidth = null;
       state.videoHeight = null;
       state.duration = Duration.zero;
       state.buffered = Duration.zero;
       state.quality = null;
+      state.captions = [];
+      state.selectedCaption = null;
+      state.captionError = false;
     }
     _notify();
     await player.pause();
@@ -228,6 +294,7 @@ class PlaybackService extends ChangeNotifier {
       );
       if (!_loadGuard.isCurrent(generation)) return;
       state.heights = selected.videos.map((e) => e.height).toList();
+      state.captions = cache.captionTracks(value.videoId);
       final format = value.mode == PlaybackMode.audio
           ? selected.audio!
           : selected.videos
@@ -258,9 +325,12 @@ class PlaybackService extends ChangeNotifier {
         );
         if (!_loadGuard.isCurrent(generation)) return;
         _switching = false;
+        state.recovering = false;
         state.status = PlayerStatus.ready;
         _notify();
-        if (_visible) {
+        final caption = state.selectedCaption;
+        if (caption != null) unawaited(setCaption(caption));
+        if (_visible && !_userPaused && await _activateAudioFocus()) {
           await player.play();
         } else {
           state.status = PlayerStatus.paused;
@@ -288,6 +358,7 @@ class PlaybackService extends ChangeNotifier {
         scheduleMicrotask(_recover);
       } else {
         state.status = PlayerStatus.error;
+        state.recovering = false;
         state.error = code;
         _notify();
       }
@@ -298,6 +369,7 @@ class PlaybackService extends ChangeNotifier {
     if (_switching || request == null) return;
     if (!_budget.take()) {
       state.status = PlayerStatus.error;
+      state.recovering = false;
       state.error = StreamError.extractionFailed;
       _notify();
       return;
@@ -352,9 +424,11 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> pause() async {
     _userPaused = true;
+    _resumeAfterFocus = false;
     _failureMonitor.cancel();
     _budget.paused();
     await player.pause();
+    await _saveProgress();
   }
 
   Future<void> resume() async {
@@ -366,12 +440,18 @@ class PlaybackService extends ChangeNotifier {
     if (state.status == PlayerStatus.error) {
       await retry();
     } else {
-      await player.play();
+      if (await _activateAudioFocus()) await player.play();
     }
   }
 
-  Future<void> seek(Duration v) =>
-      player.seek(v < Duration.zero ? Duration.zero : v);
+  Future<void> seek(Duration v) async {
+    await player.seek(v < Duration.zero ? Duration.zero : v);
+    if (!player.state.playing && state.frozenFrame != null) {
+      state.frozenFrame = null;
+      _notify();
+    }
+  }
+
   Future<void> setRate(double v) async {
     state.rate = v;
     await player.setRate(v);
@@ -403,6 +483,47 @@ class PlaybackService extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> setCaption(int? index) async {
+    if (index == null) {
+      await player.setSubtitleTrack(SubtitleTrack.no());
+      state.selectedCaption = null;
+      state.captionError = false;
+      _notify();
+      return;
+    }
+    if (index < 0 || index >= state.captions.length) return;
+    final current = request;
+    final track = state.captions[index];
+    try {
+      final base = Uri.parse(track['baseUrl'] as String);
+      final uri = base.replace(
+        queryParameters: {...base.queryParameters, 'fmt': 'vtt'},
+      );
+      final httpRequest = await cache.player.network.client.getUrl(uri);
+      httpRequest.headers.set(
+        HttpHeaders.userAgentHeader,
+        cache.player.clients['VISIONOS']['ua'],
+      );
+      final response = await httpRequest.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final body = await utf8.decodeStream(response);
+      if (response.statusCode != 200 || !body.trimLeft().startsWith('WEBVTT')) {
+        throw const FormatException();
+      }
+      if (!identical(current, request)) return;
+      await player.setSubtitleTrack(
+        SubtitleTrack.data(body, language: track['languageCode'] as String?),
+      );
+      state.selectedCaption = index;
+      state.captionError = false;
+    } catch (_) {
+      if (!identical(current, request)) return;
+      state.captionError = true;
+    }
+    _notify();
+  }
+
   void setQuality(int? value) {
     _qualityTimer?.cancel();
     _qualityTimer = Timer(const Duration(milliseconds: 300), () {
@@ -422,9 +543,12 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> stop() async {
     _failureMonitor.cancel();
-    _loadGuard.next();
+    final generation = _loadGuard.next();
     _switching = false;
+    await _saveProgress();
+    if (!_loadGuard.isCurrent(generation)) return;
     request = null;
+    state.frozenFrame = null;
     await player.stop();
     state.status = PlayerStatus.idle;
     _notify();
@@ -432,6 +556,14 @@ class PlaybackService extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_saveProgress());
+    unawaited(WakelockPlus.disable());
+    _audioFocus.setMethodCallHandler(null);
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(
+        _audioFocus.invokeMethod<void>('deactivate').catchError((Object _) {}),
+      );
+    }
     _disposed = true;
     _failureMonitor.cancel();
     _qualityTimer?.cancel();
@@ -442,38 +574,124 @@ class PlaybackService extends ChangeNotifier {
     unawaited(relay.close());
     super.dispose();
   }
+
+  Future<void> _saveProgress() async {
+    final current = request;
+    if (current != null && state.duration > Duration.zero) {
+      await history.save(
+        HistoryEntry(current.videoId, state.position, state.duration),
+      );
+    }
+  }
 }
 
-final playbackProvider = ChangeNotifierProvider<PlaybackService?>((ref) {
-  final http = ref.watch(innertubeProvider).value;
-  final network = ref.watch(networkFamilyProvider).value;
-  if (http == null ||
-      network == null ||
-      ref.watch(visitorDataProvider).value == null) {
-    return null;
+final playbackProvider = NotifierProvider<PlaybackController, PlaybackService?>(
+  PlaybackController.new,
+);
+
+class PlaybackController extends Notifier<PlaybackService?> {
+  PlaybackService? _service;
+  HiveAudioHandler? _handler;
+  NetworkFamily? _network;
+  InnertubeHttp? _currentHttp;
+  VoidCallback? _networkHook, _networkPrevious;
+
+  @override
+  bool updateShouldNotify(PlaybackService? previous, PlaybackService? next) =>
+      true;
+
+  @override
+  PlaybackService? build() {
+    ref.listen(innertubeProvider, (_, _) => _ensureService());
+    ref.listen(networkFamilyProvider, (_, _) => _ensureService());
+    ref.listen(visitorDataProvider, (_, _) => _ensureService());
+    ref.onDispose(() {
+      final service = _service;
+      if (service != null) {
+        service.removeListener(_changed);
+        _handler?.unbind(service);
+        service.dispose();
+      }
+      final network = _network;
+      if (network != null && identical(network.onChanged, _networkHook)) {
+        network.onChanged = _networkPrevious;
+      }
+    });
+    return _createService();
   }
-  final client = PlayerClient(
-    network,
-    http.clients,
-    () => http.visitorData,
-    () async {
-      await http.refreshVisitor?.call();
-    },
-    hl: http.hl,
-    gl: http.gl,
-  );
-  final cache = StreamCache(client);
-  final previousNetworkChange = network.onChanged;
-  network.onChanged = () {
-    previousNetworkChange?.call();
-    cache.clearCache();
-  };
-  ref.onDispose(() {
-    network.onChanged = previousNetworkChange;
-  });
-  return PlaybackService(
-    cache,
-    RelayServer(network, http.clients['VISIONOS']['ua']),
-    ref.read(historyRepoProvider),
-  );
-});
+
+  void _changed() => state = _service;
+
+  void _ensureService() {
+    if (_service != null) {
+      final http = ref.read(innertubeProvider).value;
+      if (http != null &&
+          ref.read(visitorDataProvider).value != null &&
+          !identical(_currentHttp, http)) {
+        _currentHttp = http;
+        _service!.cache.player.hl = http.hl;
+        _service!.cache.player.gl = http.gl;
+        _service!.cache.clearCache();
+      }
+      _installNetworkHook();
+      return;
+    }
+    final service = _createService();
+    if (service != null) state = service;
+  }
+
+  PlaybackService? _createService() {
+    if (_service != null) return _service;
+    final http = ref.read(innertubeProvider).value;
+    final network = ref.read(networkFamilyProvider).value;
+    if (http == null ||
+        network == null ||
+        ref.read(visitorDataProvider).value == null) {
+      return null;
+    }
+    _currentHttp = http;
+    final client = PlayerClient(
+      network,
+      http.clients,
+      () => _currentHttp?.visitorData,
+      () async {
+        await _currentHttp?.refreshVisitor?.call();
+      },
+      hl: http.hl,
+      gl: http.gl,
+    );
+    final cache = StreamCache(client);
+    final service = PlaybackService(
+      cache,
+      RelayServer(network, http.clients['VISIONOS']['ua']),
+      ref.read(historyRepoProvider),
+    );
+    final handler = ref.read(audioHandlerProvider);
+    _handler = handler;
+    handler?.bind(service);
+    _service = service;
+    _network = network;
+    _installNetworkHook();
+    service.addListener(_changed);
+    return service;
+  }
+
+  void _installNetworkHook() {
+    final network = _network;
+    final service = _service;
+    if (network == null ||
+        service == null ||
+        identical(network.onChanged, _networkHook)) {
+      return;
+    }
+    final previous = network.onChanged;
+    _networkPrevious = previous;
+    void changed() {
+      previous?.call();
+      service.cache.clearCache();
+    }
+
+    _networkHook = changed;
+    network.onChanged = changed;
+  }
+}

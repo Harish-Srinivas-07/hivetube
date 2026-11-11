@@ -26,6 +26,12 @@ String _thumbnail(dynamic v, String id) {
       : 'https://i.ytimg.com/vi/$id/hqdefault.jpg';
 }
 
+String _imageUrl(dynamic value) {
+  final url = findAll(value, 'url').whereType<String>().firstOrNull ?? '';
+  if (url.startsWith('//')) return 'https:$url';
+  return url.startsWith('https://') ? url : '';
+}
+
 VideoPage parseVideos(dynamic json) {
   final items = <VideoItem>[];
   final seen = <String>{};
@@ -45,9 +51,20 @@ VideoPage parseVideos(dynamic json) {
               safeNav(value, ['metadata', 'lockupMetadataViewModel', 'title']),
             );
       if (title.isEmpty) continue;
-      final channel = _text(value['ownerText']).isNotEmpty
-          ? _text(value['ownerText'])
-          : _text(value['shortBylineText']);
+      final metadata = safeNav(value, [
+        'metadata', 'lockupMetadataViewModel', 'metadata', 'contentMetadataViewModel',
+      ]);
+      final rows = metadata is Map ? metadata['metadataRows'] : null;
+      final firstRow = rows is List && rows.isNotEmpty ? rows.first : null;
+      final parts = firstRow is Map ? firstRow['metadataParts'] : null;
+      final firstPart = parts is List && parts.isNotEmpty ? parts.first : null;
+      final lockupChannel = _text(firstPart is Map ? firstPart['text'] : null);
+      final channel = [
+        _text(value['ownerText']),
+        _text(value['shortBylineText']),
+        _text(value['longBylineText']),
+        lockupChannel,
+      ].firstWhere((name) => name.isNotEmpty, orElse: () => '');
       final channelIds = findAll(
         value,
         'browseId',
@@ -55,12 +72,11 @@ VideoPage parseVideos(dynamic json) {
       final avatarRenderer =
           findAll(value, 'channelThumbnailWithLinkRenderer').firstOrNull ??
           findAll(value, 'channelThumbnailSupportedRenderers').firstOrNull;
-      final avatar =
-          findAll(avatarRenderer, 'url')
-              .whereType<String>()
-              .where((url) => url.startsWith('https://'))
-              .firstOrNull ??
-          '';
+      final avatar = _imageUrl(
+        avatarRenderer ?? safeNav(value, [
+          'metadata', 'lockupMetadataViewModel', 'image',
+        ]),
+      );
       items.add(
         VideoItem(
           id: id,
@@ -68,7 +84,7 @@ VideoPage parseVideos(dynamic json) {
           channelId: channelIds.firstOrNull ?? '',
           channelName: channel,
           channelAvatarUrl: avatar,
-          thumbUrl: _thumbnail(value, id),
+          thumbUrl: _thumbnail(value['thumbnail'] ?? value['contentImage'], id),
           durationText: _text(value['lengthText']),
           viewsText: _text(value['viewCountText']),
           publishedText: _text(value['publishedTimeText']),

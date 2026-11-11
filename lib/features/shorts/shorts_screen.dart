@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../core/providers.dart';
@@ -15,24 +14,25 @@ import '../../core/yt/models.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 
-class ShortsSelection extends ChangeNotifier {
-  List<ShortItem> items = [];
-  int index = 0;
-  void clear() {
-    items = [];
-    index = 0;
-  }
-
-  void open(List<ShortItem> value, int selected) {
-    items = List.of(value);
-    index = selected;
-    notifyListeners();
-  }
+class ShortsSelection {
+  const ShortsSelection({this.items = const [], this.index = 0});
+  final List<ShortItem> items;
+  final int index;
 }
 
-final shortsSelectionProvider = ChangeNotifierProvider(
-  (ref) => ShortsSelection(),
-);
+final shortsSelectionProvider =
+    NotifierProvider<ShortsSelectionController, ShortsSelection>(
+      ShortsSelectionController.new,
+    );
+
+class ShortsSelectionController extends Notifier<ShortsSelection> {
+  @override
+  ShortsSelection build() => const ShortsSelection();
+  void clear() => state = const ShortsSelection();
+  void open(List<ShortItem> value, int selected) =>
+      state = ShortsSelection(items: List.unmodifiable(value), index: selected);
+}
+
 final shortMetadataProvider = FutureProvider.family<ShortItem?, String>(
   (ref, id) async => (await ref.watch(ytApiProvider.future)).reel.metadata(id),
 );
@@ -55,17 +55,22 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   int generation = 0, currentIndex = 0;
   Brightness shellBrightness = Brightness.light;
   PageController controller = PageController();
-  late final ShortsSelection selection;
+  late final ProviderSubscription<ShortsSelection> selectionSubscription;
   PlaybackService? active;
   final Map<String, int> reactions = {};
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    selection = ref.read(shortsSelectionProvider);
-    selection.addListener(_selected);
+    final selection = ref.read(shortsSelectionProvider);
+    selectionSubscription = ref.listenManual(shortsSelectionProvider, (
+      _,
+      next,
+    ) {
+      if (next.items.isNotEmpty) _selected(next);
+    });
     if (selection.items.isNotEmpty) {
-      _selected();
+      _selected(selection);
     } else {
       _refresh();
     }
@@ -118,7 +123,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  void _selected() {
+  void _selected(ShortsSelection selection) {
     generation++;
     unawaited(active?.pause());
     setState(() {
@@ -230,7 +235,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (visible) _restoreSystemUi();
-    selection.removeListener(_selected);
+    selectionSubscription.close();
     unawaited(active?.setVisible(false));
     controller.dispose();
     super.dispose();
@@ -243,7 +248,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
           (previous.hl != next.hl ||
               previous.gl != next.gl ||
               previous.localContent != next.localContent)) {
-        selection.clear();
+        ref.read(shortsSelectionProvider.notifier).clear();
         _refresh();
       }
     });

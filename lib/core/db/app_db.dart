@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
@@ -54,6 +55,67 @@ class EmptyHistoryRepo implements HistoryRepo {
   Future<void> save(HistoryEntry entry) async {
     _entries.remove(entry.videoId);
     _entries[entry.videoId] = entry;
+  }
+}
+
+class StoredHistoryRepo implements HistoryRepo {
+  StoredHistoryRepo(this.db);
+  final AppDb db;
+  Future<void> _writes = Future.value();
+  static const _key = 'watch_history_v1';
+
+  Future<List<HistoryEntry>> _load() async {
+    try {
+      final data = jsonDecode(await db.getValue(_key) ?? '[]');
+      if (data is! List) return [];
+      return data
+          .whereType<Map>()
+          .map(
+            (entry) => HistoryEntry(
+              entry['id'] as String,
+              Duration(milliseconds: entry['position'] as int),
+              Duration(milliseconds: entry['duration'] as int),
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  @override
+  Future<List<HistoryEntry>> recent() async {
+    await _writes;
+    return _load();
+  }
+
+  @override
+  Future<Set<String>> dislikedChannels() async => {};
+
+  @override
+  Future<void> save(HistoryEntry entry) {
+    final write = _writes.then((_) async {
+      final entries = await _load();
+      entries.removeWhere((e) => e.videoId == entry.videoId);
+      entries.insert(0, entry);
+      await db.setValue(
+        _key,
+        jsonEncode(
+          entries
+              .take(500)
+              .map(
+                (e) => {
+                  'id': e.videoId,
+                  'position': e.position.inMilliseconds,
+                  'duration': e.duration.inMilliseconds,
+                },
+              )
+              .toList(),
+        ),
+      );
+    });
+    _writes = write.catchError((Object _) {});
+    return write;
   }
 }
 

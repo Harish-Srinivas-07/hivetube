@@ -81,10 +81,12 @@ class AppSettings {
     required this.hl,
     required this.gl,
     this.localContent = true,
+    this.autoplay = false,
     this.revision = 0,
   });
   final String hl, gl;
   final bool localContent;
+  final bool autoplay;
   final int revision;
   String get cacheKey => '${hl}_$gl';
   static AppSettings defaults(Locale locale) => AppSettings(
@@ -97,11 +99,13 @@ class AppSettings {
     String? hl,
     String? gl,
     bool? localContent,
+    bool? autoplay,
     int? revision,
   }) => AppSettings(
     hl: hl ?? this.hl,
     gl: gl ?? this.gl,
     localContent: localContent ?? this.localContent,
+    autoplay: autoplay ?? this.autoplay,
     revision: revision ?? this.revision,
   );
 }
@@ -127,6 +131,13 @@ final appSettingsProvider =
 class AppSettingsController extends Notifier<AppSettings> {
   @override
   AppSettings build() => ref.watch(initialAppSettingsProvider);
+  Future<void> setAutoplay(bool enabled) async {
+    await ref
+        .read(dbProvider)
+        .setValue('settings_autoplay', enabled.toString());
+    state = state.copyWith(autoplay: enabled);
+  }
+
   Future<void> update({String? hl, String? gl, bool? localContent}) async {
     final old = state;
     final next = old.copyWith(
@@ -146,7 +157,7 @@ class AppSettingsController extends Notifier<AppSettings> {
     await db.setValue('settings_local_content', next.localContent.toString());
     await db.deleteValue(homeCacheKey(old));
     await db.deleteValue(homeCacheKey(next));
-    ref.read(shortsSelectionProvider).clear();
+    ref.read(shortsSelectionProvider.notifier).clear();
     state = next;
   }
 }

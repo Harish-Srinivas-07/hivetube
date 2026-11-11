@@ -8,6 +8,7 @@ class StreamFormat {
   final Uri url;
   int get itag => json['itag'] as int? ?? 0;
   int get height => json['height'] as int? ?? 0;
+  int get width => json['width'] as int? ?? 0;
   int get bitrate => json['bitrate'] as int? ?? 0;
   int get length =>
       int.tryParse(
@@ -100,11 +101,17 @@ SelectedStreams selectStreams(dynamic response, PlaybackMode mode) {
     if (uri == null || !uri.hasScheme) continue;
     all.add(StreamFormat(Map<String, dynamic>.from(value), uri));
   }
-  final cap = mode == PlaybackMode.short ? 720 : 1080;
+  int resolution(StreamFormat f) =>
+      mode == PlaybackMode.short && f.width > 0 && f.width < f.height
+      ? f.width
+      : f.height;
+  const cap = 1080;
   final avc = all
       .where(
         (f) =>
-            f.height >= 360 && f.height <= cap && f.mimeType.contains('avc1'),
+            resolution(f) >= 360 &&
+            resolution(f) <= cap &&
+            f.mimeType.contains('avc1'),
       )
       .toList();
   final hasAvc = all.any((f) => f.height > 0 && f.mimeType.contains('avc1'));
@@ -113,8 +120,8 @@ SelectedStreams selectStreams(dynamic response, PlaybackMode mode) {
       : all
             .where(
               (f) =>
-                  f.height >= 360 &&
-                  f.height <= cap &&
+                  resolution(f) >= 360 &&
+                  resolution(f) <= cap &&
                   (f.mimeType.contains('vp9') || f.mimeType.contains('vp09')),
             )
             .toList();

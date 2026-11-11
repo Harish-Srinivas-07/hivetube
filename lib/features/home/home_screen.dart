@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../shorts/shorts_screen.dart';
+import '../watch/watch_panel.dart';
+import '../../core/playback/player_ui_state.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/yt/models.dart';
@@ -109,10 +111,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         SliverToBoxAdapter(
                           child: _Shorts(
                             items: data.shorts,
-                            onTap: (index) {
+                            onTap: (index) async {
                               ref.read(homeProvider.notifier).interact();
+                              if (ref.read(watchPanelProvider) != null) {
+                                ref.read(watchPanelProvider.notifier).close();
+                                ref
+                                    .read(playerUiProvider.notifier)
+                                    .setDismissed(true);
+                              }
                               ref
-                                  .read(shortsSelectionProvider)
+                                  .read(shortsSelectionProvider.notifier)
                                   .open(data.shorts, index);
                               context.go('/shorts');
                             },
@@ -192,9 +200,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             history: history[items[index].id],
             onTap: () {
               ref.read(homeProvider.notifier).interact();
-              context.push('/watch/${items[index].id}').then((_) {
-                if (mounted) ref.invalidate(homeHistoryProvider);
-              });
+              ref.read(watchPanelProvider.notifier).open(items[index].id);
+              ref.read(watchPanelExpandProvider.notifier).expand();
             },
           );
           if (!wide) {

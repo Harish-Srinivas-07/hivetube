@@ -32,6 +32,20 @@ class StreamCache {
     _cache.remove(id);
   }
 
+  List<Map<String, dynamic>> captionTracks(String id) {
+    final captions = _cache[id]?.data['captions'];
+    final renderer = captions is Map
+        ? captions['playerCaptionsTracklistRenderer']
+        : null;
+    final tracks = renderer is Map ? renderer['captionTracks'] : null;
+    return tracks is List
+        ? tracks
+              .whereType<Map>()
+              .map((v) => Map<String, dynamic>.from(v))
+              .toList()
+        : [];
+  }
+
   void clearVerdicts() => _verdicts.clear();
   Future<_Entry> _get(String id) async {
     final verdict = _verdicts[id];

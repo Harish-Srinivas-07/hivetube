@@ -10,6 +10,18 @@ import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/main.dart';
 
+class _NoPlayback extends PlaybackController {
+  @override
+  PlaybackService? build() => null;
+}
+
+class _SelectedShorts extends ShortsSelectionController {
+  _SelectedShorts(this.initial);
+  final ShortsSelection initial;
+  @override
+  ShortsSelection build() => initial;
+}
+
 void main() {
   testWidgets(
     'Shorts fills mobile screen with actions, persistent mute and floating nav',
@@ -20,18 +32,22 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final db = AppDb(NativeDatabase.memory());
       addTearDown(db.close);
-      final selection = ShortsSelection()
-        ..open(const [
+      const selection = ShortsSelection(
+        items: [
           ShortItem(id: 'first', thumbUrl: '', title: 'First'),
           ShortItem(id: 'second', thumbUrl: '', title: 'Second'),
-        ], 0);
+        ],
+        index: 0,
+      );
       appRouter.go('/shorts');
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             dbProvider.overrideWithValue(db),
-            shortsSelectionProvider.overrideWith((ref) => selection),
-            playbackProvider.overrideWith((ref) => null),
+            shortsSelectionProvider.overrideWith(
+              () => _SelectedShorts(selection),
+            ),
+            playbackProvider.overrideWith(_NoPlayback.new),
           ],
           child: const HiveTubeApp(),
         ),
@@ -60,18 +76,22 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
-    final selection = ShortsSelection()
-      ..open(const [
+    const selection = ShortsSelection(
+      items: [
         ShortItem(id: 'one', thumbUrl: '', title: 'One'),
         ShortItem(id: 'two', thumbUrl: '', title: 'Two'),
-      ], 1);
+      ],
+      index: 1,
+    );
     appRouter.go('/shorts');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           dbProvider.overrideWithValue(db),
-          shortsSelectionProvider.overrideWith((ref) => selection),
-          playbackProvider.overrideWith((ref) => null),
+          shortsSelectionProvider.overrideWith(
+            () => _SelectedShorts(selection),
+          ),
+          playbackProvider.overrideWith(_NoPlayback.new),
         ],
         child: const HiveTubeApp(),
       ),
@@ -88,15 +108,19 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
-    final selection = ShortsSelection()
-      ..open(const [ShortItem(id: 'wide', thumbUrl: '', title: 'Wide')], 0);
+    const selection = ShortsSelection(
+      items: [ShortItem(id: 'wide', thumbUrl: '', title: 'Wide')],
+      index: 0,
+    );
     appRouter.go('/shorts');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           dbProvider.overrideWithValue(db),
-          shortsSelectionProvider.overrideWith((ref) => selection),
-          playbackProvider.overrideWith((ref) => null),
+          shortsSelectionProvider.overrideWith(
+            () => _SelectedShorts(selection),
+          ),
+          playbackProvider.overrideWith(_NoPlayback.new),
         ],
         child: const HiveTubeApp(),
       ),

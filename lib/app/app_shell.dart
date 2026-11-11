@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import '../core/playback/playback_service.dart';
+import '../core/playback/player_ui_state.dart';
+import '../features/watch/watch_panel.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -26,6 +28,12 @@ class AppShell extends ConsumerWidget {
         MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
     final home = navigationShell.currentIndex == 0;
     final shorts = navigationShell.currentIndex == 1;
+    if (shorts && ref.read(watchPanelProvider) != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(watchPanelProvider.notifier).close();
+        ref.read(playerUiProvider.notifier).setDismissed(true);
+      });
+    }
     final scheme = Theme.of(context).colorScheme;
     final selectedColor = shorts
         ? AppColors.shortsForeground
@@ -33,7 +41,11 @@ class AppShell extends ConsumerWidget {
     final idleColor = shorts
         ? AppColors.shortsProgressBuffer
         : scheme.onSurfaceVariant;
-    void select(int index) {
+    Future<void> select(int index) async {
+      if (index == 1 && navigationShell.currentIndex != 1) {
+        ref.read(watchPanelProvider.notifier).close();
+        ref.read(playerUiProvider.notifier).setDismissed(true);
+      }
       if (navigationShell.currentIndex == 1 && index != 1) {
         ref.read(playbackProvider)?.setVisible(false);
       }
@@ -135,16 +147,16 @@ class AppShell extends ConsumerWidget {
                   key: const ValueKey('bottomNavPill'),
                   height: AppSpacing.navHeight,
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (var i = 0; i < _destinations.length; i++)
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.all(AppSpacing.xs),
                             child: Material(
+                              key: ValueKey('navIndicator$i'),
                               color: i == navigationShell.currentIndex
-                                  ? Theme.of(
-                                      context,
-                                    ).extension<HiveGlass>()!.glassFill
+                                  ? selectedColor.withValues(alpha: 0.18)
                                   : Colors.transparent,
                               borderRadius: AppRadius.pillBorder,
                               child: InkWell(
@@ -154,41 +166,17 @@ class AppShell extends ConsumerWidget {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (i == 3)
-                                      Container(
-                                        width: AppSpacing.navAvatar,
-                                        height: AppSpacing.navAvatar,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color:
-                                                i ==
-                                                    navigationShell.currentIndex
-                                                ? selectedColor
-                                                : idleColor,
-                                            width: AppSpacing.borderWidth,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          LucideIcons.user,
-                                          size: AppSpacing.navIcon,
-                                          color:
-                                              i == navigationShell.currentIndex
-                                              ? selectedColor
-                                              : idleColor,
-                                        ),
-                                      )
-                                    else
-                                      Icon(
-                                        _destinations[i].icon,
-                                        size: AppSpacing.navIcon,
-                                        color: i == navigationShell.currentIndex
-                                            ? selectedColor
-                                            : idleColor,
-                                      ),
+                                    Icon(
+                                      _destinations[i].icon,
+                                      size: AppSpacing.navIcon,
+                                      color: i == navigationShell.currentIndex
+                                          ? selectedColor
+                                          : idleColor,
+                                    ),
                                     Text(
                                       _destinations[i].label,
                                       maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: Theme.of(context)
                                           .textTheme
                                           .labelSmall
@@ -212,6 +200,7 @@ class AppShell extends ConsumerWidget {
               ),
             ),
           ),
+        const Positioned.fill(child: WatchPanel()),
       ],
     );
   }

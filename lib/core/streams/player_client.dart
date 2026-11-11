@@ -5,7 +5,7 @@ import '../innertube/clients.dart';
 import 'net_family.dart';
 
 const playerFieldMask =
-    'playabilityStatus,streamingData(formats,adaptiveFormats(itag,url,mimeType,bitrate,averageBitrate,width,height,contentLength,quality,audioQuality,approxDurationMs,audioSampleRate,audioChannels,loudnessDb,lastModified,xtags,audioTrack,isDrc,signatureCipher,initRange,indexRange,fps),expiresInSeconds,hlsManifestUrl,serverAbrStreamingUrl),videoDetails,playerConfig.audioConfig';
+    'playabilityStatus,streamingData(formats,adaptiveFormats(itag,url,mimeType,bitrate,averageBitrate,width,height,contentLength,quality,audioQuality,approxDurationMs,audioSampleRate,audioChannels,loudnessDb,lastModified,xtags,audioTrack,isDrc,signatureCipher,initRange,indexRange,fps),expiresInSeconds,hlsManifestUrl,serverAbrStreamingUrl),videoDetails,playerConfig.audioConfig,captions';
 
 enum StreamError {
   ageRestricted,
@@ -33,7 +33,7 @@ class PlayerClient {
     this.hl = 'en',
     this.gl = 'IN',
   });
-  final String hl, gl;
+  String hl, gl;
   final NetworkFamily network;
   final InnertubeClients clients;
   final String? Function() visitor;

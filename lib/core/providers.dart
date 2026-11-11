@@ -37,7 +37,9 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       receiveTimeout: const Duration(seconds: 20),
     ),
   );
-  final settings = ref.watch(appSettingsProvider);
+  final settings = ref.watch(
+    appSettingsProvider.select((s) => (hl: s.hl, gl: s.gl)),
+  );
   final network = await ref.watch(networkFamilyProvider.future);
   void resetAdapter() {
     dio.httpClientAdapter = IOHttpClientAdapter(
@@ -63,8 +65,8 @@ final visitorDataProvider = FutureProvider<String>((ref) async {
   http.refreshVisitor = () async {
     http.visitorData = await service.get(force: true);
   };
-  final settings = ref.watch(appSettingsProvider);
-  final value = await service.get(force: settings.revision > 0);
+  final revision = ref.watch(appSettingsProvider.select((s) => s.revision));
+  final value = await service.get(force: revision > 0);
   http.visitorData = value;
   return value;
 });
@@ -90,7 +92,9 @@ final ytApiProvider = FutureProvider<YtApi>((ref) async {
   return YtApi(await ref.watch(innertubeProvider.future));
 });
 
-final historyRepoProvider = Provider<HistoryRepo>((ref) => EmptyHistoryRepo());
+final historyRepoProvider = Provider<HistoryRepo>(
+  (ref) => StoredHistoryRepo(ref.watch(dbProvider)),
+);
 final subscriptionRepoProvider = Provider<SubscriptionRepo>(
   (ref) => EmptySubscriptionRepo(),
 );

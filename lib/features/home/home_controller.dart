@@ -64,7 +64,15 @@ class HomeController extends AsyncNotifier<HomeData> {
       _debounce?.cancel();
       buildToken.cancel();
     });
-    final settings = ref.watch(appSettingsProvider);
+    final settings = ref.watch(
+      appSettingsProvider.select(
+        (s) => (
+          cacheKey: s.cacheKey,
+          localContent: s.localContent,
+          revision: s.revision,
+        ),
+      ),
+    );
     final initial = ref.read(initialAppSettingsProvider);
     final cache =
         settings.cacheKey == initial.cacheKey &&

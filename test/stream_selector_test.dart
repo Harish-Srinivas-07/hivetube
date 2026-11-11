@@ -5,6 +5,7 @@ Map<String, dynamic> format(
   int id,
   String mime, {
   int? height,
+  int? width,
   int bitrate = 1,
   bool drc = false,
   Map<String, dynamic>? track,
@@ -14,6 +15,7 @@ Map<String, dynamic> format(
   'mimeType': mime,
   'bitrate': bitrate,
   'height': ?height,
+  'width': ?width,
   if (drc) 'isDrc': true,
   'audioTrack': ?track,
 };
@@ -44,11 +46,27 @@ void main() {
       DateTime.fromMillisecondsSinceEpoch(2000000000 * 1000),
     );
   });
-  test('shorts capped at 720 and audio mode skips DRC', () {
+  test('shorts support 1080p and audio mode skips DRC', () {
     expect(selectStreams(data, PlaybackMode.short).videos.map((v) => v.itag), [
+      1,
       3,
     ]);
     expect(selectStreams(data, PlaybackMode.audio).audio?.itag, 250);
+  });
+  test('portrait shorts use the shorter side for the 1080p cap', () {
+    final input = {
+      'streamingData': {
+        'adaptiveFormats': [
+          format(1, 'video/mp4; codecs="avc1"', width: 1080, height: 1920),
+          format(2, 'video/mp4; codecs="avc1"', width: 720, height: 1280),
+          format(3, 'video/mp4; codecs="avc1"', width: 1440, height: 2560),
+        ],
+      },
+    };
+    expect(selectStreams(input, PlaybackMode.short).videos.map((v) => v.itag), [
+      1,
+      2,
+    ]);
   });
   test('VP9 fallback only with no eligible avc', () {
     final input = {
