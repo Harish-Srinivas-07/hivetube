@@ -24,6 +24,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_controls.dart';
 import '../../widgets/video_options_menu.dart';
 import 'watch_panel.dart';
@@ -975,154 +976,53 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   Widget _reactionGroup(WatchInfo info) {
-    final colors = Theme.of(context).colorScheme;
     final dislikes = ref.watch(dislikeCountProvider(id)).value;
-    return Padding(
-      padding: const EdgeInsets.only(right: AppSpacing.sm),
-      child: Material(
-        color: colors.surfaceContainerHighest,
-        borderRadius: const BorderRadius.all(Radius.circular(AppSpacing.xxxl)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            InkWell(
-              borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(AppSpacing.xxxl),
-              ),
-              onTap: () async {
-                final next = reaction == 1 ? null : 1;
-                setState(() {
-                  reaction = next ?? 0;
-                  reactions[id] = reaction;
-                });
-                final db = ref.read(dbProvider);
-                await db.reactionsDao.setReaction(id, next);
-                if (next != null) {
-                  await db.into(db.media).insertOnConflictUpdate(
-                    MediaCompanion.insert(
-                      videoId: id,
-                      title: info.title,
-                      channelId: info.channelId,
-                      channelName: info.channelName,
-                      thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-                      updatedAt: DateTime.now().millisecondsSinceEpoch,
-                    ),
-                  );
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.thumbsUp,
-                      size: AppSizes.iconMd,
-                      color: reaction == 1 ? colors.primary : colors.onSurface,
-                    ),
-                    if (info.likes.isNotEmpty) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        info.likes,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: colors.onSurface,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+    final dislikeText = dislikes != null ? _compactNumber('$dislikes') : '';
+    return AppLikeDislikeSegment(
+      likeCount: info.likes,
+      dislikeCount: dislikeText,
+      reaction: reaction,
+      onLike: () async {
+        final next = reaction == 1 ? null : 1;
+        setState(() {
+          reaction = next ?? 0;
+          reactions[id] = reaction;
+        });
+        final db = ref.read(dbProvider);
+        await db.reactionsDao.setReaction(id, next);
+        if (next != null) {
+          await db.into(db.media).insertOnConflictUpdate(
+            MediaCompanion.insert(
+              videoId: id,
+              title: info.title,
+              channelId: info.channelId,
+              channelName: info.channelName,
+              thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
             ),
-            Container(
-              width: 1,
-              height: 20,
-              color: colors.outline.withValues(alpha: 0.35),
-            ),
-            InkWell(
-              borderRadius: const BorderRadius.horizontal(
-                right: Radius.circular(AppSpacing.xxxl),
-              ),
-              onTap: () async {
-                final next = reaction == -1 ? null : -1;
-                setState(() {
-                  reaction = next ?? 0;
-                  reactions[id] = reaction;
-                });
-                final db = ref.read(dbProvider);
-                await db.reactionsDao.setReaction(id, next);
-              },
-              child: Tooltip(
-                message: 'Dislikes provided by returnyoutubedislike.com',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: AppSpacing.sm,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        LucideIcons.thumbsDown,
-                        size: AppSizes.iconMd,
-                        color: reaction == -1 ? colors.primary : colors.onSurface,
-                      ),
-                      if (dislikes != null) ...[
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(
-                          _compactNumber('$dislikes'),
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: colors.onSurface,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+          );
+        }
+      },
+      onDislike: () async {
+        final next = reaction == -1 ? null : -1;
+        setState(() {
+          reaction = next ?? 0;
+          reactions[id] = reaction;
+        });
+        final db = ref.read(dbProvider);
+        await db.reactionsDao.setReaction(id, next);
+      },
     );
   }
 
   Widget _action(IconData icon, String label, VoidCallback action) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(right: AppSpacing.sm),
-      child: Material(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: AppRadius.pillBorder,
-        child: InkWell(
-          borderRadius: AppRadius.pillBorder,
-          onTap: action,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: AppSizes.iconSm, color: scheme.onSurface),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge?.copyWith(color: scheme.onSurface),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return AppButton(
+      label: label,
+      icon: icon,
+      variant: AppButtonVariant.tonal,
+      onPressed: action,
     );
   }
-
   void _soon() => ScaffoldMessenger.of(
     context,
   ).showSnackBar(const SnackBar(content: Text('Coming soon')));

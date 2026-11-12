@@ -1,25 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../theme/app_radius.dart';
-import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
+import '../../widgets/ui/ui.dart';
 
 Future<void> showSaveToPlaylistSheet(
   BuildContext context, {
   required String videoId,
   MediaCompanion? media,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-    ),
-    builder: (sheetContext) =>
+  return showAppSheet<void>(
+    context,
+    fit: true,
+    title: 'Save video to...',
+    builder: (sheetContext, _) =>
         _SaveToPlaylistSheet(videoId: videoId, media: media),
   );
 }
@@ -79,21 +75,23 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New playlist'),
+      builder: (ctx) => AppDialog(
+        title: 'New playlist',
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(hintText: 'Enter title...'),
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.text,
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
+          AppButton(
+            label: 'Create',
+            variant: AppButtonVariant.filled,
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
           ),
         ],
       ),
@@ -116,7 +114,6 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
   @override
   Widget build(BuildContext context) {
     final playlistsAsync = ref.watch(playlistsStreamProvider);
-    final theme = Theme.of(context);
 
     return SafeArea(
       child: Padding(
@@ -126,28 +123,18 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.xs,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Save video to...',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _createNewPlaylist,
-                    icon: const Icon(LucideIcons.plus, size: AppSizes.iconSm),
-                    label: const Text('New playlist'),
-                  ),
-                ],
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: AppButton(
+                  label: 'New playlist',
+                  icon: LucideIcons.plus,
+                  variant: AppButtonVariant.tonal,
+                  size: AppButtonSize.compact,
+                  onPressed: _createNewPlaylist,
+                ),
               ),
             ),
-            const Divider(),
             if (_loading)
               const Center(
                 child: Padding(

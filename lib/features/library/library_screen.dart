@@ -15,6 +15,7 @@ import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../core/yt/takeout_parser.dart';
+import '../../widgets/ui/ui.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -38,16 +39,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             children: [
               InkWell(
                 onTap: () async {
-                  final file = await FilePicker.pickFile(
-                    type: FileType.image,
-                  );
+                  final file = await FilePicker.pickFile(type: FileType.image);
                   if (file != null && file.path != null) {
                     setDialogState(() => avatarPath = file.path);
                   }
                 },
                 child: CircleAvatar(
                   radius: 36,
-                  backgroundImage: avatarPath != null && File(avatarPath!).existsSync()
+                  backgroundImage:
+                      avatarPath != null && File(avatarPath!).existsSync()
                       ? FileImage(File(avatarPath!)) as ImageProvider
                       : null,
                   child: avatarPath == null
@@ -79,7 +79,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     if (updated == true && mounted) {
       final db = ref.read(dbProvider);
       await db.profileDao.setProfile(
-        name: controller.text.trim().isEmpty ? 'HiveUser' : controller.text.trim(),
+        name: controller.text.trim().isEmpty
+            ? 'HiveUser'
+            : controller.text.trim(),
         avatarPath: avatarPath,
       );
     }
@@ -88,53 +90,50 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Future<void> _showBackupSheet() async {
     final backupService = ref.read(backupServiceProvider);
 
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (bCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(LucideIcons.download),
-                title: const Text('Export JSON backup'),
-                subtitle: const Text('Export subscriptions, history, playlists and reactions'),
-                onTap: () async {
-                  Navigator.of(bCtx).pop();
-                  final json = await backupService.exportJson();
-                  await SharePlus.instance.share(
-                    ShareParams(
-                      text: json,
-                      subject: 'hivetube_backup.json',
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(LucideIcons.upload),
-                title: const Text('Import JSON backup'),
-                subtitle: const Text('Restore from a previously exported JSON backup'),
-                onTap: () async {
-                  Navigator.of(bCtx).pop();
-                  _importBackupJson();
-                },
-              ),
-              ListTile(
-                leading: const Icon(LucideIcons.fileSpreadsheet),
-                title: const Text('Import Google Takeout subscriptions.csv'),
-                subtitle: const Text('Import YouTube subscriptions exported from Google Takeout'),
-                onTap: () async {
-                  Navigator.of(bCtx).pop();
-                  _importTakeoutCsv();
-                },
-              ),
-            ],
+    showAppSheet<void>(
+      context,
+      fit: true,
+      title: 'Backup & Restore',
+      builder: (bCtx, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(LucideIcons.download),
+            title: const Text('Export JSON backup'),
+            subtitle: const Text(
+              'Export subscriptions, history, playlists and reactions',
+            ),
+            onTap: () async {
+              Navigator.of(bCtx).pop();
+              final json = await backupService.exportJson();
+              await SharePlus.instance.share(
+                ShareParams(text: json, subject: 'hivetube_backup.json'),
+              );
+            },
           ),
-        ),
+          ListTile(
+            leading: const Icon(LucideIcons.upload),
+            title: const Text('Import JSON backup'),
+            subtitle: const Text(
+              'Restore from a previously exported JSON backup',
+            ),
+            onTap: () async {
+              Navigator.of(bCtx).pop();
+              _importBackupJson();
+            },
+          ),
+          ListTile(
+            leading: const Icon(LucideIcons.fileSpreadsheet),
+            title: const Text('Import Google Takeout subscriptions.csv'),
+            subtitle: const Text(
+              'Import YouTube subscriptions exported from Google Takeout',
+            ),
+            onTap: () async {
+              Navigator.of(bCtx).pop();
+              _importTakeoutCsv();
+            },
+          ),
+        ],
       ),
     );
   }
@@ -194,9 +193,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to import backup: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to import backup: $e')));
       }
     }
   }
@@ -227,15 +226,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       final now = DateTime.now().millisecondsSinceEpoch;
       await db.transaction(() async {
         for (final item in parsed) {
-          await db.into(db.subscriptions).insertOnConflictUpdate(
-            SubscriptionsCompanion.insert(
-              channelId: item.channelId,
-              name: item.title,
-              avatarUrl: '',
-              subscribedAt: now,
-              lastFeedAt: const Value(0),
-            ),
-          );
+          await db
+              .into(db.subscriptions)
+              .insertOnConflictUpdate(
+                SubscriptionsCompanion.insert(
+                  channelId: item.channelId,
+                  name: item.title,
+                  avatarUrl: '',
+                  subscribedAt: now,
+                  lastFeedAt: const Value(0),
+                ),
+              );
         }
       });
 
@@ -321,9 +322,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   children: [
                     CircleAvatar(
                       radius: 32,
-                      backgroundImage: profile?.avatarPath != null &&
+                      backgroundImage:
+                          profile?.avatarPath != null &&
                               File(profile!.avatarPath!).existsSync()
-                          ? FileImage(File(profile.avatarPath!)) as ImageProvider
+                          ? FileImage(File(profile.avatarPath!))
+                                as ImageProvider
                           : null,
                       child: profile?.avatarPath == null
                           ? const Icon(LucideIcons.user, size: AppSizes.iconLg)
@@ -352,7 +355,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _editProfile(profile),
-                      icon: const Icon(LucideIcons.pencil, size: AppSizes.iconXs),
+                      icon: const Icon(
+                        LucideIcons.pencil,
+                        size: AppSizes.iconXs,
+                      ),
                       label: const Text('Edit'),
                     ),
                   ],
@@ -365,7 +371,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
             // History Section
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.xs,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -399,20 +408,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   height: 140,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
                     itemCount: items.take(15).length,
                     itemBuilder: (ctx, idx) {
                       final item = items[idx];
-                      final thumbUrl = item.media?.thumbUrl ??
+                      final thumbUrl =
+                          item.media?.thumbUrl ??
                           'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
                       final pos = item.history.positionMs;
                       final dur = item.history.durationMs;
-                      final progress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
+                      final progress = dur > 0
+                          ? (pos / dur).clamp(0.0, 1.0)
+                          : 0.0;
 
                       return Padding(
                         padding: const EdgeInsets.only(right: AppSpacing.md),
                         child: InkWell(
-                          onTap: () => context.push('/watch/${item.history.videoId}'),
+                          onTap: () =>
+                              context.push('/watch/${item.history.videoId}'),
                           child: SizedBox(
                             width: 150,
                             child: Column(
@@ -429,7 +444,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                           imageUrl: thumbUrl,
                                           fit: BoxFit.cover,
                                           errorWidget: (_, _, _) => Container(
-                                            color: theme.colorScheme.surfaceContainerHigh,
+                                            color: theme
+                                                .colorScheme
+                                                .surfaceContainerHigh,
                                           ),
                                         ),
                                       ),
@@ -440,16 +457,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                         left: 0,
                                         right: 0,
                                         child: ClipRRect(
-                                          borderRadius: const BorderRadius.vertical(
-                                            bottom: Radius.circular(AppRadius.md),
-                                          ),
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                bottom: Radius.circular(
+                                                  AppRadius.md,
+                                                ),
+                                              ),
                                           child: LinearProgressIndicator(
                                             value: progress,
-                                            minHeight: AppSizes.progressBarHeight,
-                                            backgroundColor: AppColors.thumbnailBadge,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              theme.colorScheme.primary,
-                                            ),
+                                            minHeight:
+                                                AppSizes.progressBarHeight,
+                                            backgroundColor:
+                                                AppColors.thumbnailBadge,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  theme.colorScheme.primary,
+                                                ),
                                           ),
                                         ),
                                       ),
@@ -473,14 +496,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                 );
               },
-              loading: () => const SizedBox(height: AppSizes.horizontalThumbCardHeight),
-              error: (_, _) => const SizedBox(height: AppSizes.horizontalThumbCardHeight),
+              loading: () =>
+                  const SizedBox(height: AppSizes.horizontalThumbCardHeight),
+              error: (_, _) =>
+                  const SizedBox(height: AppSizes.horizontalThumbCardHeight),
             ),
             const Divider(),
 
             // Playlists Section
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.xs,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -506,7 +534,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
               title: const Text('Watch Later'),
               subtitle: const Text('Saved videos'),
-              trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
+              trailing: const Icon(
+                LucideIcons.chevronRight,
+                size: AppSizes.iconSm,
+              ),
               onTap: () => context.push('/playlist/watch_later'),
             ),
 
@@ -518,7 +549,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
                 title: const Text('Liked videos'),
                 subtitle: Text('${liked.length} videos'),
-                trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
+                trailing: const Icon(
+                  LucideIcons.chevronRight,
+                  size: AppSizes.iconSm,
+                ),
                 onTap: () => context.push('/playlist/liked'),
               ),
               loading: () => const SizedBox(),
@@ -535,10 +569,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   children: userPlaylists.map((pl) {
                     return ListTile(
                       leading: const CircleAvatar(
-                        child: Icon(LucideIcons.listMusic, size: AppSizes.avatarXs),
+                        child: Icon(
+                          LucideIcons.listMusic,
+                          size: AppSizes.avatarXs,
+                        ),
                       ),
                       title: Text(pl.name),
-                      trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
+                      trailing: const Icon(
+                        LucideIcons.chevronRight,
+                        size: AppSizes.iconSm,
+                      ),
                       onTap: () => context.push('/playlist/${pl.id}'),
                     );
                   }).toList(),
@@ -555,19 +595,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               title: const Text('Downloads'),
               subtitle: const Text('Coming in Phase 5'),
               trailing: Container(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.xxs),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.xxs,
+                ),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHigh,
                   borderRadius: AppRadius.smBorder,
                 ),
-                child: Text(
-                  'Soon',
-                  style: theme.textTheme.labelSmall,
-                ),
+                child: Text('Soon', style: theme.textTheme.labelSmall),
               ),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Downloads will be available in Phase 5!')),
+                  const SnackBar(
+                    content: Text('Downloads will be available in Phase 5!'),
+                  ),
                 );
               },
             ),
@@ -576,7 +618,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ListTile(
               leading: const Icon(LucideIcons.settings),
               title: const Text('Settings'),
-              trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
+              trailing: const Icon(
+                LucideIcons.chevronRight,
+                size: AppSizes.iconSm,
+              ),
               onTap: () => context.push('/settings'),
             ),
             const SizedBox(height: AppSpacing.xl),

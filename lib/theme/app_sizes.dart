@@ -19,9 +19,25 @@ abstract final class AppSizes {
 
   // Controls
   static const double chipHeight = 36;
+  static const double chipHeightCompact = 32;
+  static const double buttonCompact = 36;
+  static const double buttonStandard = 40;
+  static const double buttonLarge = 48;
+  static const double buttonIcon = 40;
+  static const double buttonIconTouch = 48;
   static const double buttonHeight = 44;
+  static const double textFieldHeight = 44;
+  static const double popupMenuItemHeight = 48;
   static const double appBarHeight = 56;
+  static const double sheetHeaderHeight = 56;
+  static const double sheetHandleWidth = 32;
+  static const double sheetHandleHeight = 4;
+  static const double sheetMaxWidth = 640;
+  static const double snackbarMaxWidth = 560;
   static const double miniPlayerHeightFraction = 0.55; // fraction of screen width
+
+  // Icons
+  static const double iconInline = 18;
 
   // Seek bar
   static const double seekBarHeight = 4;

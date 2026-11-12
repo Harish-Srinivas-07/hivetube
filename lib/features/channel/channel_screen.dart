@@ -11,6 +11,7 @@ import '../../core/yt/yt_browse.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/ui/ui.dart';
 import '../../widgets/variety_video_card.dart';
 
 class ChannelScreen extends ConsumerStatefulWidget {
@@ -127,50 +128,37 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
   void _showAboutSheet(BuildContext context) {
     if (data == null) return;
     final theme = Theme.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        maxChildSize: 0.85,
-        minChildSize: 0.3,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: ListView(
-            controller: scrollController,
-            children: [
-              Text(
-                'About',
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (data!.description.isNotEmpty) ...[
-                Text(
-                  'Description',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(data!.description),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              Text(
-                'Channel Details',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              if (data!.handle.isNotEmpty) Text('Handle: ${data!.handle}'),
-              if (data!.subscribersText.isNotEmpty)
-                Text('Subscribers: ${data!.subscribersText}'),
-              if (data!.videosCountText.isNotEmpty)
-                Text('Videos: ${data!.videosCountText}'),
-              Text('Channel ID: ${data!.id}'),
-            ],
+    showAppSheet<void>(
+      context,
+      title: 'About',
+      builder: (_, scrollController) => ListView(
+        controller: scrollController,
+        physics: const ClampingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        children: [
+          if (data!.description.isNotEmpty) ...[
+            Text(
+              'Description',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(data!.description),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          Text(
+            'Channel Details',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
-        ),
+          const SizedBox(height: AppSpacing.xs),
+          if (data!.handle.isNotEmpty) Text('Handle: ${data!.handle}'),
+          if (data!.subscribersText.isNotEmpty)
+            Text('Subscribers: ${data!.subscribersText}'),
+          if (data!.videosCountText.isNotEmpty)
+            Text('Videos: ${data!.videosCountText}'),
+          Text('Channel ID: ${data!.id}'),
+        ],
       ),
     );
   }
@@ -262,18 +250,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                                         Text(
                                           [data!.subscribersText, data!.videosCountText]
                                               .where((s) => s.isNotEmpty)
-                                              .join(' • '),
+                                              .join(' · '),
                                           style: textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                                         ),
                                       const SizedBox(height: AppSpacing.sm),
-                                      FilledButton.tonal(
+                                      AppSubscribedButton(
+                                        isSubscribed: isSubscribed,
                                         onPressed: _toggleSubscribe,
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: isSubscribed ? theme.colorScheme.surfaceContainerHigh : theme.colorScheme.primary,
-                                          foregroundColor: isSubscribed ? theme.colorScheme.onSurface : theme.colorScheme.onPrimary,
-                                          shape: const StadiumBorder(),
-                                        ),
-                                        child: Text(isSubscribed ? 'Subscribed' : 'Subscribe'),
                                       ),
                                     ],
                                   ),
@@ -282,29 +265,20 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                             ),
                           ),
                           if (data!.tabs.isNotEmpty)
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                              child: Row(
-                                children: List.generate(data!.tabs.length, (i) {
-                                  final isSelected = i == selectedTabIndex;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: AppSpacing.sm),
-                                    child: ChoiceChip(
-                                      label: Text(data!.tabs[i]),
-                                      selected: isSelected,
-                                      onSelected: (selected) {
-                                        if (selected) {
-                                          setState(() => selectedTabIndex = i);
-                                          final tabName = data!.tabs[i];
-                                          final param = YtBrowse.tabParamsMap[tabName];
-                                          _switchTab(param);
-                                        }
-                                      },
-                                    ),
-                                  );
-                                }),
-                              ),
+                            AppChipBar(
+                              children: [
+                                for (var i = 0; i < data!.tabs.length; i++)
+                                  AppChip(
+                                    label: data!.tabs[i],
+                                    selected: i == selectedTabIndex,
+                                    onTap: () {
+                                      setState(() => selectedTabIndex = i);
+                                      final tabName = data!.tabs[i];
+                                      final param = YtBrowse.tabParamsMap[tabName];
+                                      _switchTab(param);
+                                    },
+                                  ),
+                              ],
                             ),
                           const Divider(),
                         ],

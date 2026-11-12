@@ -1,33 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
+import 'ui/ui.dart';
 
 /// Shared bottom-sheet chrome for player and content menus.
 Future<T?> showAppMenu<T>({
   required BuildContext context,
   required WidgetBuilder builder,
+  String? title,
+  VoidCallback? onBack,
   bool onVideo = false,
 }) {
   final theme = onVideo ? AppTheme.dark : Theme.of(context);
-  return showModalBottomSheet<T>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
+  return showAppSheet<T>(
+    context,
+    fit: true,
+    title: title,
+    onBack: onBack,
     backgroundColor: theme.colorScheme.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-    ),
-    builder: (sheetContext) => Theme(
+    builder: (sheetContext, _) => Theme(
       data: theme,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
-        ),
-        child: SafeArea(top: false, child: builder(sheetContext)),
-      ),
+      child: builder(sheetContext),
     ),
   );
 }
@@ -43,11 +37,13 @@ class AppMenuRow extends StatelessWidget {
     this.showChevron = false,
     this.selected = false,
   });
+
   final String label;
   final IconData? icon;
   final String? value, subtitle;
   final VoidCallback? onTap;
   final bool showChevron, selected;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);

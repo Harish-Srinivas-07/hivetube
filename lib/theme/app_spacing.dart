@@ -2,6 +2,7 @@ abstract final class AppSpacing {
   // ── 4-pt grid ─────────────────────────────────────────────────────────────
   static const double xxs = 2,
       xs = 4,
+      iconGap = 6,
       sm = 8,
       md = 12,
       lg = 16,

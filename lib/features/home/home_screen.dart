@@ -111,10 +111,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text('Unable to load Home'),
-                      TextButton(
+                      const SizedBox(height: AppSpacing.md),
+                      AppButton(
+                        label: 'Retry',
+                        variant: AppButtonVariant.tonal,
                         onPressed: () =>
                             ref.read(homeProvider.notifier).refresh(),
-                        child: const Text('Retry'),
                       ),
                     ],
                   ),
@@ -317,34 +319,20 @@ class _ChipRow extends StatelessWidget {
   final ValueChanged<String> onSelected;
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: AppSizes.chipHeight + AppSpacing.sm,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.xs,
+    return AppChipBar(
+      children: [
+        AppChip(
+          label: '',
+          leading: const Icon(LucideIcons.compass, size: AppSizes.iconSm),
+          onTap: () {},
         ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: AppChip(
-              label: '',
-              leading: const Icon(LucideIcons.compass, size: AppSizes.iconSm),
-              onTap: () {},
-            ),
+        for (final item in chips)
+          AppChip(
+            label: item,
+            selected: item == selected,
+            onTap: () => onSelected(item),
           ),
-          for (final item in chips)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.sm),
-              child: AppChip(
-                label: item,
-                selected: item == selected,
-                onTap: () => onSelected(item),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }

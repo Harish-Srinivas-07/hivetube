@@ -14,6 +14,7 @@ import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../core/yt/takeout_parser.dart';
 import '../../widgets/common.dart';
+import '../../widgets/ui/ui.dart';
 import '../playlist/save_to_playlist_sheet.dart';
 
 enum SubscriptionsFilter { all, today, videos, shorts }
@@ -324,43 +325,29 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
   }
 
   Widget _buildFilterChips(ThemeData theme) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          FilterChip(
-            label: const Text('All'),
-            selected: _currentFilter == SubscriptionsFilter.all,
-            onSelected: (_) =>
-                setState(() => _currentFilter = SubscriptionsFilter.all),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          FilterChip(
-            label: const Text('Today'),
-            selected: _currentFilter == SubscriptionsFilter.today,
-            onSelected: (_) =>
-                setState(() => _currentFilter = SubscriptionsFilter.today),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          FilterChip(
-            label: const Text('Videos'),
-            selected: _currentFilter == SubscriptionsFilter.videos,
-            onSelected: (_) =>
-                setState(() => _currentFilter = SubscriptionsFilter.videos),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          FilterChip(
-            label: const Text('Shorts'),
-            selected: _currentFilter == SubscriptionsFilter.shorts,
-            onSelected: (_) =>
-                setState(() => _currentFilter = SubscriptionsFilter.shorts),
-          ),
-        ],
-      ),
+    return AppChipBar(
+      children: [
+        AppChip(
+          label: 'All',
+          selected: _currentFilter == SubscriptionsFilter.all,
+          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.all),
+        ),
+        AppChip(
+          label: 'Today',
+          selected: _currentFilter == SubscriptionsFilter.today,
+          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.today),
+        ),
+        AppChip(
+          label: 'Videos',
+          selected: _currentFilter == SubscriptionsFilter.videos,
+          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.videos),
+        ),
+        AppChip(
+          label: 'Shorts',
+          selected: _currentFilter == SubscriptionsFilter.shorts,
+          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.shorts),
+        ),
+      ],
     );
   }
 

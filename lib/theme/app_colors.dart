@@ -15,6 +15,10 @@ class AppColors {
   });
 
   static const transparent = Colors.transparent;
+  static const white = Color(0xFFFFFFFF);
+  static const black = Color(0xFF000000);
+  static const maskOpaque = Color(0xFF000000);
+  static const scrim50 = Color(0x80000000);
   static const primary = Color(0xFFFF0033);
   static const onPrimary = Color(0xFFFFFFFF);
   static const success = Color(0xFF2BA640);

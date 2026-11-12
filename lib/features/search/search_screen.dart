@@ -329,25 +329,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
               // Filter Chips
               if (activeQuery.isNotEmpty && filterChips.isNotEmpty)
-                SizedBox(
-                  height: AppSizes.chipHeight + AppSpacing.sm,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                    itemCount: filterChips.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
-                    itemBuilder: (context, index) {
-                      final chip = filterChips[index];
-                      final isSelected = activeFilterParam == chip.params;
-                      return AppChip(
+                AppChipBar(
+                  children: [
+                    for (final chip in filterChips)
+                      AppChip(
                         label: chip.label,
-                        selected: isSelected,
+                        selected: activeFilterParam == chip.params,
                         onTap: () {
+                          final isSelected = activeFilterParam == chip.params;
                           search(activeQuery, filterParam: isSelected ? null : chip.params);
                         },
-                      );
-                    },
-                  ),
+                      ),
+                  ],
                 ),
 
               Expanded(

@@ -166,7 +166,61 @@ abstract final class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: colors.surface,
         elevation: 0,
+        actionsPadding: const EdgeInsets.all(AppSpacing.xl),
         shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgBorder),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: AppColors.primary,
+        selectionColor: AppColors.primary.withAlpha(80),
+        selectionHandleColor: AppColors.primary,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: colors.surfaceVariant,
+        elevation: 0,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdBorder),
+        textStyle: text.bodyMedium,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.primary
+              : colors.textSecondary,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.primary.withAlpha(80)
+              : colors.surfaceVariant,
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.primary
+              : AppColors.transparent,
+        ),
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.xsBorder),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.primary
+              : colors.textSecondary,
+        ),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: AppColors.primary,
+        linearTrackColor: colors.surfaceVariant,
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: colors.surfaceVariant,
+          borderRadius: AppRadius.smBorder,
+        ),
+        textStyle: text.labelSmall?.copyWith(color: colors.textPrimary),
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        radius: const Radius.circular(AppRadius.pill),
+        thumbColor: WidgetStateProperty.all(colors.textSecondary.withAlpha(80)),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -210,7 +264,8 @@ abstract final class AppTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colors.surfaceVariant,
         contentTextStyle: text.bodyMedium?.copyWith(color: colors.textPrimary),
-        shape: const RoundedRectangleBorder(borderRadius: AppRadius.smBorder),
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdBorder),
+        width: AppSizes.snackbarMaxWidth,
         behavior: SnackBarBehavior.floating,
         elevation: 0,
       ),
@@ -222,11 +277,11 @@ abstract final class AppTheme {
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
           TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
         },
       ),
     );

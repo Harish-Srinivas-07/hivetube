@@ -43,6 +43,18 @@ abstract final class AppTextStyles {
     fontWeight: FontWeight.w600,
     fontVariations: [FontVariation('wght', 600)],
   );
+  static const chipLabel = TextStyle(
+    fontFamily: 'Manrope',
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    fontVariations: [FontVariation('wght', 600)],
+  );
+  static const buttonLabel = TextStyle(
+    fontFamily: 'Manrope',
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    fontVariations: [FontVariation('wght', 600)],
+  );
   static const caption = TextStyle(
     fontFamily: 'Manrope',
     fontSize: 11,

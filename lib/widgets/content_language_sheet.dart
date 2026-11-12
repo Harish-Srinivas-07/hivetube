@@ -7,6 +7,7 @@ import '../features/home/home_variety.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import 'ui/ui.dart';
 
 Future<void> showContentLanguageSheet(
   BuildContext context,
@@ -73,53 +74,28 @@ Future<void> showContentLanguageSheet(
           }
 
           Future<void> chooseRegion() async {
-            final selected = await showModalBottomSheet<String>(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(AppRadius.xl),
-                ),
-              ),
-              builder: (pickerContext) => SafeArea(
-                child: SizedBox(
-                  height:
-                      MediaQuery.sizeOf(pickerContext).height *
-                      AppSpacing.contentRegionPickerHeightFactor,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
-                        child: Text(
-                          'Choose region',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView(
-                          children: [
-                            for (final entry in regions.entries)
-                              ListTile(
-                                key: ValueKey('contentRegion_${entry.key}'),
-                                title: Text(entry.value),
-                                trailing: entry.key == region
-                                    ? Icon(
-                                        LucideIcons.check,
-                                        color: Theme.of(
-                                          pickerContext,
-                                        ).colorScheme.primary,
-                                      )
-                                    : null,
-                                onTap: () =>
-                                    Navigator.pop(pickerContext, entry.key),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+            final selected = await showAppSheet<String>(
+              context,
+              title: 'Choose region',
+              builder: (pickerContext, scrollController) => ListView(
+                controller: scrollController,
+                children: [
+                  for (final entry in regions.entries)
+                    ListTile(
+                      key: ValueKey('contentRegion_${entry.key}'),
+                      title: Text(entry.value),
+                      trailing: entry.key == region
+                          ? Icon(
+                              LucideIcons.check,
+                              color: Theme.of(
+                                pickerContext,
+                              ).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () =>
+                          Navigator.pop(pickerContext, entry.key),
+                    ),
+                ],
               ),
             );
             if (selected != null) {
@@ -281,8 +257,9 @@ Future<void> showContentLanguageSheet(
                   ),
                   child: Row(
                     children: [
-                      TextButton(
+                      AppButton.text(
                         key: const ValueKey('contentPrefsReset'),
+                        label: 'Reset to default',
                         onPressed: () => setSheetState(() {
                           shown = {'ta', 'en'};
                           hidden = {'hi'};
@@ -290,13 +267,12 @@ Future<void> showContentLanguageSheet(
                           localRatio = .6;
                           showHint = false;
                         }),
-                        child: const Text('Reset to default'),
                       ),
                       const Spacer(),
-                      FilledButton(
+                      AppButton.filled(
                         key: const ValueKey('contentPrefsDone'),
+                        label: 'Done',
                         onPressed: () => Navigator.pop(sheetContext),
-                        child: const Text('Done'),
                       ),
                     ],
                   ),
@@ -386,12 +362,11 @@ class _MixChoice extends StatelessWidget {
   Widget build(BuildContext context) => Expanded(
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: ChoiceChip(
+      child: AppChip(
         key: ValueKey('contentMix_$value'),
-        label: Text(label, textAlign: TextAlign.center),
+        label: label,
         selected: selected,
-        onSelected: (_) => onTap(),
-        showCheckmark: false,
+        onTap: onTap,
       ),
     ),
   );

@@ -30,16 +30,19 @@ class ChannelVoteEntry {
     'at': updatedAt.toIso8601String(),
   };
 
-  factory ChannelVoteEntry.fromJson(Map<String, dynamic> json) => ChannelVoteEntry(
-    votes: Map<String, int>.from(json['votes'] as Map? ?? {}),
-    classifiedLanguage: json['classified'] as String?,
-    updatedAt: DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
-  );
+  factory ChannelVoteEntry.fromJson(Map<String, dynamic> json) =>
+      ChannelVoteEntry(
+        votes: Map<String, int>.from(json['votes'] as Map? ?? {}),
+        classifiedLanguage: json['classified'] as String?,
+        updatedAt:
+            DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
+      );
 }
 
 class ChannelLanguageCache extends ChangeNotifier {
   static ChannelLanguageCache? _instance;
-  static ChannelLanguageCache get instance => _instance ??= ChannelLanguageCache(AppDb());
+  static ChannelLanguageCache get instance =>
+      _instance ??= ChannelLanguageCache(AppDb());
   static set instance(ChannelLanguageCache inst) => _instance = inst;
 
   ChannelLanguageCache(this.db) {
@@ -53,7 +56,9 @@ class ChannelLanguageCache extends ChangeNotifier {
   void _initSeedChannels() {
     final registry = LanguageProfileRegistry.instance;
     for (final profile in registry.profiles.values) {
-      for (final channel in profile.seedChannels.where((e) => e.channelId.startsWith('UC') && e.verifiedAt != null)) {
+      for (final channel in profile.seedChannels.where(
+        (e) => e.channelId.startsWith('UC') && e.verifiedAt != null,
+      )) {
         _cache[channel.channelId] = ChannelVoteEntry(
           votes: {profile.code: 5},
           classifiedLanguage: profile.code,
@@ -70,7 +75,9 @@ class ChannelLanguageCache extends ChangeNotifier {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
         final now = DateTime.now();
         for (final entry in decoded.entries) {
-          final val = ChannelVoteEntry.fromJson(entry.value as Map<String, dynamic>);
+          final val = ChannelVoteEntry.fromJson(
+            entry.value as Map<String, dynamic>,
+          );
           // 30 days retention
           if (now.difference(val.updatedAt).inDays < 30) {
             _cache[entry.key] = val;
@@ -92,7 +99,9 @@ class ChannelLanguageCache extends ChangeNotifier {
     final key = channelId.isNotEmpty ? channelId : channelName?.toLowerCase();
     if (key == null) return null;
 
-    final entry = _cache[key] ?? (channelName != null ? _cache[channelName.toLowerCase()] : null);
+    final entry =
+        _cache[key] ??
+        (channelName != null ? _cache[channelName.toLowerCase()] : null);
     if (entry == null) return null;
 
     if (entry.classifiedLanguage != null) return entry.classifiedLanguage;
@@ -107,7 +116,12 @@ class ChannelLanguageCache extends ChangeNotifier {
   }
 
   /// Adds a vote for a language for this channel. 2 agreeing votes classify the channel permanently.
-  void vote(String channelId, String language, {String? channelName, int weight = 1}) {
+  void vote(
+    String channelId,
+    String language, {
+    String? channelName,
+    int weight = 1,
+  }) {
     final key = channelId.isNotEmpty ? channelId : channelName?.toLowerCase();
     if (key == null || language.isEmpty) return;
 
@@ -153,4 +167,3 @@ class ChannelLanguageCache extends ChangeNotifier {
     notifyListeners();
   }
 }
-
