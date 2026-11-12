@@ -243,6 +243,33 @@ class RelayServer {
       firstChunkData = firstRes.bytes;
     }
 
+    // First chunk before head (with 6s timeout)
+    final startChunk = start ~/ _ChunkCache.chunkSize;
+
+    Uint8List firstChunkData;
+    final cachedFirst = cache.get(startChunk);
+    if (cachedFirst != null) {
+      firstChunkData = cachedFirst;
+    } else {
+      final chunkStart = startChunk * _ChunkCache.chunkSize;
+      final chunkEnd = min(size - 1, chunkStart + _ChunkCache.chunkSize - 1);
+      final firstRes = await _fetchRange(
+        format,
+        chunkStart,
+        chunkEnd,
+        timeout: const Duration(seconds: 6),
+      );
+      if (firstRes.status != 206 && firstRes.status != 200) {
+        response.statusCode = firstRes.status >= 400 && firstRes.status < 500
+            ? firstRes.status
+            : 502;
+        await response.close();
+        return;
+      }
+      cache.put(startChunk, firstRes.bytes);
+      firstChunkData = firstRes.bytes;
+    }
+
     Socket? downstream;
     bool clientClosed = false;
 
