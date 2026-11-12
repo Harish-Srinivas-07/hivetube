@@ -2,15 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'glass_surface.dart';
 import 'hive_logo.dart';
+import 'content_language_button.dart';
 
 class HomeTopBar extends StatelessWidget {
-  const HomeTopBar({super.key, this.notificationCount = 0});
-  final int notificationCount;
+  const HomeTopBar({super.key});
   @override
   Widget build(BuildContext context) {
     final desktop =
@@ -27,40 +26,16 @@ class HomeTopBar extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(child: HiveLogo()),
+          const ContentLanguageButton(),
+          const SizedBox(width: AppSpacing.sm),
           if (!desktop) ...[
             _GlassButton(icon: LucideIcons.cast, tooltip: 'Cast', onTap: () {}),
             const SizedBox(width: AppSpacing.sm),
           ],
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _GlassButton(
-                icon: LucideIcons.bell,
-                tooltip: 'Notifications',
-                onTap: () {},
-              ),
-              if (notificationCount > 0)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    key: const ValueKey('notificationBadge'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    decoration: const BoxDecoration(
-                      color: AppColors.badge,
-                      borderRadius: AppRadius.pillBorder,
-                    ),
-                    child: Text(
-                      '$notificationCount',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: AppColors.onBadge,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+          _GlassButton(
+            icon: LucideIcons.bell,
+            tooltip: 'Notifications',
+            onTap: () {},
           ),
           const SizedBox(width: AppSpacing.sm),
           _GlassButton(

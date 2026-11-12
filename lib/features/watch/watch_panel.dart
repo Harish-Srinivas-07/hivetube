@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
@@ -17,8 +18,10 @@ import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/player/player_controls.dart';
 import '../shorts/shorts_screen.dart';
+import '../home/home_variety.dart';
 
 final watchPanelProvider = NotifierProvider<WatchPanelController, String?>(
   WatchPanelController.new,
@@ -53,8 +56,19 @@ class RelatedVideosController extends AsyncNotifier<List<VideoItem>> {
   RelatedVideosController(this.id);
   final String id;
   @override
-  Future<List<VideoItem>> build() async =>
-      (await (await ref.watch(ytApiProvider.future)).next.related(id)).items;
+  Future<List<VideoItem>> build() async {
+    final prefs = ref.watch(contentPrefsProvider);
+    final items = (await (await ref.watch(
+      ytApiProvider.future,
+    )).next.related(id)).items;
+    return rankHomeItems(
+      items,
+      preferred: prefs.contentLanguages,
+      hidden: prefs.hiddenLanguages,
+      seen: const {},
+      random: Random(id.hashCode ^ prefs.prefsVersion),
+    );
+  }
 }
 
 class WatchPanel extends ConsumerStatefulWidget {
@@ -117,7 +131,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted ||
           ref.read(watchPanelProvider) != id ||
-          !ref.read(appSettingsProvider).autoplay) {
+          !ref.read(contentPrefsProvider).autoplay) {
         timer.cancel();
         countdown = null;
         countdownId = null;
@@ -181,7 +195,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   Future<void> _exitFullscreen() async {
     ref.read(playerUiProvider.notifier).setFullscreen(false);
-    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    await SystemChrome.setPreferredOrientations(const []);
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
@@ -230,7 +244,17 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     if (id == null) return const SizedBox.shrink();
     final service = ref.watch(playbackProvider);
     final ui = ref.watch(playerUiProvider);
-    final metadata = ref.watch(shortMetadataProvider(id)).value;
+    final metadataState = ref.watch(shortMetadataProvider(id));
+    final metadata = metadataState.value;
+    final appColors = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.dark
+        : AppColors.light;
+    final title = metadata?.title?.trim().isNotEmpty == true
+        ? metadata!.title!.trim()
+        : metadataState.isLoading
+        ? 'Loading video details…'
+        : 'Video details unavailable';
+    final channelName = metadata?.channelName?.trim() ?? '';
     final related =
         ref.watch(relatedVideosProvider(id)).value ?? const <VideoItem>[];
     ref.watch(watchSessionProvider);
@@ -238,7 +262,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
         .read(watchSessionProvider.notifier)
         .firstUnplayed(related.map((v) => v.id));
     final unplayed = related.where((v) => v.id == nextId).toList();
-    final autoplay = ref.watch(appSettingsProvider.select((s) => s.autoplay));
+    final autoplay = ref.watch(contentPrefsProvider.select((s) => s.autoplay));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(watchPanelProvider) == id) {
         unawaited(_start(id, service));
@@ -301,7 +325,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                         ignoring: p > .8,
                         child: Opacity(
                           opacity: 1 - p,
-                          child: ColoredBox(
+                          child: Material(
                             color: Theme.of(context).scaffoldBackgroundColor,
                             child: Padding(
                               padding: EdgeInsets.only(top: y + videoHeight),
@@ -338,17 +362,31 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          metadata?.title ?? '',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleLarge,
+                                          title,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurface,
+                                              ),
                                         ),
-                                        Text(
-                                          metadata?.channelName ?? '',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodyMedium,
-                                        ),
+                                        if (channelName.isNotEmpty)
+                                          Text(
+                                            channelName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color:
+                                                      appColors.textSecondary,
+                                                ),
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -415,12 +453,12 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            metadata?.title ?? '',
+                                            title,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                           Text(
-                                            metadata?.channelName ?? '',
+                                            channelName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: Theme.of(
@@ -479,6 +517,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                 : null,
                             child: SharedPlayer(
                               service: service,
+                              topInsetAlreadyApplied: true,
                               videoOverride: widget.videoOverride,
                               compact: p > .95 && !dragging,
                               onMinimize: () async {

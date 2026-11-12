@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -11,8 +12,13 @@ import '../../core/settings/app_settings.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
+import '../home/home_shorts.dart';
+import '../home/home_variety.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/player/player_settings_menu.dart';
+import '../../widgets/video_options_menu.dart';
+import 'package:share_plus/share_plus.dart';
 
 class ShortsSelection {
   const ShortsSelection({this.items = const [], this.index = 0});
@@ -167,13 +173,82 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     });
     final current = generation;
     try {
-      final page = await (await ref.read(
-        ytApiProvider.future,
-      )).reel.fetch(continuation: cursor);
+      final api = await ref.read(ytApiProvider.future);
+      final prefs = ref.read(contentPrefsProvider);
+      final page = await api.reel.fetch(continuation: cursor, count: 24);
+      final regional = <ShortItem>[];
+      if (cursor == null) {
+        final history = await ref.read(historyRepoProvider).recent();
+        final queries = shortsQueries(
+          chip: 'All',
+          channels: const [],
+          random: Random(DateTime.now().microsecondsSinceEpoch ^ current),
+          localRatio: prefs.localRatio,
+          shownLanguages: prefs.contentLanguages,
+          hasHistory: history.isNotEmpty,
+        );
+        final pages = await Future.wait(
+          queries.map((query) async {
+            try {
+              return await api.search.shortsPage(query);
+            } catch (_) {
+              return const ShortPage([], null);
+            }
+          }),
+        );
+        regional.addAll(pages.expand((result) => result.items).take(36));
+      }
+      final candidates = <String, ShortItem>{};
+      for (final item in [...regional, ...page.items]) {
+        candidates.putIfAbsent(item.id, () => item);
+      }
+      final enriched = await Future.wait(
+        candidates.values.take(60).map((item) async {
+          try {
+            final metadata = await api.reel.metadata(item.id);
+            if (metadata == null) return item;
+            return ShortItem(
+              id: item.id,
+              thumbUrl: item.thumbUrl,
+              title: item.title ?? metadata.title,
+              channelName: metadata.channelName,
+              channelId: metadata.channelId,
+              channelAvatarUrl: metadata.channelAvatarUrl,
+              viewsText: item.viewsText ?? metadata.viewsText,
+            );
+          } catch (_) {
+            return item;
+          }
+        }),
+      );
+      final seen = SeenVideos.decode(
+        await ref.read(dbProvider).getValue('home_seen_videos_v1'),
+        DateTime.now(),
+      );
+      final rankedIds = rankHomeItems(
+        [
+          for (final item in enriched)
+            VideoItem(
+              id: item.id,
+              title: item.title ?? '',
+              channelId: item.channelId ?? '',
+              channelName: item.channelName ?? '',
+              channelAvatarUrl: item.channelAvatarUrl ?? '',
+              thumbUrl: item.thumbUrl,
+              isShort: true,
+            ),
+        ],
+        preferred: prefs.contentLanguages,
+        hidden: prefs.hiddenLanguages,
+        seen: seen.ids,
+        random: Random(prefs.prefsVersion ^ current),
+      ).map((item) => item.id).toList();
+      final byId = {for (final item in enriched) item.id: item};
+      final filteredItems = rankedIds.map((id) => byId[id]!).toList();
       if (!mounted || current != generation) return;
-      final seen = items.map((e) => e.id).toSet();
+      final existingIds = items.map((e) => e.id).toSet();
       setState(() {
-        items.addAll(page.items.where((e) => seen.add(e.id)));
+        items.addAll(filteredItems.where((e) => existingIds.add(e.id)));
         cursor = page.continuation;
         failed = page.failed || items.isEmpty;
       });
@@ -243,11 +318,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(appSettingsProvider, (previous, next) {
-      if (previous != null &&
-          (previous.hl != next.hl ||
-              previous.gl != next.gl ||
-              previous.localContent != next.localContent)) {
+    ref.listen(contentPrefsProvider, (previous, next) {
+      if (previous != null && previous.prefsVersion != next.prefsVersion) {
         ref.read(shortsSelectionProvider.notifier).clear();
         _refresh();
       }
@@ -397,9 +469,13 @@ class _ShortPage extends StatefulWidget {
 class _ShortPageState extends State<_ShortPage> {
   bool firstFrame = false;
   IconData? feedback;
+  PlayerSettingsSession? _settingsSession;
   @override
   void initState() {
     super.initState();
+    if (widget.service != null) {
+      _settingsSession = PlayerSettingsSession(widget.service!);
+    }
     _waitForFrame(widget.service);
   }
 
@@ -407,6 +483,10 @@ class _ShortPageState extends State<_ShortPage> {
   void didUpdateWidget(covariant _ShortPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.service != widget.service) {
+      _settingsSession?.dispose();
+      _settingsSession = widget.service == null
+          ? null
+          : PlayerSettingsSession(widget.service!);
       firstFrame = false;
       _waitForFrame(widget.service);
     }
@@ -435,6 +515,7 @@ class _ShortPageState extends State<_ShortPage> {
   @override
   void dispose() {
     feedbackTimer?.cancel();
+    _settingsSession?.dispose();
     super.dispose();
   }
 
@@ -598,12 +679,36 @@ class _ShortPageState extends State<_ShortPage> {
               _ShortAction(
                 icon: LucideIcons.share2,
                 label: 'Share',
-                onTap: () {},
+                onTap: () => unawaited(
+                  SharePlus.instance.share(
+                    ShareParams(
+                      uri: Uri.https(
+                        'www.youtube.com',
+                        '/shorts/${widget.item.id}',
+                      ),
+                    ),
+                  ),
+                ),
               ),
               _ShortAction(
                 icon: LucideIcons.ellipsis,
                 label: 'More',
-                onTap: () {},
+                onTap: () {
+                  final session = _settingsSession;
+                  if (session != null) {
+                    unawaited(
+                      showPlayerSettingsMenu(context, session: session),
+                    );
+                  } else {
+                    unawaited(
+                      showVideoOptionsMenu(
+                        context,
+                        videoId: widget.item.id,
+                        onVideo: true,
+                      ),
+                    );
+                  }
+                },
               ),
             ],
           ),

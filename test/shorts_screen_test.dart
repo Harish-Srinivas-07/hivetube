@@ -60,6 +60,19 @@ void main() {
       final page = find.byKey(const ValueKey('shortsPageView'));
       expect(tester.getSize(page), const Size(400, 800));
       expect(find.byTooltip('Mute'), findsOneWidget);
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      expect(
+        find.descendant(of: sheet, matching: find.text('Share')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('Copy link')),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(20, 100));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('shortsMute')));
       await tester.pump();
       expect(find.byTooltip('Unmute'), findsOneWidget);

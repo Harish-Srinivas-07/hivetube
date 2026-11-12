@@ -74,8 +74,8 @@ final playerUiProvider = NotifierProvider<PlayerUiController, PlayerUiState>(
 class PlayerUiController extends Notifier<PlayerUiState> {
   @override
   PlayerUiState build() {
-    final autoplay = ref.read(appSettingsProvider).autoplay;
-    ref.listen(appSettingsProvider.select((s) => s.autoplay), (_, value) {
+    final autoplay = ref.read(contentPrefsProvider).autoplay;
+    ref.listen(contentPrefsProvider.select((s) => s.autoplay), (_, value) {
       state = state.copyWith(autoplay: value);
     });
     final service = ref.watch(playbackProvider.select((value) => value));

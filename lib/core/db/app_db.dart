@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import 'history_entry.dart';
+export 'history_entry.dart';
+
 part 'app_db.g.dart';
 
 class Prefs extends Table {
@@ -23,15 +26,10 @@ class AppDb extends _$AppDb {
   )..where((p) => p.key.equals(key))).getSingleOrNull())?.value;
   Future<int> deleteValue(String key) =>
       (delete(prefs)..where((p) => p.key.equals(key))).go();
+  Future<int> clearAppData() => delete(prefs).go();
   Future<void> setValue(String key, String value) => into(
     prefs,
   ).insertOnConflictUpdate(PrefsCompanion.insert(key: key, value: value));
-}
-
-class HistoryEntry {
-  const HistoryEntry(this.videoId, this.position, this.duration);
-  final String videoId;
-  final Duration position, duration;
 }
 
 abstract interface class HistoryRepo {
@@ -42,6 +40,7 @@ abstract interface class HistoryRepo {
 
 abstract interface class SubscriptionRepo {
   Future<List<String>> channelIds();
+  Future<void> setSubscribed(String channelId, bool subscribed);
 }
 
 class EmptyHistoryRepo implements HistoryRepo {
@@ -75,6 +74,8 @@ class StoredHistoryRepo implements HistoryRepo {
               entry['id'] as String,
               Duration(milliseconds: entry['position'] as int),
               Duration(milliseconds: entry['duration'] as int),
+              isShort: entry['isShort'] as bool? ?? false,
+              channelName: entry['channelName'] as String? ?? '',
             ),
           )
           .toList();
@@ -90,14 +91,38 @@ class StoredHistoryRepo implements HistoryRepo {
   }
 
   @override
-  Future<Set<String>> dislikedChannels() async => {};
+  Future<Set<String>> dislikedChannels() async {
+    try {
+      final value = jsonDecode(
+        await db.getValue('disliked_channels_v1') ?? '[]',
+      );
+      return value is List ? value.whereType<String>().toSet() : {};
+    } catch (_) {
+      return {};
+    }
+  }
 
   @override
   Future<void> save(HistoryEntry entry) {
     final write = _writes.then((_) async {
       final entries = await _load();
+      final previous = entries
+          .where((e) => e.videoId == entry.videoId)
+          .firstOrNull;
       entries.removeWhere((e) => e.videoId == entry.videoId);
-      entries.insert(0, entry);
+      entries.insert(
+        0,
+        HistoryEntry(
+          entry.videoId,
+          entry.position,
+          entry.duration,
+          isShort: entry.isShort || (previous?.isShort ?? false),
+          channelName: entry.channelName.isNotEmpty
+              ? entry.channelName
+              : previous?.channelName ?? '',
+        ),
+      );
+
       await db.setValue(
         _key,
         jsonEncode(
@@ -108,6 +133,8 @@ class StoredHistoryRepo implements HistoryRepo {
                   'id': e.videoId,
                   'position': e.position.inMilliseconds,
                   'duration': e.duration.inMilliseconds,
+                  'isShort': e.isShort,
+                  'channelName': e.channelName,
                 },
               )
               .toList(),
@@ -119,7 +146,47 @@ class StoredHistoryRepo implements HistoryRepo {
   }
 }
 
+class StoredSubscriptionRepo implements SubscriptionRepo {
+  StoredSubscriptionRepo(this.db);
+  final AppDb db;
+  @override
+  Future<void> setSubscribed(String channelId, bool subscribed) =>
+      updateSubscription(channelId, subscribed);
+  @override
+  Future<List<String>> channelIds() async {
+    try {
+      final value = jsonDecode(await db.getValue('subscriptions_v1') ?? '[]');
+      if (value is! List) return [];
+      return value
+          .map(
+            (e) => e is String
+                ? e
+                : e is Map
+                ? e['channelId']
+                : null,
+          )
+          .whereType<String>()
+          .where((id) => id.startsWith('UC'))
+          .toSet()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
+extension SubscriptionChanges on StoredSubscriptionRepo {
+  Future<void> updateSubscription(String channelId, bool subscribed) async {
+    final ids = await channelIds();
+    ids.remove(channelId);
+    if (subscribed) ids.add(channelId);
+    await db.setValue('subscriptions_v1', jsonEncode(ids));
+  }
+}
+
 class EmptySubscriptionRepo implements SubscriptionRepo {
+  @override
+  Future<void> setSubscribed(String channelId, bool subscribed) async {}
   @override
   Future<List<String>> channelIds() async => [];
 }

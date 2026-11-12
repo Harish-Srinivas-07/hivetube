@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../core/yt/watch_info.dart';
 
 class PlayerSeekBar extends StatefulWidget {
   const PlayerSeekBar({
@@ -14,8 +15,10 @@ class PlayerSeekBar extends StatefulWidget {
     required this.onScrubEnd,
     this.overlayVisible = true,
     this.onScrubCancel,
+    this.chapters = const [],
   });
 
+  final List<WatchChapter> chapters;
   final Duration position, buffered, duration;
   final ValueChanged<Duration> onScrubStart, onScrubUpdate, onScrubEnd;
   final bool overlayVisible;
@@ -100,6 +103,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
                       fraction(widget.buffered),
                       animation,
                       widget.overlayVisible,
+                      widget.chapters.map((c) => fraction(c.start)).toList(),
                     ),
                   ),
                 ),
@@ -139,7 +143,14 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
 }
 
 class _SeekPainter extends CustomPainter {
-  _SeekPainter(this.position, this.buffered, this.active, this.overlayVisible);
+  _SeekPainter(
+    this.position,
+    this.buffered,
+    this.active,
+    this.overlayVisible,
+    this.chapters,
+  );
+  final List<double> chapters;
   final double position, buffered;
   final double active;
   final bool overlayVisible;
@@ -161,8 +172,17 @@ class _SeekPainter extends CustomPainter {
     if (overlayVisible || active > 0) {
       line(1, AppColors.shortsForeground.withValues(alpha: 0.3));
       line(buffered, AppColors.shortsForeground.withValues(alpha: 0.5));
+      line(position, AppColors.primary);
     }
-    line(position, const Color(0xFFFF0000));
+    for (final chapter in chapters.where((v) => v > 0 && v < 1)) {
+      canvas.drawLine(
+        Offset(size.width * chapter, y - stroke),
+        Offset(size.width * chapter, y + stroke),
+        Paint()
+          ..color = AppColors.shortsBackground
+          ..strokeWidth = 2,
+      );
+    }
     if (active > 0) {
       canvas.drawCircle(
         Offset(size.width * position, y),
@@ -177,5 +197,6 @@ class _SeekPainter extends CustomPainter {
       oldDelegate.position != position ||
       oldDelegate.buffered != buffered ||
       oldDelegate.active != active ||
-      oldDelegate.overlayVisible != overlayVisible;
+      oldDelegate.overlayVisible != overlayVisible ||
+      oldDelegate.chapters.toString() != chapters.toString();
 }

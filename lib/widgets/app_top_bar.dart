@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import 'content_language_button.dart';
 
 class AppTopBar extends StatelessWidget {
   const AppTopBar({super.key});
@@ -59,6 +60,8 @@ class AppTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
+          const ContentLanguageButton(),
+          const SizedBox(width: AppSpacing.sm),
           CircleAvatar(
             radius: AppRadius.lg,
             backgroundColor: colors.surfaceContainerHighest,

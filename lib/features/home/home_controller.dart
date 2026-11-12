@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/db/history_entry.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
+import '../../core/yt/channel_avatars.dart';
 import 'home_cache.dart';
 import 'home_mixer.dart';
 import 'home_guards.dart';
+import 'home_shorts.dart';
+import 'home_variety.dart';
 
 final initialHomeCacheProvider = Provider<HomeCache?>((ref) => null);
 
@@ -56,28 +61,109 @@ class HomeController extends AsyncNotifier<HomeData> {
   Timer? _debounce;
   int _generation = 0;
   final Map<String, ({DateTime fetched, List<VideoItem> items})> _rssCache = {};
+  final _avatarBackfill = AvatarBackfillCoordinator();
+  HomeMixer? _mixer;
+  List<VideoItem> _pendingFresh = [];
+  String? _sessionKey;
+  int _seed = DateTime.now().microsecondsSinceEpoch;
+
+  Future<void> ensureAvatar(VideoItem item) async {
+    if (item.channelAvatarUrl.isNotEmpty) return;
+    final cache = ref.read(channelAvatarCacheProvider);
+    if (item.channelId.isNotEmpty) {
+      final cached = cache.get(item.channelId);
+      if (cached != null) {
+        _applyAvatar(item, item.channelId, cached);
+        return;
+      }
+    }
+    final key = item.channelId.isNotEmpty ? item.channelId : 'video:${item.id}';
+    var resolvedChannelId = item.channelId;
+    final avatar = await _avatarBackfill.resolve(key, () async {
+      final api = await ref.read(ytApiProvider.future);
+      if (resolvedChannelId.isNotEmpty) {
+        return api.browse.channelAvatar(resolvedChannelId);
+      } else {
+        final owner = await api.next.ownerMetadata(item.id);
+        if (owner != null) {
+          resolvedChannelId = owner.channelId ?? '';
+          return owner.channelAvatarUrl ?? '';
+        }
+        return '';
+      }
+    });
+    if (avatar == null) return;
+    if (resolvedChannelId.isNotEmpty) {
+      await cache.put(resolvedChannelId, avatar);
+    }
+    _applyAvatar(item, resolvedChannelId, avatar);
+  }
+
+  void _applyAvatar(VideoItem item, String channelId, String avatar) {
+    final current = state.value;
+    if (current == null) return;
+    VideoItem updated(VideoItem video) {
+      if (video.id != item.id &&
+          (channelId.isEmpty || video.channelId != channelId)) {
+        return video;
+      }
+      return VideoItem(
+        id: video.id,
+        title: video.title,
+        channelId: channelId.isEmpty ? video.channelId : channelId,
+        channelName: video.channelName,
+        channelAvatarUrl: avatar,
+        thumbUrl: video.thumbUrl,
+        durationText: video.durationText,
+        viewsText: video.viewsText,
+        publishedText: video.publishedText,
+        publishedAt: video.publishedAt,
+        isShort: video.isShort,
+      );
+    }
+
+    state = AsyncData(
+      current.copy(
+        videos: current.videos.map(updated).toList(),
+        trending: current.trending.map(updated).toList(),
+      ),
+    );
+  }
+
   @override
   FutureOr<HomeData> build() {
     if (_token.isCancelled) _token = CancelToken();
-    final buildToken = _token;
     ref.onDispose(() {
       _debounce?.cancel();
-      buildToken.cancel();
+      _token.cancel();
     });
     final settings = ref.watch(
-      appSettingsProvider.select(
+      contentPrefsProvider.select(
         (s) => (
           cacheKey: s.cacheKey,
           localContent: s.localContent,
           revision: s.revision,
+          contentLanguages: s.contentLanguages,
+          hiddenLanguages: s.hiddenLanguages,
+          localRatio: s.localRatio,
         ),
       ),
     );
+    final sessionKey =
+        '${settings.cacheKey}_${settings.localContent}_${settings.revision}';
+    if (_sessionKey != sessionKey) {
+      _token.cancel();
+      _token = CancelToken();
+      _generation++;
+      _sessionKey = sessionKey;
+      _pendingFresh = [];
+      _rssCache.clear();
+      _mixer = null;
+      _seed = DateTime.now().microsecondsSinceEpoch;
+    }
     final initial = ref.read(initialAppSettingsProvider);
     final cache =
-        settings.cacheKey == initial.cacheKey &&
-            settings.localContent == initial.localContent &&
-            settings.revision == 0
+        homeCacheKey(ref.read(contentPrefsProvider)) == homeCacheKey(initial)
         ? ref.read(initialHomeCacheProvider)
         : null;
     if (cache != null) {
@@ -85,6 +171,26 @@ class HomeController extends AsyncNotifier<HomeData> {
       return HomeData(videos: cache.videos, shorts: cache.shorts);
     }
     return _fetch('All', _token);
+  }
+
+  Future<void> rememberChannel(
+    String id,
+    String name, {
+    bool isShort = false,
+  }) async {
+    final repo = ref.read(historyRepoProvider);
+    final existing = (await repo.recent())
+        .where((h) => h.videoId == id)
+        .firstOrNull;
+    await repo.save(
+      HistoryEntry(
+        id,
+        existing?.position ?? Duration.zero,
+        existing?.duration ?? Duration.zero,
+        isShort: isShort,
+        channelName: name,
+      ),
+    );
   }
 
   void interact() {
@@ -95,8 +201,29 @@ class HomeController extends AsyncNotifier<HomeData> {
     final generation = _generation;
     try {
       final fresh = await _fetch('All', _token);
-      if (_refreshGuard.canApply && generation == _generation) {
+      if (generation != _generation) return;
+      if (_refreshGuard.canApply) {
         state = AsyncData(fresh);
+      } else {
+        final current = state.value;
+        if (current != null && current.chip == 'All') {
+          final existing = current.videos.map((e) => e.id).toSet();
+          _pendingFresh = [];
+          _mixer?.exclude(existing);
+          state = AsyncData(
+            current.copy(
+              videos: [
+                ...current.videos,
+                ...fresh.videos.where((v) => !existing.contains(v.id)),
+              ],
+              shorts: fresh.shorts,
+              trending: fresh.trending,
+              continuations: fresh.continuations.isNotEmpty
+                  ? const {'mixer': 'more'}
+                  : const {},
+            ),
+          );
+        }
       }
     } catch (_) {
       /* Preserve cached content. */
@@ -132,7 +259,32 @@ class HomeController extends AsyncNotifier<HomeData> {
             }
           }
         }
-        if (cached != null) items.addAll(cached.items);
+        if (cached != null) {
+          final avatarCache = ref.read(channelAvatarCacheProvider);
+          for (final item in cached.items) {
+            final avatar = item.channelAvatarUrl.isNotEmpty
+                ? item.channelAvatarUrl
+                : avatarCache.get(item.channelId) ?? '';
+            if (avatar.isNotEmpty && item.channelAvatarUrl.isEmpty) {
+              items.add(
+                VideoItem(
+                  id: item.id,
+                  title: item.title,
+                  channelId: item.channelId,
+                  channelName: item.channelName,
+                  channelAvatarUrl: avatar,
+                  thumbUrl: item.thumbUrl,
+                  durationText: item.durationText,
+                  viewsText: item.viewsText,
+                  publishedText: item.publishedText,
+                  publishedAt: item.publishedAt,
+                ),
+              );
+            } else {
+              items.add(item);
+            }
+          }
+        }
       }
     }
 
@@ -158,250 +310,380 @@ class HomeController extends AsyncNotifier<HomeData> {
 
   Future<HomeData> _fetch(String chip, CancelToken token) async {
     final api = await ref.read(ytApiProvider.future);
-    if (token.isCancelled) {
-      throw DioException(
-        requestOptions: RequestOptions(),
-        type: DioExceptionType.cancel,
-      );
-    }
-    final errors = <String>[];
-    Future<T?> isolate<T>(String name, Future<T> Function() f) async {
-      try {
-        return await f();
-      } catch (_) {
-        if (token.isCancelled) rethrow;
-        errors.add(name);
-        return null;
-      }
-    }
-
-    final settings = ref.read(appSettingsProvider);
-    if (api.search.http.hl != settings.hl ||
+    final settings = ref.read(contentPrefsProvider);
+    if (token.isCancelled ||
+        api.search.http.hl != settings.hl ||
         api.search.http.gl != settings.gl) {
       throw StateError('Regional session changed');
     }
-    final history = await ref.read(historyRepoProvider).recent();
-    final disliked = await ref.read(historyRepoProvider).dislikedChannels();
-    final channels = await ref.read(subscriptionRepoProvider).channelIds();
-    final watchedIds = history.map((e) => e.videoId).toSet();
-    final uploadsFuture = _subscriptions(
+    final historyFuture = ref.read(historyRepoProvider).recent();
+    final dislikedFuture = ref.read(historyRepoProvider).dislikedChannels();
+    final channelsFuture = ref.read(subscriptionRepoProvider).channelIds();
+    final history = await historyFuture;
+    final disliked = await dislikedFuture;
+    final channels = await channelsFuture;
+    final errors = <String>[];
+    final watched = history.map((h) => h.videoId).toSet();
+    final db = ref.read(dbProvider);
+    final now = DateTime.now();
+    final seen = SeenVideos.decode(
+      await db.getValue('home_seen_videos_v1'),
+      now,
+    );
+    final preferred = settings.contentLanguages;
+    final hidden = settings.hiddenLanguages;
+    final random = Random(_seed);
+    List<VideoItem> rank(List<VideoItem> items) => rankHomeItems(
+      items,
+      preferred: preferred,
+      hidden: hidden,
+      seen: seen.ids,
+      random: random,
+    );
+    final uploadFuture = _subscriptions(
       api,
       channels,
       token,
       errors,
-    ).then((items) => items.where((v) => !watchedIds.contains(v.id)).toList());
-    if (chip == 'Recently uploaded') {
-      return HomeData(chip: chip, videos: await uploadsFuture, errors: errors);
+    ).then((items) => items.where((v) => !watched.contains(v.id)).toList());
+    final personal = history.isNotEmpty || channels.isNotEmpty;
+    final sources = <HomeSource>[];
+    void searchSource(String query, {required int weight, bool live = false}) {
+      String? activeParams;
+      sources.add(
+        HomeSource(
+          weight: weight,
+          transform: rank,
+          fetch: (cursor) async {
+            if (cursor != null) {
+              return api.search.videos(
+                query,
+                params: activeParams ?? (live ? 'EgJAAQ%3D%3D' : null),
+                continuation: cursor,
+                cancelToken: token,
+              );
+            }
+            var page = await api.search.videos(
+              query,
+              params: live ? 'EgJAAQ%3D%3D' : null,
+              cancelToken: token,
+            );
+            if (page.searchDateFilters.isNotEmpty) {
+              activeParams =
+                  page.searchDateFilters[random.nextInt(
+                    page.searchDateFilters.length,
+                  )];
+              page = await api.search.videos(
+                query,
+                params: activeParams,
+                cancelToken: token,
+              );
+            }
+            if (page.continuation != null && random.nextBool()) {
+              page = await api.search.videos(
+                query,
+                params: activeParams,
+                continuation: page.continuation,
+                cancelToken: token,
+              );
+            }
+            return page;
+          },
+        ),
+      );
     }
-    const topics = <String, String>{
-      'Music': 'music',
-      'Gaming': 'gaming',
-      'Live': 'live',
-      'News': 'news today',
-      'Podcasts': 'podcast',
-      'Sports': 'sports highlights',
-      'Comedy': 'comedy',
-      'Cooking': 'cooking recipes',
-      'Science': 'science',
-    };
-    final selectedTopics = chip == 'All'
-        ? topics.entries.toList()
-        : topics.entries.where((e) => e.key == chip).toList();
-    final queries = <({String query, bool live, bool regional})>[];
-    for (final topic in selectedTopics) {
-      final variants = regionalQueries(topic.value, settings);
-      for (var i = 0; i < variants.length; i++) {
-        queries.add((
-          query: variants[i],
-          live: topic.key == 'Live',
-          regional: variants.length > 1 && i == 0,
-        ));
+
+    if (chip == 'All') {
+      for (final entry in history.where((h) => !h.isShort).take(6)) {
+        sources.add(
+          HomeSource(
+            weight: 2,
+            transform: rank,
+            fetch: (cursor) => api.next.related(
+              entry.videoId,
+              continuation: cursor,
+              cancelToken: token,
+            ),
+          ),
+        );
       }
-    }
-    final feedFuture = chip == 'All'
-        ? isolate('Home', () => api.browse.home(cancelToken: token))
-        : Future<VideoPage?>.value(null);
-    final chartsFuture = chip == 'All'
-        ? isolate(
-            'Trending',
-            () => api.charts.trending(settings.gl, cancelToken: token),
-          )
-        : Future<List<VideoItem>?>.value(null);
-    final kioskFuture = chip == 'All'
-        ? Future.wait([
-            isolate('Live', () => api.browse.live(cancelToken: token)),
-            isolate('Gaming', () => api.browse.gaming(cancelToken: token)),
-            isolate('Podcasts', () => api.browse.podcasts(cancelToken: token)),
-          ])
-        : Future<List<VideoPage?>>.value([]);
-    final pagesFuture = Future.wait(
-      queries.map(
-        (q) => isolate(
-          q.query,
-          () => api.search.videos(
-            q.query,
-            params: q.live ? 'EgJAAQ%3D%3D' : null,
-            cancelToken: token,
+      if (channels.isNotEmpty) {
+        sources.add(
+          HomeSource(
+            weight: 2,
+            transform: rank,
+            fetch: (_) async => VideoPage(await uploadFuture, null),
+          ),
+        );
+      }
+      for (final query in chooseHomeQueries(
+        chip: 'All',
+        hasHistory: history.isNotEmpty,
+        localRatio: settings.localRatio,
+        shownLanguages: settings.contentLanguages,
+        random: random,
+      )) {
+        searchSource(
+          query,
+          weight: isLocalLanguageQuery(query, settings.contentLanguages)
+              ? 3
+              : 1,
+        );
+      }
+      sources.add(
+        HomeSource(
+          weight: 1,
+          transform: rank,
+          fetch: (cursor) =>
+              api.browse.home(continuation: cursor, cancelToken: token),
+        ),
+      );
+      if (!personal) {
+        sources.add(
+          HomeSource(
+            weight: 1,
+            transform: rank,
+            fetch: (c) => api.browse.live(continuation: c, cancelToken: token),
+          ),
+        );
+        sources.add(
+          HomeSource(
+            weight: 1,
+            transform: rank,
+            fetch: (c) =>
+                api.browse.gaming(continuation: c, cancelToken: token),
+          ),
+        );
+        sources.add(
+          HomeSource(
+            weight: 1,
+            transform: rank,
+            fetch: (c) =>
+                api.browse.podcasts(continuation: c, cancelToken: token),
+          ),
+        );
+      }
+    } else if (chip == 'Recently uploaded') {
+      sources.add(
+        HomeSource(
+          weight: 2,
+          transform: rank,
+          fetch: (_) async => VideoPage(await uploadFuture, null),
+        ),
+      );
+    } else if (chip == 'Trending') {
+      sources.add(
+        HomeSource(
+          weight: 1,
+          transform: rank,
+          fetch: (_) async => VideoPage(
+            await api.charts.trending(settings.gl, cancelToken: token),
+            null,
           ),
         ),
-      ),
-    );
-    final shortsFuture = Future.wait(
-      queries.map(
-        (q) => isolate(
-          'Shorts',
-          () => api.search.shorts(q.query, cancelToken: token),
+      );
+    } else if (chip == 'Live kiosk' ||
+        chip == 'Gaming kiosk' ||
+        chip == 'Podcasts kiosk') {
+      sources.add(
+        HomeSource(
+          weight: 1,
+          transform: rank,
+          fetch: (c) => switch (chip) {
+            'Live kiosk' => api.browse.live(
+              continuation: c,
+              cancelToken: token,
+            ),
+            'Gaming kiosk' => api.browse.gaming(
+              continuation: c,
+              cancelToken: token,
+            ),
+            _ => api.browse.podcasts(continuation: c, cancelToken: token),
+          },
         ),
-      ),
-    );
-    final relatedFuture = chip == 'All'
+      );
+    } else if (homeTopics.containsKey(chip)) {
+      for (final query in chooseHomeQueries(
+        chip: chip,
+        hasHistory: personal,
+        localRatio: settings.localRatio,
+        shownLanguages: settings.contentLanguages,
+        random: random,
+      )) {
+        searchSource(
+          query,
+          weight: isLocalLanguageQuery(query, settings.contentLanguages)
+              ? 3
+              : 1,
+          live: chip == 'Live',
+        );
+      }
+    }
+    final mixer = HomeMixer(sources, history: history, disliked: disliked);
+    final startFuture = mixer.start();
+    final chartsFuture = chip == 'All'
+        ? api.charts.trending(settings.gl, cancelToken: token).catchError((
+            Object _,
+          ) {
+            errors.add('Trending');
+            return <VideoItem>[];
+          })
+        : Future.value(<VideoItem>[]);
+    // Recent owner lookups supplement channel names found in the subscription feed.
+    final ownerFuture = chip == 'All'
         ? Future.wait(
-            history
-                .take(6)
-                .map(
-                  (h) => isolate(
-                    'Related',
-                    () => api.next.related(h.videoId, cancelToken: token),
-                  ),
-                ),
+            history.take(2).map((h) async {
+              try {
+                return (await api.next.ownerMetadata(
+                      h.videoId,
+                      cancelToken: token,
+                    ))?.channelName ??
+                    '';
+              } catch (_) {
+                return '';
+              }
+            }),
           )
-        : Future<List<VideoPage?>>.value([]);
-    final feed = await feedFuture;
-    final trending = await chartsFuture ?? <VideoItem>[];
-    final pages = await pagesFuture;
-    final shortPages = await shortsFuture;
-    final relatedPages = await relatedFuture;
-    final kioskPages = await kioskFuture;
-    final uploads = await uploadsFuture;
-    final personal = channels.isNotEmpty || history.isNotEmpty;
-    final sources = <List<VideoItem>>[
-      for (final page in relatedPages) page?.items ?? [],
-      if (chip == 'All') uploads,
-      for (final page in kioskPages) page?.items ?? [],
-      for (final page in pages) page?.items ?? [],
-    ];
-    final weights = <int>[
-      for (final _ in relatedPages) 2,
-      if (chip == 'All') 2,
-      for (final _ in kioskPages) 1,
-      for (final _ in queries) personal ? 1 : 2,
-    ];
-    // Plain English remains a weight-one secondary source when a regional query exists.
-    for (var i = 0; i < queries.length; i++) {
-      if (!queries[i].regional && i > 0 && queries[i - 1].regional) {
-        weights[relatedPages.length +
-                (chip == 'All' ? 1 : 0) +
-                kioskPages.length +
-                i] =
-            1;
-      }
-    }
-    final mixed = mixHome(
-      sources,
-      weights,
-      history: history,
-      disliked: disliked,
+        : Future.value(<String>[]);
+    final uploads = await uploadFuture;
+    final owners = await ownerFuture;
+    final queries = shortsQueries(
+      chip: chip,
+      channels: [
+        ...history.take(30).map((h) => h.channelName),
+        ...owners,
+        ...uploads.map((v) => v.channelName),
+      ],
+      localRatio: settings.localRatio,
+      shownLanguages: settings.contentLanguages,
+      hasHistory: history.isNotEmpty,
+      // Subscriptions personalize the mixer, but query breadth narrows only
+      // after actual watch history exists.
+      random: random,
     );
-    final videos = mixHome(
-      [feed?.items ?? [], mixed],
-      [feed?.items.length ?? 0, mixed.length],
-      history: history,
-      disliked: disliked,
+    var successes = 0;
+    Future<List<ShortItem>> loadShorts(String query) async {
+      final items = <ShortItem>[];
+      String? cursor;
+      for (var page = 0; page <= 3; page++) {
+        final result = await api.search.shortsPage(
+          query,
+          continuation: cursor,
+          cancelToken: token,
+        );
+        items.addAll(result.items);
+        cursor = result.continuation;
+        if (cursor == null || items.length >= 20) break;
+      }
+      return items;
+    }
+
+    final shortFuture = Future.wait(
+      queries.map((query) async {
+        try {
+          final result = await loadShorts(query);
+          successes++;
+          return result;
+        } catch (_) {
+          return <ShortItem>[];
+        }
+      }),
     );
-    final shortSeen = <String>{};
-    final shorts = <ShortItem>[
-      for (final page in shortPages)
-        for (final item in page ?? <ShortItem>[])
-          if (!watchedIds.contains(item.id) && shortSeen.add(item.id)) item,
-    ];
-    final cursors = <String, String>{};
-    for (var i = 0; i < queries.length; i++) {
-      if (pages[i]?.continuation != null) {
-        cursors['${queries[i].live ? 'liveSearch' : 'search'}:${queries[i].query}'] =
-            pages[i]!.continuation!;
+    await startFuture;
+    final videos = await mixer.next(24);
+    final shortPages = await shortFuture;
+    if (successes == 0 && queries.isNotEmpty) errors.add('Shorts');
+    final dedupedShorts = <String, ShortItem>{};
+    for (final item in shortPages.expand((page) => page)) {
+      dedupedShorts.putIfAbsent(item.id, () => item);
+    }
+    final candidates = dedupedShorts.values.take(48).toList();
+    final candidateMetadata = List<ShortItem>.filled(
+      candidates.length,
+      const ShortItem(id: '', thumbUrl: ''),
+      growable: false,
+    );
+    var metaCursor = 0;
+    Future<void> metadataWorker() async {
+      while (metaCursor < candidates.length) {
+        final index = metaCursor++;
+        final item = candidates[index];
+        try {
+          final meta = await api.next.ownerMetadata(
+            item.id,
+            cancelToken: token,
+          );
+          candidateMetadata[index] = ShortItem(
+            id: item.id,
+            thumbUrl: item.thumbUrl,
+            title: item.title ?? meta?.title,
+            channelId: meta?.channelId,
+            channelName: meta?.channelName,
+            channelAvatarUrl: meta?.channelAvatarUrl,
+          );
+        } catch (_) {
+          candidateMetadata[index] = item;
+        }
       }
     }
-    for (var i = 0; i < relatedPages.length; i++) {
-      if (relatedPages[i]?.continuation != null) {
-        cursors['related:${history[i].videoId}'] =
-            relatedPages[i]!.continuation!;
-      }
-    }
-    for (var i = 0; i < kioskPages.length; i++) {
-      if (kioskPages[i]?.continuation != null) {
-        cursors[['Live', 'Gaming', 'Podcasts'][i]] =
-            kioskPages[i]!.continuation!;
-      }
-    }
+
+    await Future.wait(List.generate(3, (_) => metadataWorker()));
+    final freshShorts = buildShortsShelf(
+      [candidateMetadata],
+      watched,
+      random: random,
+      preferred: preferred,
+      hidden: hidden,
+      seen: seen.ids,
+    );
+    final trending = rank(await chartsFuture);
     if (token.isCancelled) throw StateError('Home request cancelled');
-    if (feed?.continuation != null) cursors['home'] = feed!.continuation!;
+    for (final source in sources) {
+      if (source.error != null) errors.add('Feed');
+    }
     if (videos.isEmpty &&
-        shorts.isEmpty &&
+        freshShorts.isEmpty &&
         trending.isEmpty &&
         errors.isNotEmpty) {
       throw StateError('Could not load Home');
     }
+    if (identical(token, _token)) _mixer = mixer;
+    seen.mark([
+      ...videos.map((v) => v.id),
+      ...freshShorts.map((v) => v.id),
+      ...trending.map((v) => v.id),
+    ], now);
+    await db.setValue('home_seen_videos_v1', seen.encode());
     if (chip == 'All') {
       await ref
           .read(dbProvider)
           .setValue(
             homeCacheKey(settings),
-            HomeCache(videos, shorts, DateTime.now()).encode(),
+            HomeCache(videos, freshShorts, DateTime.now()).encode(),
           );
     }
     return HomeData(
       videos: videos,
-      shorts: shorts,
+      shorts: freshShorts,
       chip: chip,
       trending: trending,
-      continuations: cursors,
+      continuations: mixer.hasMore ? const {'mixer': 'more'} : const {},
       errors: errors.toSet().toList(),
     );
   }
 
-  Future<VideoPage> _page(
-    YtApi api,
-    String source,
-    CancelToken token, [
-    String? cursor,
-  ]) => switch (source) {
-    'home' => api.browse.home(continuation: cursor, cancelToken: token),
-    _ when source.startsWith('liveSearch:') => api.search.videos(
-      source.substring(11),
-      params: 'EgJAAQ%3D%3D',
-      continuation: cursor,
-      cancelToken: token,
-    ),
-    _ when source.startsWith('search:') => api.search.videos(
-      source.substring(7),
-      continuation: cursor,
-      cancelToken: token,
-    ),
-    'Live' => api.browse.live(continuation: cursor, cancelToken: token),
-    'Gaming' => api.browse.gaming(continuation: cursor, cancelToken: token),
-    'Podcasts' => api.browse.podcasts(continuation: cursor, cancelToken: token),
-    _ when source.startsWith('topic:') => api.search.videos(
-      source.substring(6),
-      continuation: cursor,
-      cancelToken: token,
-    ),
-    _ when source.startsWith('related:') => api.next.related(
-      source.substring(8),
-      continuation: cursor,
-      cancelToken: token,
-    ),
-    _ => api.search.videos(source, continuation: cursor, cancelToken: token),
-  };
   void _cancel() {
     _token.cancel();
     _token = CancelToken();
     _generation++;
     _debounce?.cancel();
+    _pendingFresh = [];
   }
 
   Future<void> refresh() async {
     final chip = state.value?.chip ?? 'All';
     _cancel();
+    _seed = DateTime.now().microsecondsSinceEpoch;
     final generation = _generation;
     final token = _token;
     final result = await AsyncValue.guard(() => _fetch(chip, token));
@@ -411,6 +693,7 @@ class HomeController extends AsyncNotifier<HomeData> {
   void select(String chip) {
     interact();
     _cancel();
+    _seed = DateTime.now().microsecondsSinceEpoch;
     final generation = _generation;
     final token = _token;
     state = const AsyncLoading();
@@ -432,34 +715,30 @@ class HomeController extends AsyncNotifier<HomeData> {
     final generation = _generation;
     final token = _token;
     try {
-      final api = await ref.read(ytApiProvider.future);
-      final results = await Future.wait(
-        current.continuations.entries.map(
-          (e) async => (e.key, await _page(api, e.key, token, e.value)),
-        ),
-      );
-      if (generation != _generation) return;
-      final history = await ref.read(historyRepoProvider).recent();
-      final disliked = await ref.read(historyRepoProvider).dislikedChannels();
-      final fresh = mixHome(
-        results.map((e) => e.$2.items).toList(),
-        results.map((_) => 1).toList(),
-        history: history,
-        disliked: disliked,
-      );
-      final seen = current.videos.map((v) => v.id).toSet();
+      final mixer = _mixer;
+      if (mixer == null) return;
+      mixer.exclude(current.videos.map((v) => v.id));
+      final pending = _pendingFresh;
+      _pendingFresh = [];
+      final fresh = [
+        ...pending,
+        ...await mixer.next((24 - pending.length).clamp(0, 24)),
+      ];
+      if (generation != _generation || token.isCancelled) return;
       state = AsyncData(
         current.copy(
-          videos: [...current.videos, ...fresh.where((v) => seen.add(v.id))],
-          continuations: {
-            for (final result in results)
-              if (result.$2.continuation != null &&
-                  result.$2.continuation != current.continuations[result.$1])
-                result.$1: result.$2.continuation!,
-          },
+          videos: [...current.videos, ...fresh],
+          continuations: mixer.hasMore ? const {'mixer': 'more'} : const {},
           loadingMore: false,
         ),
       );
+      final db = ref.read(dbProvider);
+      final seen = SeenVideos.decode(
+        await db.getValue('home_seen_videos_v1'),
+        DateTime.now(),
+      );
+      seen.mark(fresh.map((item) => item.id), DateTime.now());
+      await db.setValue('home_seen_videos_v1', seen.encode());
     } catch (_) {
       if (generation == _generation) {
         state = AsyncData(

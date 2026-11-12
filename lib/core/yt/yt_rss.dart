@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:xml/xml.dart';
 import 'models.dart';
+import 'channel_avatars.dart';
 
 List<VideoItem> parseRss(String xml) {
   final doc = XmlDocument.parse(xml);
@@ -21,14 +22,16 @@ List<VideoItem> parseRss(String xml) {
             )
             .firstOrNull
             ?.getAttribute('url');
+        final channelId = text(
+          'channelId',
+          'http://www.youtube.com/xml/schemas/2015',
+        );
         return VideoItem(
           id: id,
           title: text('title', 'http://www.w3.org/2005/Atom'),
-          channelId: text(
-            'channelId',
-            'http://www.youtube.com/xml/schemas/2015',
-          ),
+          channelId: channelId,
           channelName: text('name', 'http://www.w3.org/2005/Atom'),
+          channelAvatarUrl: ChannelAvatarCache.instance.get(channelId) ?? '',
           thumbUrl: thumb ?? 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
           publishedAt: DateTime.tryParse(
             text('published', 'http://www.w3.org/2005/Atom'),

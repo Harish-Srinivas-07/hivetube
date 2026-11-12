@@ -1,4 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
+import '../../widgets/common.dart';
+import '../../widgets/video_options_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../shorts/shorts_screen.dart';
@@ -27,10 +30,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final controller = ScrollController();
+  final _avatarRequestsScheduled = <String>{};
   String chip = 'All';
   static const chips = [
     'All',
     'Music',
+    'Movies',
     'Gaming',
     'Live',
     'News',
@@ -39,7 +44,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     'Comedy',
     'Cooking',
     'Science',
+    'Tech',
+    'Education',
     'Recently uploaded',
+    'Trending',
+    'Live kiosk',
+    'Gaming kiosk',
+    'Podcasts kiosk',
   ];
   @override
   void initState() {
@@ -64,6 +75,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final history =
         ref.watch(homeHistoryProvider).value ?? const <HistoryEntry>[];
     final historyById = {for (final entry in history) entry.videoId: entry};
+    final width = MediaQuery.sizeOf(context).width;
+    final feedWidth = width >= AppSpacing.navigationBreakpoint
+        ? width - 72
+        : width;
+    final columns = width < AppSpacing.navigationBreakpoint
+        ? 1
+        : ((feedWidth - AppSpacing.lg * 2) / AppSpacing.videoMaxWidth)
+              .ceil()
+              .clamp(1, 100);
+    final leadCount = AppSpacing.homeLeadItems * columns;
     return Listener(
       onPointerDown: (_) => ref.read(homeProvider.notifier).interact(),
       child: Scaffold(
@@ -102,9 +123,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     controller: controller,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
+                      if (data.chip == 'All' && history.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.lg),
+                            child: Text(
+                              'Watch videos and follow channels to personalize Home.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                        ),
                       if (data.videos.isNotEmpty)
                         _grid(
-                          data.videos.take(AppSpacing.homeLeadItems).toList(),
+                          data.videos.take(leadCount).toList(),
                           historyById,
                         ),
                       if (data.shorts.isNotEmpty)
@@ -113,6 +144,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             items: data.shorts,
                             onTap: (index) async {
                               ref.read(homeProvider.notifier).interact();
+                              unawaited(
+                                ref
+                                    .read(homeProvider.notifier)
+                                    .rememberChannel(
+                                      data.shorts[index].id,
+                                      data.shorts[index].channelName ?? '',
+                                      isShort: true,
+                                    ),
+                              );
                               if (ref.read(watchPanelProvider) != null) {
                                 ref.read(watchPanelProvider.notifier).close();
                                 ref
@@ -130,12 +170,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         SliverToBoxAdapter(child: _Heading('Trending')),
                         _grid(data.trending, historyById),
                       ],
-                      if (data.errors.isNotEmpty)
+                      for (final error in data.errors)
                         SliverToBoxAdapter(
                           child: TextButton(
                             onPressed: () =>
                                 ref.read(homeProvider.notifier).refresh(),
-                            child: Text('Some sections could not load. Retry'),
+                            child: Text('$error could not load. Retry'),
                           ),
                         ),
                       if (data.videos.isEmpty &&
@@ -144,10 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SliverFillRemaining(
                           child: Center(child: Text('No videos found')),
                         ),
-                      _grid(
-                        data.videos.skip(AppSpacing.homeLeadItems).toList(),
-                        historyById,
-                      ),
+                      _grid(data.videos.skip(leadCount).toList(), historyById),
                       SliverToBoxAdapter(
                         child: Center(
                           child: Padding(
@@ -188,52 +225,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _grid(List<VideoItem> items, Map<String, HistoryEntry> history) =>
-      SliverLayoutBuilder(
-        builder: (context, constraints) {
-          final wide =
-              MediaQuery.sizeOf(context).width >=
-              AppSpacing.navigationBreakpoint;
-          Widget card(int index) => _VideoCard(
-            items[index],
-            wide: wide,
-            history: history[items[index].id],
-            onTap: () {
-              ref.read(homeProvider.notifier).interact();
-              ref.read(watchPanelProvider.notifier).open(items[index].id);
-              ref.read(watchPanelExpandProvider.notifier).expand();
-            },
-          );
-          if (!wide) {
-            return SliverList.builder(
-              itemCount: items.length,
-              itemBuilder: (_, index) => card(index),
+  Widget _grid(
+    List<VideoItem> items,
+    Map<String, HistoryEntry> history,
+  ) => SliverLayoutBuilder(
+    builder: (context, constraints) {
+      final wide =
+          MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
+      Widget card(int index) {
+        final item = items[index];
+        if (item.channelAvatarUrl.isEmpty &&
+            (item.channelId.isNotEmpty || item.id.isNotEmpty) &&
+            _avatarRequestsScheduled.add(
+              item.channelId.isNotEmpty ? item.channelId : 'video:${item.id}',
+            )) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              unawaited(ref.read(homeProvider.notifier).ensureAvatar(item));
+            }
+          });
+        }
+        return _VideoCard(
+          item,
+          wide: wide,
+          history: history[items[index].id],
+          onTap: () {
+            ref.read(homeProvider.notifier).interact();
+            unawaited(
+              ref
+                  .read(homeProvider.notifier)
+                  .rememberChannel(item.id, item.channelName),
             );
-          }
-          final usable = constraints.crossAxisExtent - AppSpacing.lg * 2;
-          final columns = (usable / AppSpacing.videoMaxWidth).ceil();
-          final count = columns < 1 ? 1 : columns;
-          return SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (_, index) => card(index),
-                childCount: items.length,
-              ),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: count,
-                crossAxisSpacing: AppSpacing.lg,
-                mainAxisSpacing: AppSpacing.lg,
-                mainAxisExtent:
-                    (usable - (count - 1) * AppSpacing.lg) /
-                        count /
-                        AppSpacing.thumbnailRatio +
-                    AppSpacing.cardInfoHeight,
-              ),
-            ),
-          );
-        },
+            context.push('/watch/${item.id}');
+          },
+        );
+      }
+
+      if (!wide) {
+        return SliverList.builder(
+          itemCount: items.length,
+          itemBuilder: (_, index) => card(index),
+        );
+      }
+      final usable = constraints.crossAxisExtent - AppSpacing.lg * 2;
+      final columns = (usable / AppSpacing.videoMaxWidth).ceil();
+      final count = columns < 1 ? 1 : columns;
+      return SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        sliver: SliverGrid(
+          delegate: SliverChildBuilderDelegate(
+            (_, index) => card(index),
+            childCount: items.length,
+          ),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: count,
+            crossAxisSpacing: AppSpacing.lg,
+            mainAxisSpacing: AppSpacing.lg,
+            mainAxisExtent:
+                (usable - (count - 1) * AppSpacing.lg) /
+                    count /
+                    AppSpacing.thumbnailRatio +
+                AppSpacing.cardInfoHeight,
+          ),
+        ),
       );
+    },
+  );
 }
 
 class _Heading extends StatelessWidget {
@@ -259,12 +316,12 @@ class _ChipRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      height: AppSpacing.homeChipHeight + AppSpacing.sm + AppSpacing.sm,
+      height: AppSpacing.homeChipHeight + AppSpacing.xxs + AppSpacing.xxs,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
-          vertical: AppSpacing.sm,
+          vertical: AppSpacing.xxs,
         ),
         children: [
           GlassSurface(
@@ -295,7 +352,7 @@ class _ChipRow extends StatelessWidget {
                         onTap: () => onSelected(item),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
+                            horizontal: AppSpacing.homeChipHorizontalPadding,
                           ),
                           child: Center(
                             child: Text(
@@ -316,7 +373,7 @@ class _ChipRow extends StatelessWidget {
                           onTap: () => onSelected(item),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.md,
+                              horizontal: AppSpacing.homeChipHorizontalPadding,
                             ),
                             child: Center(
                               child: Text(
@@ -359,9 +416,6 @@ class _VideoCard extends StatelessWidget {
         ? (history!.position.inMilliseconds / history!.duration.inMilliseconds)
               .clamp(0.0, 1.0)
         : null;
-    final initial = item.channelName.trim().isEmpty
-        ? ''
-        : item.channelName.trim().characters.first.toUpperCase();
     final colors = theme.brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
@@ -456,18 +510,11 @@ class _VideoCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: AppSpacing.avatar / 2,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  foregroundImage: item.channelAvatarUrl.isEmpty
-                      ? null
-                      : CachedNetworkImageProvider(item.channelAvatarUrl),
-                  onForegroundImageError: item.channelAvatarUrl.isEmpty
-                      ? null
-                      : (_, _) {},
-                  child: Text(initial, style: theme.textTheme.titleSmall),
-                ),
-                const SizedBox(width: AppSpacing.md),
+                if (item.channelId.isNotEmpty ||
+                    item.channelName.isNotEmpty) ...[
+                  Avatar(name: item.channelName, url: item.channelAvatarUrl),
+                  const SizedBox(width: AppSpacing.md),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,7 +543,8 @@ class _VideoCard extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: 'More options',
-                  onPressed: () {},
+                  onPressed: () =>
+                      showVideoOptionsMenu(context, videoId: item.id),
                   iconSize: AppSpacing.homeMoreIcon,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
@@ -553,21 +601,16 @@ class _Shorts extends ConsumerWidget {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.xs),
-                          child: ref
-                              .watch(shortMetadataProvider(items[index].id))
-                              .when(
-                                data: (value) => Text(
-                                  value?.title ?? items[index].title ?? '',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(
-                                        color: AppColors.thumbnailBadgeText,
-                                      ),
-                                ),
-                                loading: () => const LinearProgressIndicator(),
-                                error: (_, _) => const SizedBox.shrink(),
-                              ),
+                          child: Text(
+                            [
+                              items[index].title ?? '',
+                              items[index].viewsText ?? '',
+                            ].where((v) => v.isNotEmpty).join(' · '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(color: AppColors.thumbnailBadgeText),
+                          ),
                         ),
                       ),
                     ),

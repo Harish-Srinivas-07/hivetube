@@ -5,13 +5,12 @@ import 'package:go_router/go_router.dart';
 import '../core/playback/playback_service.dart';
 import '../core/playback/player_ui_state.dart';
 import '../features/watch/watch_panel.dart';
-import '../theme/app_radius.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_top_bar.dart';
-import '../widgets/glass_surface.dart';
 import '../widgets/home_top_bar.dart';
+import '../widgets/floating_nav.dart';
 
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -34,13 +33,6 @@ class AppShell extends ConsumerWidget {
         ref.read(playerUiProvider.notifier).setDismissed(true);
       });
     }
-    final scheme = Theme.of(context).colorScheme;
-    final selectedColor = shorts
-        ? AppColors.shortsForeground
-        : scheme.onSurface;
-    final idleColor = shorts
-        ? AppColors.shortsProgressBuffer
-        : scheme.onSurfaceVariant;
     Future<void> select(int index) async {
       if (index == 1 && navigationShell.currentIndex != 1) {
         ref.read(watchPanelProvider.notifier).close();
@@ -138,69 +130,24 @@ class AppShell extends ConsumerWidget {
           Positioned(
             left: AppSpacing.lg,
             right: AppSpacing.lg,
-            bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
-            child: Material(
-              color: Colors.transparent,
-              child: GlassSurface(
-                borderRadius: AppRadius.pillBorder,
-                child: SizedBox(
-                  key: const ValueKey('bottomNavPill'),
-                  height: AppSpacing.navHeight,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < _destinations.length; i++)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.xs),
-                            child: Material(
-                              key: ValueKey('navIndicator$i'),
-                              color: i == navigationShell.currentIndex
-                                  ? selectedColor.withValues(alpha: 0.18)
-                                  : Colors.transparent,
-                              borderRadius: AppRadius.pillBorder,
-                              child: InkWell(
-                                borderRadius: AppRadius.pillBorder,
-                                onTap: () => select(i),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _destinations[i].icon,
-                                      size: AppSpacing.navIcon,
-                                      color: i == navigationShell.currentIndex
-                                          ? selectedColor
-                                          : idleColor,
-                                    ),
-                                    Text(
-                                      _destinations[i].label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color:
-                                                i ==
-                                                    navigationShell.currentIndex
-                                                ? selectedColor
-                                                : idleColor,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+            bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
+            child: Center(
+              child: FloatingNav(
+                key: const ValueKey('bottomNavPill'),
+                items: [
+                  for (final item in _destinations)
+                    FloatingNavItem(item.label, item.icon),
+                ],
+                currentIndex: navigationShell.currentIndex,
+                onSelected: (index) => select(index),
+                onDragSelected: (index) => select(index),
+                inverted: shorts,
               ),
             ),
           ),
-        const Positioned.fill(child: WatchPanel()),
+        const Positioned.fill(
+          child: Material(type: MaterialType.transparency, child: WatchPanel()),
+        ),
       ],
     );
   }

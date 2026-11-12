@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,11 +14,11 @@ import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/settings/app_settings.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
-import '../../theme/app_theme.dart';
 import '../../theme/app_text_styles.dart';
+import '../../core/yt/watch_info.dart';
 import 'player_seek_bar.dart';
+import 'player_settings_menu.dart';
 
 class SharedPlayer extends ConsumerStatefulWidget {
   const SharedPlayer({
@@ -30,11 +31,17 @@ class SharedPlayer extends ConsumerStatefulWidget {
     this.onPanelDragUpdate,
     this.onPanelDragEnd,
     this.compact = false,
+    this.topInsetAlreadyApplied = false,
     this.videoOverride,
+    this.chapters = const [],
+    this.onChapters,
   });
   final PlaybackService service;
+  final List<WatchChapter> chapters;
+  final VoidCallback? onChapters;
   final bool short;
   final bool compact;
+  final bool topInsetAlreadyApplied;
   @visibleForTesting
   final Widget? videoOverride;
   final VoidCallback? onMinimize, onPrevious, onNext;
@@ -45,6 +52,7 @@ class SharedPlayer extends ConsumerStatefulWidget {
 
 class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   Timer? hideTimer, seekTimer, hudTimer;
+  late PlayerSettingsSession _settingsSession;
   int seekTotal = 0;
   Duration? seekTarget;
   bool sheetOpen = false, longPress = false;
@@ -73,6 +81,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   void initState() {
     super.initState();
     widget.service.addListener(_changed);
+    _settingsSession = PlayerSettingsSession(widget.service);
     _changed();
   }
 
@@ -81,6 +90,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.service != widget.service) {
       oldWidget.service.removeListener(_changed);
+      _settingsSession.dispose();
+      _settingsSession = PlayerSettingsSession(widget.service);
       widget.service.addListener(_changed);
       lastStatus = null;
       _changed();
@@ -132,11 +143,12 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   }
 
   Future<void> _fullscreen(bool value) async {
+    ref.read(playerUiProvider.notifier).setLocked(false);
     ref.read(playerUiProvider.notifier).setFullscreen(value);
     await SystemChrome.setPreferredOrientations(
       value
           ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : [DeviceOrientation.portraitUp],
+          : const [],
     );
     await SystemChrome.setEnabledSystemUIMode(
       value ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
@@ -212,117 +224,44 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   Future<void> _settings() async {
     hideTimer?.cancel();
     sheetOpen = true;
-    final service = widget.service;
-    var selectedQuality = service.state.quality;
-    var selectedSpeed = service.state.rate;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.dark.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (context) => Theme(
-        data: AppTheme.dark,
-        child: StatefulBuilder(
-          builder: (context, update) {
-            Future<void> changeCaption(int? index) async {
-              await service.setCaption(index);
-              if (context.mounted) update(() {});
-            }
+    try {
+      await showPlayerSettingsMenu(
+        context,
+        session: _settingsSession,
+        onLock: ref.read(playerUiProvider).isFullscreen
+            ? () => ref.read(playerUiProvider.notifier).setLocked(true)
+            : null,
+      );
+    } finally {
+      sheetOpen = false;
+      if (mounted) _scheduleHide();
+    }
+  }
 
-            Widget choice(String label, bool selected, VoidCallback action) =>
-                ListTile(
-                  title: Text(
-                    label,
-                    style: TextStyle(color: AppColors.dark.textPrimary),
-                  ),
-                  trailing: selected
-                      ? const Icon(
-                          LucideIcons.check,
-                          color: AppColors.shortsForeground,
-                        )
-                      : null,
-                  onTap: () {
-                    action();
-                    update(() {});
-                  },
-                );
-            return SafeArea(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  ExpansionTile(
-                    title: const Text('Quality'),
-                    children: [
-                      choice('Auto (1080p)', selectedQuality == null, () {
-                        selectedQuality = null;
-                        service.setQuality(null);
-                      }),
-                      for (final h in service.state.heights.where(
-                        (h) => h <= 1080,
-                      ))
-                        choice('${h}p', selectedQuality == h, () {
-                          selectedQuality = h;
-                          service.setQuality(h);
-                        }),
-                    ],
-                  ),
-                  ExpansionTile(
-                    title: const Text('Playback speed'),
-                    children: [
-                      for (final rate in [
-                        0.25,
-                        0.5,
-                        0.75,
-                        1.0,
-                        1.25,
-                        1.5,
-                        1.75,
-                        2.0,
-                      ])
-                        choice('${rate}x', selectedSpeed == rate, () {
-                          selectedSpeed = rate;
-                          unawaited(service.setRate(rate));
-                        }),
-                    ],
-                  ),
-                  ExpansionTile(
-                    title: const Text('Captions'),
-                    subtitle: service.state.captionError
-                        ? const Text('Captions unavailable')
-                        : null,
-                    children: [
-                      choice(
-                        'Off',
-                        service.state.selectedCaption == null,
-                        () => unawaited(changeCaption(null)),
-                      ),
-                      for (var i = 0; i < service.state.captions.length; i++)
-                        choice(
-                          '${service.state.captions[i]['languageCode'] ?? 'Captions'}',
-                          service.state.selectedCaption == i,
-                          () => unawaited(changeCaption(i)),
-                        ),
-                    ],
-                  ),
-                  SwitchListTile(
-                    title: const Text('Loop'),
-                    value: service.state.loop,
-                    onChanged: (v) {
-                      unawaited(service.setLoop(v));
-                      update(() {});
-                    },
-                  ),
-                ],
-              ),
-            );
-          },
+  Widget _glassIcon({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    double size = 22,
+  }) => ClipOval(
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: AppSpacing.sm, sigmaY: AppSpacing.sm),
+      child: Material(
+        color: AppColors.playerControlGlass,
+        shape: const CircleBorder(
+          side: BorderSide(color: AppColors.playerControlBorder),
+        ),
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: Icon(icon, size: size),
+          color: AppColors.shortsForeground,
+          disabledColor: AppColors.shortsProgressBuffer,
+          visualDensity: VisualDensity.compact,
         ),
       ),
-    );
-    sheetOpen = false;
-    if (mounted) _scheduleHide();
-  }
+    ),
+  );
 
   String _time(Duration value) {
     final hours = value.inHours;
@@ -338,6 +277,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     hideTimer?.cancel();
     seekTimer?.cancel();
     hudTimer?.cancel();
+    _settingsSession.dispose();
     widget.service.removeListener(_changed);
     super.dispose();
   }
@@ -345,7 +285,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   @override
   Widget build(BuildContext context) {
     final ui = ref.watch(playerUiProvider);
-    final autoplay = ref.watch(appSettingsProvider.select((s) => s.autoplay));
+    final autoplay = ref.watch(contentPrefsProvider.select((s) => s.autoplay));
     final notifier = ref.read(playerUiProvider.notifier);
     final service = widget.service;
     final state = service.state;
@@ -446,38 +386,38 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                         ),
                       ),
                       SafeArea(
+                        top: !widget.topInsetAlreadyApplied,
                         child: Stack(
                           children: [
                             Align(
                               alignment: Alignment.topCenter,
                               child: Row(
                                 children: [
-                                  IconButton(
-                                    onPressed: widget.onMinimize,
-                                    color: AppColors.shortsForeground,
+                                  const SizedBox(width: AppSpacing.sm),
+                                  _glassIcon(
+                                    icon: LucideIcons.chevronDown,
                                     tooltip: 'Minimize',
-                                    icon: const Icon(LucideIcons.chevronDown),
+                                    onPressed: widget.onMinimize,
                                   ),
                                   const Spacer(),
-                                  IconButton(
-                                    onPressed: state.captions.isEmpty
-                                        ? null
-                                        : () => unawaited(
-                                            service.setCaption(
-                                              state.selectedCaption == null
-                                                  ? 0
-                                                  : null,
-                                            ),
-                                          ),
-                                    tooltip: 'Captions',
-                                    color: state.selectedCaption == null
-                                        ? AppColors.shortsForeground
-                                        : const Color(0xFFFF0000),
-                                    icon: const Icon(LucideIcons.captions),
-                                  ),
+                                  if (state.captions.isNotEmpty)
+                                    IconButton(
+                                      onPressed: () => unawaited(
+                                        service.setCaption(
+                                          state.selectedCaption == null
+                                              ? 0
+                                              : null,
+                                        ),
+                                      ),
+                                      tooltip: 'Captions',
+                                      color: state.selectedCaption == null
+                                          ? AppColors.shortsForeground
+                                          : const Color(0xFFFF0000),
+                                      icon: const Icon(LucideIcons.captions),
+                                    ),
                                   IconButton(
                                     onPressed: () => ref
-                                        .read(appSettingsProvider.notifier)
+                                        .read(contentPrefsProvider.notifier)
                                         .setAutoplay(!autoplay),
                                     tooltip: autoplay
                                         ? 'Autoplay on'
@@ -487,12 +427,12 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                         : AppColors.shortsForeground,
                                     icon: const Icon(LucideIcons.circlePlay),
                                   ),
-                                  IconButton(
-                                    onPressed: _settings,
-                                    color: AppColors.shortsForeground,
+                                  _glassIcon(
+                                    icon: LucideIcons.settings,
                                     tooltip: 'Settings',
-                                    icon: const Icon(LucideIcons.settings),
+                                    onPressed: _settings,
                                   ),
+                                  const SizedBox(width: AppSpacing.sm),
                                 ],
                               ),
                             ),
@@ -500,12 +440,12 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  IconButton(
-                                    onPressed: widget.onPrevious,
-                                    color: AppColors.shortsForeground,
+                                  _glassIcon(
+                                    icon: LucideIcons.skipBack,
                                     tooltip: 'Previous',
-                                    icon: const Icon(LucideIcons.skipBack),
+                                    onPressed: widget.onPrevious,
                                   ),
+                                  const SizedBox(width: AppSpacing.lg),
                                   SizedBox(
                                     width: 56,
                                     height: 56,
@@ -545,6 +485,16 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                           )
                                         : IconButton(
                                             color: AppColors.shortsForeground,
+                                            style: IconButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.playerControlGlass,
+                                              shape: const CircleBorder(
+                                                side: BorderSide(
+                                                  color: AppColors
+                                                      .playerControlBorder,
+                                                ),
+                                              ),
+                                            ),
                                             onPressed: () async {
                                               if (state.status ==
                                                   PlayerStatus.ended) {
@@ -566,16 +516,16 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                                   ? LucideIcons.rotateCcw
                                                   : state.status ==
                                                         PlayerStatus.playing
-                                                  ? LucideIcons.pause
-                                                  : LucideIcons.play,
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
                                             ),
                                           ),
                                   ),
-                                  IconButton(
-                                    onPressed: widget.onNext,
-                                    color: AppColors.shortsForeground,
+                                  const SizedBox(width: AppSpacing.lg),
+                                  _glassIcon(
+                                    icon: LucideIcons.skipForward,
                                     tooltip: 'Next',
-                                    icon: const Icon(LucideIcons.skipForward),
+                                    onPressed: widget.onNext,
                                   ),
                                 ],
                               ),
@@ -587,27 +537,62 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               child: Row(
                                 children: [
                                   const SizedBox(width: AppSpacing.md),
-                                  Text(
-                                    '${_time(displayPosition)} / ${_time(ui.duration)}',
-                                    style: const TextStyle(
-                                      color: AppColors.shortsForeground,
-                                      fontFeatures: [
-                                        FontFeature.tabularFigures(),
-                                      ],
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.playerControlGlass,
+                                      borderRadius: BorderRadius.circular(
+                                        AppSpacing.xl,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.sm,
+                                        vertical: AppSpacing.xs,
+                                      ),
+                                      child: Text(
+                                        '${_time(displayPosition)} / ${_time(ui.duration)}',
+                                        style: const TextStyle(
+                                          color: AppColors.shortsForeground,
+                                          fontFeatures: [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
-                                  IconButton(
+                                  if (widget.chapters.isNotEmpty)
+                                    Expanded(
+                                      child: TextButton(
+                                        onPressed: widget.onChapters,
+                                        child: Text(
+                                          widget.chapters
+                                                  .where(
+                                                    (c) =>
+                                                        c.start <=
+                                                        displayPosition,
+                                                  )
+                                                  .lastOrNull
+                                                  ?.title ??
+                                              widget.chapters.first.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.shortsForeground,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    const Spacer(),
+                                  _glassIcon(
                                     onPressed: () =>
                                         _fullscreen(!ui.isFullscreen),
-                                    color: AppColors.shortsForeground,
                                     tooltip: 'Fullscreen',
-                                    icon: Icon(
-                                      ui.isFullscreen
-                                          ? LucideIcons.minimize
-                                          : LucideIcons.maximize,
-                                    ),
+                                    icon: ui.isFullscreen
+                                        ? LucideIcons.minimize
+                                        : LucideIcons.maximize,
                                   ),
+                                  const SizedBox(width: AppSpacing.sm),
                                 ],
                               ),
                             ),
@@ -628,6 +613,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   position: ui.position,
                   buffered: ui.buffered,
                   duration: ui.duration,
+                  chapters: widget.chapters,
                   onScrubStart: (p) {
                     hideTimer?.cancel();
                     notifier.setOverlayVisible(true);
@@ -688,6 +674,20 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
               const Align(
                 alignment: Alignment.topCenter,
                 child: Chip(label: Text('2x >>')),
+              ),
+            if (ui.locked)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: AppColors.transparent,
+                  child: Center(
+                    child: IconButton(
+                      tooltip: 'Unlock screen',
+                      onPressed: () => notifier.setLocked(false),
+                      color: AppColors.shortsForeground,
+                      icon: const Icon(LucideIcons.lock),
+                    ),
+                  ),
+                ),
               ),
             if (state.status == PlayerStatus.error)
               Center(

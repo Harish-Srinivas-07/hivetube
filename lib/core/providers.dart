@@ -14,11 +14,20 @@ import 'yt/yt_next.dart';
 import 'yt/yt_reel.dart';
 import 'yt/yt_rss.dart';
 import 'yt/yt_search.dart';
+import 'yt/yt_comments.dart';
+import 'yt/channel_avatars.dart';
 
 final dbProvider = Provider<AppDb>((ref) {
   final db = AppDb();
   ref.onDispose(db.close);
   return db;
+});
+final channelAvatarCacheProvider = Provider<ChannelAvatarCache>((ref) {
+  final db = ref.watch(dbProvider);
+  final cache = ChannelAvatarCache(read: db.getValue, write: db.setValue);
+  ChannelAvatarCache.instance = cache;
+  Future<void>(() => cache.load());
+  return cache;
 });
 final networkFamilyProvider = FutureProvider<NetworkFamily>((ref) async {
   final db = ref.watch(dbProvider);
@@ -31,6 +40,7 @@ final networkFamilyProvider = FutureProvider<NetworkFamily>((ref) async {
   return network;
 });
 final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
+  await ref.watch(channelAvatarCacheProvider).load();
   final dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -38,7 +48,7 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
     ),
   );
   final settings = ref.watch(
-    appSettingsProvider.select((s) => (hl: s.hl, gl: s.gl)),
+    contentPrefsProvider.select((s) => (hl: s.hl, gl: s.gl)),
   );
   final network = await ref.watch(networkFamilyProvider.future);
   void resetAdapter() {
@@ -65,7 +75,9 @@ final visitorDataProvider = FutureProvider<String>((ref) async {
   http.refreshVisitor = () async {
     http.visitorData = await service.get(force: true);
   };
-  final revision = ref.watch(appSettingsProvider.select((s) => s.revision));
+  final revision = ref.watch(
+    contentPrefsProvider.select((s) => s.prefsVersion),
+  );
   final value = await service.get(force: revision > 0);
   http.visitorData = value;
   return value;
@@ -77,12 +89,14 @@ class YtApi {
       charts = YtCharts(http),
       search = YtSearch(http),
       next = YtNext(http),
+      comments = YtComments(http),
       reel = YtReel(http),
       rss = YtRss(http.dio);
   final YtBrowse browse;
   final YtCharts charts;
   final YtSearch search;
   final YtNext next;
+  final YtComments comments;
   final YtReel reel;
   final YtRss rss;
 }
@@ -96,5 +110,5 @@ final historyRepoProvider = Provider<HistoryRepo>(
   (ref) => StoredHistoryRepo(ref.watch(dbProvider)),
 );
 final subscriptionRepoProvider = Provider<SubscriptionRepo>(
-  (ref) => EmptySubscriptionRepo(),
+  (ref) => StoredSubscriptionRepo(ref.watch(dbProvider)),
 );

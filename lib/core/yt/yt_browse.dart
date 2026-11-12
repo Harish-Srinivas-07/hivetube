@@ -6,6 +6,16 @@ import 'parser.dart';
 class YtBrowse {
   YtBrowse(this.http);
   final InnertubeHttp http;
+  Future<String> channelAvatar(
+    String channelId, {
+    CancelToken? cancelToken,
+  }) async {
+    final json = await http.post('browse', {
+      'browseId': channelId,
+    }, cancelToken: cancelToken);
+    return parseChannelHeaderAvatar(json);
+  }
+
   Future<List<ShortItem>> channelShorts(
     String channelId, {
     String? continuation,
@@ -19,6 +29,11 @@ class YtBrowse {
       cancelToken: cancelToken,
     ),
   );
+  Future<VideoPage> channelVideos(
+    String id, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) => _browse(id, 'EgZ2aWRlb3PyBgQKAjoA', continuation, cancelToken);
   Future<VideoPage> home({String? continuation, CancelToken? cancelToken}) =>
       _browse('FEwhat_to_watch', null, continuation, cancelToken);
   Future<VideoPage> live({String? continuation, CancelToken? cancelToken}) =>

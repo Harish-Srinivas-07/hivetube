@@ -14,6 +14,9 @@ const languages = <String, String>{
   'mr': 'मराठी',
   'gu': 'ગુજરાતી',
   'pa': 'ਪੰਜਾਬੀ',
+  'ur': 'اردو',
+  'or': 'ଓଡ଼ିଆ',
+  'other': 'Other',
   'es': 'Español',
   'fr': 'Français',
   'de': 'Deutsch',
@@ -83,43 +86,53 @@ class AppSettings {
     this.localContent = true,
     this.autoplay = false,
     this.revision = 0,
+    this.contentLanguages = const {'ta', 'en'},
+    this.hiddenLanguages = const {'hi'},
+    this.localRatio = 0.6,
   });
   final String hl, gl;
   final bool localContent;
   final bool autoplay;
   final int revision;
+  final Set<String> contentLanguages, hiddenLanguages;
+  final double localRatio;
+  int get prefsVersion => revision;
   String get cacheKey => '${hl}_$gl';
-  static AppSettings defaults(Locale locale) => AppSettings(
-    hl: languages.containsKey(locale.languageCode) ? locale.languageCode : 'en',
-    gl: regions.containsKey(locale.countryCode?.toUpperCase())
-        ? locale.countryCode!.toUpperCase()
-        : 'IN',
-  );
+  static AppSettings defaults(Locale locale) =>
+      const AppSettings(hl: 'en', gl: 'IN');
   AppSettings copyWith({
     String? hl,
     String? gl,
     bool? localContent,
     bool? autoplay,
     int? revision,
+    Set<String>? contentLanguages,
+    Set<String>? hiddenLanguages,
+    double? localRatio,
   }) => AppSettings(
     hl: hl ?? this.hl,
     gl: gl ?? this.gl,
     localContent: localContent ?? this.localContent,
     autoplay: autoplay ?? this.autoplay,
     revision: revision ?? this.revision,
+    contentLanguages: contentLanguages ?? this.contentLanguages,
+    hiddenLanguages: hiddenLanguages ?? this.hiddenLanguages,
+    localRatio: localRatio ?? this.localRatio,
   );
 }
 
 List<String> regionalQueries(String query, AppSettings settings) {
   if (!settings.localContent) return [query];
-  final adjective =
-      languageAdjectives[settings.hl] ??
-      (settings.hl == 'en' ? regionAdjectives[settings.gl] : null);
+  final adjective = languageAdjectives[settings.hl];
   return adjective == null ? [query] : ['$adjective $query', query];
 }
 
-String homeCacheKey(AppSettings settings) =>
-    'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}';
+String homeCacheKey(AppSettings settings) {
+  final content = settings.contentLanguages.toList()..sort();
+  final hidden = settings.hiddenLanguages.toList()..sort();
+  return 'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}_${content.join('-')}_${hidden.join('-')}_${settings.localRatio}';
+}
+
 final initialAppSettingsProvider = Provider<AppSettings>(
   (ref) => AppSettings.defaults(PlatformDispatcher.instance.locale),
 );
@@ -127,6 +140,10 @@ final appSettingsProvider =
     NotifierProvider<AppSettingsController, AppSettings>(
       AppSettingsController.new,
     );
+
+/// Shared content preferences for Home, Shorts, related videos and search.
+/// `AppSettings` also contains playback and legacy region settings.
+final contentPrefsProvider = appSettingsProvider;
 
 class AppSettingsController extends Notifier<AppSettings> {
   @override
@@ -138,23 +155,69 @@ class AppSettingsController extends Notifier<AppSettings> {
     state = state.copyWith(autoplay: enabled);
   }
 
-  Future<void> update({String? hl, String? gl, bool? localContent}) async {
+  void resetAfterDatabaseClear() {
+    state = AppSettings.defaults(
+      PlatformDispatcher.instance.locale,
+    ).copyWith(revision: state.revision + 1);
+  }
+
+  Future<void> update({
+    String? hl,
+    String? gl,
+    bool? localContent,
+    Set<String>? contentLanguages,
+    Set<String>? hiddenLanguages,
+    double? localRatio,
+  }) async {
     final old = state;
+    final shown = Set<String>.of(contentLanguages ?? old.contentLanguages);
+    if (shown.isEmpty) shown.add('en');
+    final hidden = Set<String>.of(hiddenLanguages ?? old.hiddenLanguages)
+      ..removeAll(shown);
+    final nextHl =
+        hl ??
+        (contentLanguages == null
+            ? old.hl
+            : shown.contains('en')
+            ? 'en'
+            : shown.contains('other')
+            ? 'en'
+            : shown.length == 1 && shown.single != 'other'
+            ? shown.single
+            : old.hl);
     final next = old.copyWith(
-      hl: hl,
+      hl: nextHl,
       gl: gl,
       localContent: localContent,
+      contentLanguages: shown,
+      hiddenLanguages: hidden,
+      localRatio: localRatio,
       revision: old.revision + 1,
     );
     if (old.hl == next.hl &&
         old.gl == next.gl &&
-        old.localContent == next.localContent) {
+        old.localContent == next.localContent &&
+        old.contentLanguages.length == next.contentLanguages.length &&
+        old.contentLanguages.containsAll(next.contentLanguages) &&
+        old.hiddenLanguages.length == next.hiddenLanguages.length &&
+        old.hiddenLanguages.containsAll(next.hiddenLanguages) &&
+        old.localRatio == next.localRatio) {
       return;
     }
     final db = ref.read(dbProvider);
     await db.setValue('settings_hl', next.hl);
     await db.setValue('settings_gl', next.gl);
     await db.setValue('settings_local_content', next.localContent.toString());
+    await db.setValue(
+      'settings_content_languages',
+      next.contentLanguages.join(','),
+    );
+    await db.setValue(
+      'settings_hidden_languages',
+      next.hiddenLanguages.join(','),
+    );
+    await db.setValue('settings_local_ratio', next.localRatio.toString());
+    await db.setValue('settings_prefs_version', next.prefsVersion.toString());
     await db.deleteValue(homeCacheKey(old));
     await db.deleteValue(homeCacheKey(next));
     ref.read(shortsSelectionProvider.notifier).clear();

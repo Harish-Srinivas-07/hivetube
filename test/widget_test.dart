@@ -30,11 +30,27 @@ void main() {
       expect(nav, findsOneWidget);
       expect(find.byKey(const ValueKey('notificationBadge')), findsNothing);
       expect(find.byTooltip('Search'), findsOneWidget);
-      for (final label in ['Home', 'Shorts', 'Subscriptions', 'You']) {
-        expect(
-          find.descendant(of: nav, matching: find.text(label)),
-          findsOneWidget,
+      if (width >= 600) {
+        for (final label in ['Home', 'Shorts', 'Subscriptions', 'You']) {
+          expect(
+            find.descendant(of: nav, matching: find.text(label)),
+            findsOneWidget,
+          );
+        }
+      } else {
+        final pill = tester.getRect(
+          find.descendant(
+            of: nav,
+            matching: find.byKey(const ValueKey('floatingNavSurface')),
+          ),
         );
+        expect(pill.center.dx, closeTo(width / 2, 0.1));
+        expect(pill.width, lessThan(width - 32));
+        expect(pill.bottom, closeTo(792, 0.1));
+        expect(find.byTooltip('Home'), findsOneWidget);
+        expect(find.byTooltip('Shorts'), findsOneWidget);
+        expect(find.byTooltip('Subscriptions'), findsOneWidget);
+        expect(find.byTooltip('You'), findsOneWidget);
       }
       expect(find.text('Create'), findsNothing);
       await tester.tap(find.byTooltip('Search'));
@@ -43,7 +59,11 @@ void main() {
       await tester.tap(find.byTooltip('Back'));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byTooltip('Search'), findsOneWidget);
-      await tester.tap(find.descendant(of: nav, matching: find.text('You')));
+      await tester.tap(
+        width < 600
+            ? find.byTooltip('You')
+            : find.descendant(of: nav, matching: find.text('You')),
+      );
       await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text('Settings'));
       await tester.pump(const Duration(milliseconds: 500));

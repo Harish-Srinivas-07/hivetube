@@ -18,6 +18,7 @@ import '../streams/stream_cache.dart';
 import '../streams/stream_selector.dart';
 import '../streams/net_family.dart';
 import '../innertube/innertube_http.dart';
+import '../yt/captions.dart';
 
 enum PlayerStatus {
   idle,
@@ -54,6 +55,7 @@ class PlaybackSnapshot {
   StreamError? error;
   List<int> heights = [];
   List<Map<String, dynamic>> captions = [];
+  List<Map<String, dynamic>> captionTranslations = [];
   int? selectedCaption;
   bool captionError = false;
   Uint8List? frozenFrame;
@@ -113,6 +115,8 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
+  String? _captionLanguage;
+  String? _captionTranslation;
   DateTime? _lastWrite;
   Timer? _qualityTimer;
   Future<void> _commitTail = Future.value();
@@ -278,7 +282,6 @@ class PlaybackService extends ChangeNotifier {
       state.videoHeight = null;
       state.duration = Duration.zero;
       state.buffered = Duration.zero;
-      state.quality = null;
       state.captions = [];
       state.selectedCaption = null;
       state.captionError = false;
@@ -295,6 +298,35 @@ class PlaybackService extends ChangeNotifier {
       if (!_loadGuard.isCurrent(generation)) return;
       state.heights = selected.videos.map((e) => e.height).toList();
       state.captions = cache.captionTracks(value.videoId);
+      state.captionTranslations = cache.captionTranslations(value.videoId);
+      if (_captionLanguage != null) {
+        final matches =
+            state.captions
+                .asMap()
+                .entries
+                .where((e) => e.value['languageCode'] == _captionLanguage)
+                .toList()
+              ..sort(
+                (a, b) => (a.value['kind'] == 'asr' ? 1 : 0).compareTo(
+                  b.value['kind'] == 'asr' ? 1 : 0,
+                ),
+              );
+        if (matches.isNotEmpty) state.selectedCaption = matches.first.key;
+      }
+      if (state.captions.isEmpty) {
+        unawaited(
+          _transcript(value.videoId)
+              .then((vtt) {
+                if (request?.videoId == value.videoId && vtt.isNotEmpty) {
+                  state.captions = [
+                    {'languageCode': cache.player.hl, 'transcriptVtt': vtt},
+                  ];
+                  _notify();
+                }
+              })
+              .catchError((Object _) {}),
+        );
+      }
       final format = value.mode == PlaybackMode.audio
           ? selected.audio!
           : selected.videos
@@ -329,7 +361,9 @@ class PlaybackService extends ChangeNotifier {
         state.status = PlayerStatus.ready;
         _notify();
         final caption = state.selectedCaption;
-        if (caption != null) unawaited(setCaption(caption));
+        if (caption != null) {
+          unawaited(setCaption(caption, translateTo: _captionTranslation));
+        }
         if (_visible && !_userPaused && await _activateAudioFocus()) {
           await player.play();
         } else {
@@ -483,10 +517,42 @@ class PlaybackService extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> setCaption(int? index) async {
+  Future<String> _transcript(String id) async {
+    final config = cache.player.clients['WEB_REMIX'];
+    final bytes = utf8.encode(id);
+    if (bytes.length > 127) return '';
+    final params = base64Encode([10, bytes.length, ...bytes]);
+    final uri = Uri.https('music.youtube.com', '/youtubei/v1/get_transcript', {
+      'prettyPrint': 'false',
+    });
+    final req = await cache.player.network.client.postUrl(uri);
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.userAgentHeader, config['ua']);
+    req.write(
+      jsonEncode({
+        'context': {
+          'client': {
+            'clientName': config['clientName'],
+            'clientVersion': config['clientVersion'],
+            'hl': cache.player.hl,
+            'gl': cache.player.gl,
+          },
+        },
+        'params': params,
+      }),
+    );
+    final response = await req.close().timeout(const Duration(seconds: 15));
+    final body = await utf8.decodeStream(response);
+    if (response.statusCode != 200) return '';
+    return transcriptToVtt(jsonDecode(body));
+  }
+
+  Future<void> setCaption(int? index, {String? translateTo}) async {
     if (index == null) {
       await player.setSubtitleTrack(SubtitleTrack.no());
       state.selectedCaption = null;
+      _captionLanguage = null;
+      _captionTranslation = null;
       state.captionError = false;
       _notify();
       return;
@@ -495,9 +561,27 @@ class PlaybackService extends ChangeNotifier {
     final current = request;
     final track = state.captions[index];
     try {
+      if (track['transcriptVtt'] is String) {
+        await player.setSubtitleTrack(
+          SubtitleTrack.data(
+            track['transcriptVtt'] as String,
+            language: track['languageCode'] as String?,
+          ),
+        );
+        state.selectedCaption = index;
+        _captionLanguage = track['languageCode'] as String?;
+        _captionTranslation = null;
+        state.captionError = false;
+        _notify();
+        return;
+      }
       final base = Uri.parse(track['baseUrl'] as String);
       final uri = base.replace(
-        queryParameters: {...base.queryParameters, 'fmt': 'vtt'},
+        queryParameters: {
+          ...base.queryParameters,
+          'fmt': 'vtt',
+          'tlang': ?translateTo,
+        },
       );
       final httpRequest = await cache.player.network.client.getUrl(uri);
       httpRequest.headers.set(
@@ -513,13 +597,27 @@ class PlaybackService extends ChangeNotifier {
       }
       if (!identical(current, request)) return;
       await player.setSubtitleTrack(
-        SubtitleTrack.data(body, language: track['languageCode'] as String?),
+        SubtitleTrack.data(
+          cleanVtt(body),
+          language: track['languageCode'] as String?,
+        ),
       );
       state.selectedCaption = index;
+      _captionLanguage = track['languageCode'] as String?;
+      _captionTranslation = translateTo;
       state.captionError = false;
     } catch (_) {
       if (!identical(current, request)) return;
-      state.captionError = true;
+      try {
+        final vtt = current == null ? '' : await _transcript(current.videoId);
+        if (!identical(current, request)) return;
+        if (vtt.isEmpty) throw const FormatException();
+        await player.setSubtitleTrack(SubtitleTrack.data(vtt));
+        state.selectedCaption = index;
+        state.captionError = false;
+      } catch (_) {
+        state.captionError = true;
+      }
     }
     _notify();
   }

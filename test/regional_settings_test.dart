@@ -29,7 +29,14 @@ void main() {
       homeCacheKey(const AppSettings(hl: 'en', gl: 'US')),
       isNot(homeCacheKey(const AppSettings(hl: 'en', gl: 'IN'))),
     );
-    expect(AppSettings.defaults(const Locale('ta', 'IN')).cacheKey, 'ta_IN');
+    expect(AppSettings.defaults(const Locale('ta', 'IN')).cacheKey, 'en_IN');
+    expect(AppSettings.defaults(const Locale('ta', 'IN')).contentLanguages, {
+      'ta',
+      'en',
+    });
+    expect(AppSettings.defaults(const Locale('ta', 'IN')).hiddenLanguages, {
+      'hi',
+    });
   });
   test('regional queries include plain search and respect the setting', () {
     expect(regionalQueries('music', const AppSettings(hl: 'ta', gl: 'IN')), [
