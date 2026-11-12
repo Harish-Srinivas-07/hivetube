@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/providers.dart';
 import '../../core/yt/models.dart';
+import '../../core/yt/yt_browse.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
@@ -102,6 +103,78 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
     }
   }
 
+  Future<void> _switchTab(String? param) async {
+    if (data == null) return;
+    setState(() {
+      activeSortParam = param;
+      loadingMore = true;
+    });
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final page = await api.browse.channelPage(data!.id, params: param);
+      if (!mounted) return;
+      setState(() {
+        continuation = page.continuation;
+        loadedItems.clear();
+        loadedItems.addAll(page.currentTabItems);
+        loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => loadingMore = false);
+    }
+  }
+
+  void _showAboutSheet(BuildContext context) {
+    if (data == null) return;
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.85,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (_, scrollController) => Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Text(
+                'About',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (data!.description.isNotEmpty) ...[
+                Text(
+                  'Description',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(data!.description),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              Text(
+                'Channel Details',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              if (data!.handle.isNotEmpty) Text('Handle: ${data!.handle}'),
+              if (data!.subscribersText.isNotEmpty)
+                Text('Subscribers: ${data!.subscribersText}'),
+              if (data!.videosCountText.isNotEmpty)
+                Text('Videos: ${data!.videosCountText}'),
+              Text('Channel ID: ${data!.id}'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleSubscribe() async {
     if (data == null) return;
     final next = !isSubscribed;
@@ -122,6 +195,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
       appBar: AppBar(
         title: Text(data?.name ?? 'Channel', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.info),
+            onPressed: () => _showAboutSheet(context),
+          ),
           IconButton(
             icon: const Icon(LucideIcons.search),
             onPressed: () => context.push('/search'),
@@ -219,6 +296,9 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                                       onSelected: (selected) {
                                         if (selected) {
                                           setState(() => selectedTabIndex = i);
+                                          final tabName = data!.tabs[i];
+                                          final param = YtBrowse.tabParamsMap[tabName];
+                                          _switchTab(param);
                                         }
                                       },
                                     ),

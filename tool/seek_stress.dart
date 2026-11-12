@@ -42,10 +42,13 @@ void main() {
       final relay = RelayServer(network, clients['VISIONOS']['ua']);
       final history = EmptyHistoryRepo();
       final service = PlaybackService(cache, relay, history);
+      if (service.player.platform is NativePlayer) {
+        await (service.player.platform as NativePlayer).setProperty('ao', 'null');
+      }
 
       final videos = [
         ('aqz-KE-bpKQ', 'Normal (10m)'),
-        ('a65o_xV2yZc', 'Short (<60s)'),
+        ('7RuRlNAn-UQ', 'Short (<60s)'),
         ('094y1Z2wpJg', 'Long (20m+)'),
       ];
 
@@ -54,18 +57,26 @@ void main() {
 
       for (final (videoId, label) in videos) {
         stdout.writeln('=== Testing $label videoId=$videoId ===');
+        final isShort = label.contains('Short');
         await service.play(
-          PlayRequest(videoId: videoId, mode: PlaybackMode.video),
+          PlayRequest(
+            videoId: videoId,
+            mode: isShort ? PlaybackMode.short : PlaybackMode.video,
+            play: true,
+          ),
         );
 
         final readySw = Stopwatch()..start();
-        while (service.state.duration == Duration.zero &&
-            readySw.elapsedMilliseconds < 15000) {
+        while ((service.state.duration == Duration.zero ||
+                (service.state.status != PlayerStatus.playing &&
+                    service.state.status != PlayerStatus.ready) ||
+                service.state.position <= const Duration(seconds: 1)) &&
+            readySw.elapsedMilliseconds < 30000) {
           await Future<void>.delayed(const Duration(milliseconds: 200));
         }
         final duration = service.state.duration;
         stdout.writeln(
-          'Loaded $label: duration=${duration.inSeconds}s status=${service.state.status}',
+          'Loaded $label: duration=${duration.inSeconds}s pos=${service.state.position.inSeconds}s status=${service.state.status}',
         );
         if (duration == Duration.zero) {
           stdout.writeln('FAILED to load $videoId within 15s');
@@ -231,8 +242,16 @@ void main() {
           final st = seekTargets[i];
           if (st.pauseBefore) {
             await service.pause();
+            final pauseSw = Stopwatch()..start();
+            while (service.player.state.playing && pauseSw.elapsedMilliseconds < 500) {
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+            }
           } else {
             await service.resume();
+            final playSw = Stopwatch()..start();
+            while (!service.player.state.playing && playSw.elapsedMilliseconds < 500) {
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+            }
           }
           await Future<void>.delayed(const Duration(milliseconds: 50));
           final expectedPlaying = !st.pauseBefore;

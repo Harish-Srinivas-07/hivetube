@@ -6,6 +6,22 @@ import 'parser.dart';
 class YtBrowse {
   YtBrowse(this.http);
   final InnertubeHttp http;
+
+  static const tabParamsVideos = 'EgZ2aWRlb3PyBgQKAjoA';
+  static const tabParamsShorts = 'EgZzaG9ydHPyBgUKA5oBAA%3D%3D';
+  static const tabParamsLive = 'EgdzdHJlYW1z8gYECgJ6AA%3D%3D';
+  static const tabParamsReleases = 'EghyZWxlYXNlc_IGBQoDsgEA';
+  static const tabParamsPlaylists = 'EglwbGF5bGlzdHPyBgQKAkIA';
+  static const tabParamsPodcasts = 'Eghwb2RjYXN0c_IGBQoDugEA';
+
+  static const tabParamsMap = {
+    'Videos': tabParamsVideos,
+    'Shorts': tabParamsShorts,
+    'Live': tabParamsLive,
+    'Releases': tabParamsReleases,
+    'Playlists': tabParamsPlaylists,
+    'Podcasts': tabParamsPodcasts,
+  };
   Future<String> resolveUrl(String url, {CancelToken? cancelToken}) async {
     final json = await http.post('navigation/resolve_url', {
       'url': url,

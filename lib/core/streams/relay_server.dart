@@ -147,9 +147,17 @@ class RelayServer {
     try {
       return await doFetch();
     } catch (e) {
+      if (isCancelled) {
+        throw const SocketException('Client connection closed');
+      }
       // 1 automatic retry on timeout or network glitch
       _debugLog('_fetchRange retrying range=$start-$end error=$e');
-      return await doFetch();
+      try {
+        return await doFetch();
+      } catch (err) {
+        _debugLog('_fetchRange retry failed: $err');
+        return (status: 502, bytes: Uint8List(0));
+      }
     }
   }
 
