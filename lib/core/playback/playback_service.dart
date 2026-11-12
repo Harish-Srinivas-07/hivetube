@@ -31,6 +31,13 @@ enum PlayerStatus {
   error,
 }
 
+enum SeekState {
+  idle,
+  seeking,
+  buffering,
+  ready,
+}
+
 class PlayRequest {
   const PlayRequest({
     required this.videoId,
@@ -44,6 +51,8 @@ class PlayRequest {
 
 class PlaybackSnapshot {
   PlayerStatus status = PlayerStatus.idle;
+  SeekState seekState = SeekState.idle;
+  Duration? seekTarget;
   Duration position = Duration.zero,
       buffered = Duration.zero,
       duration = Duration.zero;
@@ -59,25 +68,47 @@ class PlaybackSnapshot {
   int? selectedCaption;
   bool captionError = false;
   Uint8List? frozenFrame;
+
+  Duration get displayPosition => seekTarget ?? position;
 }
 
 class PlaybackService extends ChangeNotifier {
   PlaybackService(this.cache, this.relay, this.history) {
-    controller = VideoController(player);
     final platform = player.platform;
     if (platform is NativePlayer) {
       unawaited(platform.setProperty('demuxer-max-bytes', '268435456'));
       unawaited(platform.setProperty('cache-secs', '300'));
       unawaited(platform.setProperty('keep-open', 'yes'));
+      unawaited(
+        platform.observeProperty('seeking', (val) async {
+          _mpvSeeking = val == 'yes';
+        }),
+      );
+      for (final prop in [
+        'paused-for-cache',
+        'core-idle',
+        'demuxer-cache-time',
+        'seeking',
+      ]) {
+        unawaited(
+          platform.observeProperty(prop, (val) async {
+            _debugLog('mpv property $prop = $val');
+          }),
+        );
+      }
     }
     _listen();
     _audioFocus.setMethodCallHandler(_onAudioFocus);
+  }
+
+  void _debugLog(String msg) {
+    stdout.writeln('[PlaybackService] $msg');
   }
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
   final Player player = Player();
-  late final VideoController controller;
+  late final VideoController controller = VideoController(player);
   final PlaybackSnapshot state = PlaybackSnapshot();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   PlayRequest? request;
@@ -87,6 +118,12 @@ class PlaybackService extends ChangeNotifier {
   bool _switching = false, _disposed = false, _userPaused = false;
   bool _visible = true, _resumeAfterVisibility = false;
   bool _resumeAfterFocus = false;
+  bool _mpvSeeking = false;
+  Timer? _seekDebounceTimer;
+  Timer? _seekTimeoutTimer;
+  int _seekGeneration = 0;
+  bool _wasPlayingBeforeSeek = false;
+  Uri? _currentAudioUri;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
 
   Future<void> _onAudioFocus(MethodCall call) async {
@@ -128,6 +165,12 @@ class PlaybackService extends ChangeNotifier {
     _subscriptions.add(
       player.stream.position.listen((value) {
         if (_switching) return;
+        final gap = (value - state.position).abs();
+        if (gap > const Duration(seconds: 2)) {
+          _debugLog(
+            'position stream gap: old=${state.position} new=$value (gap=${gap.inMilliseconds}ms)',
+          );
+        }
         if (state.frozenFrame != null &&
             value != state.position &&
             player.state.playing) {
@@ -186,7 +229,9 @@ class PlaybackService extends ChangeNotifier {
     );
     _subscriptions.add(
       player.stream.playing.listen((v) {
-        unawaited(WakelockPlus.toggle(enable: v));
+        try {
+          unawaited(WakelockPlus.toggle(enable: v).catchError((_) {}));
+        } catch (_) {}
         if (!_switching &&
             state.status != PlayerStatus.error &&
             (v || state.status != PlayerStatus.ended)) {
@@ -287,14 +332,18 @@ class PlaybackService extends ChangeNotifier {
       state.captionError = false;
     }
     _notify();
-    await player.pause();
+    if (player.state.playing) {
+      await player.pause();
+    }
     if (!_loadGuard.isCurrent(generation)) return;
     try {
+      _debugLog('_load: resolving streams for ${value.videoId}...');
       final selected = await cache.resolve(
         value.videoId,
         value.mode,
         quality: state.quality,
       );
+      _debugLog('_load: resolved streams for ${value.videoId}.');
       if (!_loadGuard.isCurrent(generation)) return;
       state.heights = selected.videos.map((e) => e.height).toList();
       state.captions = cache.captionTracks(value.videoId);
@@ -333,10 +382,14 @@ class PlaybackService extends ChangeNotifier {
                     .where((e) => e.height == state.quality)
                     .firstOrNull ??
                 selected.videos.first;
+      _debugLog('_load: registering video on relay...');
       final video = await relay.register(format);
+      _debugLog('_load: registered video: $video');
       final audio = value.mode == PlaybackMode.audio
           ? null
           : await relay.register(selected.audio!);
+      _currentAudioUri = audio;
+      _debugLog('_load: registered audio: $audio');
       if (!_loadGuard.isCurrent(generation)) return;
       final previous = _commitTail;
       final done = Completer<void>();
@@ -344,17 +397,28 @@ class PlaybackService extends ChangeNotifier {
       try {
         await previous;
         if (!_loadGuard.isCurrent(generation)) return;
+        _debugLog('_load: calling player.open($video)...');
         await player.open(Media(video.toString()), play: false);
+        _debugLog('_load: player.open finished.');
         if (!_loadGuard.isCurrent(generation)) return;
         if (audio != null) {
+          _debugLog('_load: calling player.setAudioTrack...');
           await player.setAudioTrack(AudioTrack.uri(audio.toString()));
+          _debugLog('_load: player.setAudioTrack finished.');
         }
         if (!_loadGuard.isCurrent(generation)) return;
         if (value.startAt > Duration.zero) await player.seek(value.startAt);
         if (!_loadGuard.isCurrent(generation)) return;
+        final isShort = value.mode == PlaybackMode.short;
         await player.setPlaylistMode(
-          state.loop ? PlaylistMode.single : PlaylistMode.none,
+          (isShort || state.loop) ? PlaylistMode.single : PlaylistMode.none,
         );
+        if (player.platform is NativePlayer) {
+          unawaited((player.platform as NativePlayer).setProperty(
+            'loop-file',
+            (isShort || state.loop) ? 'inf' : 'no',
+          ));
+        }
         if (!_loadGuard.isCurrent(generation)) return;
         _switching = false;
         state.recovering = false;
@@ -365,7 +429,9 @@ class PlaybackService extends ChangeNotifier {
           unawaited(setCaption(caption, translateTo: _captionTranslation));
         }
         if (_visible && !_userPaused && await _activateAudioFocus()) {
+          _debugLog('_load: calling player.play()...');
           await player.play();
+          _debugLog('_load: player.play() finished.');
         } else {
           state.status = PlayerStatus.paused;
           _notify();
@@ -401,6 +467,9 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> _recover() async {
     if (_switching || request == null) return;
+    _debugLog(
+      'recovery event: attempts=${_budget.attempts} videoId=${request?.videoId} position=${state.position}',
+    );
     if (!_budget.take()) {
       state.status = PlayerStatus.error;
       state.recovering = false;
@@ -478,12 +547,93 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  Future<void> seek(Duration v) async {
-    await player.seek(v < Duration.zero ? Duration.zero : v);
-    if (!player.state.playing && state.frozenFrame != null) {
-      state.frozenFrame = null;
-      _notify();
+  Future<void> seek(Duration v) => seekTo(v);
+
+  Future<void> seekTo(Duration v) async {
+    final maxDuration = state.duration > Duration.zero ? state.duration : v;
+    final clamped = v < Duration.zero
+        ? Duration.zero
+        : (v > maxDuration ? maxDuration : v);
+    _debugLog('seek requested: target=$clamped wasPlaying=${player.state.playing}');
+
+    final gen = ++_seekGeneration;
+    if (state.seekState == SeekState.idle) {
+      _wasPlayingBeforeSeek = player.state.playing ||
+          state.status == PlayerStatus.playing ||
+          state.status == PlayerStatus.ended;
     }
+    state.seekState = SeekState.seeking;
+    state.seekTarget = clamped;
+    _notify();
+
+    _seekDebounceTimer?.cancel();
+    _seekTimeoutTimer?.cancel();
+
+    _seekDebounceTimer = Timer(const Duration(milliseconds: 120), () async {
+      if (_seekGeneration != gen || _disposed) return;
+      _debugLog('seek issued: target=$clamped');
+      final sw = Stopwatch()..start();
+
+      _seekTimeoutTimer = Timer(const Duration(seconds: 8), () {
+        if (_seekGeneration == gen && !_disposed) {
+          _debugLog('seek timed out after 8s: target=$clamped, triggering recovery');
+          unawaited(_recover());
+        }
+      });
+
+      try {
+        await player.seek(clamped);
+      } catch (e) {
+        _debugLog('player.seek error: $e');
+      }
+
+      final waitSw = Stopwatch()..start();
+      while (waitSw.elapsedMilliseconds < 4000) {
+        if (_seekGeneration != gen || _disposed) return;
+        final posDiff = (player.state.position - clamped).inMilliseconds.abs();
+        final isBuffering = player.state.buffering;
+        if (!_mpvSeeking &&
+            !isBuffering &&
+            (posDiff <= 1000 ||
+                player.state.position >= clamped - const Duration(milliseconds: 500))) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+
+      if (_seekGeneration != gen || _disposed) return;
+      _seekTimeoutTimer?.cancel();
+
+      if (_currentAudioUri != null) {
+        final platform = player.platform;
+        if (platform is NativePlayer) {
+          final coreIdle = await platform.getProperty('core-idle');
+          if (coreIdle == 'yes' && player.state.playing) {
+            _debugLog('audio core-idle detected after seek; re-attaching audio track');
+            await player.setAudioTrack(AudioTrack.uri(_currentAudioUri.toString()));
+          }
+        }
+      }
+
+      state.seekState = SeekState.ready;
+      state.seekTarget = null;
+      state.position = player.state.position;
+      if (state.frozenFrame != null) {
+        state.frozenFrame = null;
+      }
+
+      if (_wasPlayingBeforeSeek) {
+        state.status = PlayerStatus.playing;
+        if (!_userPaused && _visible && await _activateAudioFocus()) {
+          await player.play();
+        }
+      } else {
+        state.status = PlayerStatus.paused;
+      }
+      state.seekState = SeekState.idle;
+      _debugLog('seek completed: target=$clamped actual=${player.state.position} elapsed=${sw.elapsedMilliseconds}ms status=${state.status}');
+      _notify();
+    });
   }
 
   Future<void> setRate(double v) async {
@@ -663,6 +813,8 @@ class PlaybackService extends ChangeNotifier {
       );
     }
     _disposed = true;
+    _seekDebounceTimer?.cancel();
+    _seekTimeoutTimer?.cancel();
     _failureMonitor.cancel();
     _qualityTimer?.cancel();
     for (final s in _subscriptions) {

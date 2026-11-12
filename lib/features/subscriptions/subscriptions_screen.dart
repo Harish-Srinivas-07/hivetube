@@ -5,10 +5,12 @@ class SubscriptionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: Text(
-        'Subscriptions',
-        style: Theme.of(context).textTheme.titleLarge,
+    body: SafeArea(
+      child: Center(
+        child: Text(
+          'Subscriptions',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
       ),
     ),
   );

@@ -45,10 +45,14 @@ class AppTopBar extends StatelessWidget {
                               color: colors.onSurfaceVariant,
                             ),
                             const SizedBox(width: AppSpacing.sm),
-                            Text(
-                              'Search HiveTube',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: colors.onSurfaceVariant),
+                            Expanded(
+                              child: Text(
+                                'Search HiveTube',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: colors.onSurfaceVariant),
+                              ),
                             ),
                           ],
                         ),

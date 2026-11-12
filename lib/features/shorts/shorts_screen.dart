@@ -468,6 +468,8 @@ class _ShortPage extends StatefulWidget {
 
 class _ShortPageState extends State<_ShortPage> {
   bool firstFrame = false;
+  bool _scrubbing = false;
+  double _scrubFraction = 0.0;
   IconData? feedback;
   PlayerSettingsSession? _settingsSession;
   @override
@@ -770,36 +772,85 @@ class _ShortPageState extends State<_ShortPage> {
           left: 0,
           right: 0,
           bottom: bottom,
-          child: SizedBox(
-            height: AppSpacing.shortsProgressTouchHeight,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                LinearProgressIndicator(
-                  value: buffered,
-                  minHeight: AppSpacing.progressHeight,
-                  color: AppColors.shortsProgressBuffer,
-                  backgroundColor: AppColors.shortsProgressTrack,
-                ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: AppSpacing.progressHeight,
-                    activeTrackColor: AppColors.shortsProgressPlayed,
-                    inactiveTrackColor: AppColors.transparent,
-                    thumbColor: AppColors.shortsProgressPlayed,
-                    overlayColor: AppColors.transparent,
-                  ),
-                  child: Slider(
-                    value: played,
-                    onChanged: service == null || duration <= 0
-                        ? null
-                        : (value) => service.seek(
-                            Duration(milliseconds: (value * duration).round()),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final currentPlayed = _scrubbing ? _scrubFraction : played;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: service == null || duration <= 0
+                    ? null
+                    : (details) {
+                        setState(() {
+                          _scrubbing = true;
+                          _scrubFraction = (details.localPosition.dx /
+                                  constraints.maxWidth)
+                              .clamp(0.0, 1.0);
+                        });
+                        unawaited(service.pause());
+                      },
+                onHorizontalDragUpdate: service == null || duration <= 0
+                    ? null
+                    : (details) {
+                        setState(() {
+                          _scrubFraction = (details.localPosition.dx /
+                                  constraints.maxWidth)
+                              .clamp(0.0, 1.0);
+                        });
+                      },
+                onHorizontalDragEnd: service == null || duration <= 0
+                    ? null
+                    : (_) {
+                        final target = Duration(
+                          milliseconds: (_scrubFraction * duration).round(),
+                        );
+                        setState(() => _scrubbing = false);
+                        unawaited(service.seekTo(target));
+                        unawaited(service.resume());
+                      },
+                onHorizontalDragCancel: () {
+                  if (_scrubbing) {
+                    setState(() => _scrubbing = false);
+                    unawaited(service?.resume());
+                  }
+                },
+                child: SizedBox(
+                  height: max(24.0, AppSpacing.shortsProgressTouchHeight),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      LinearProgressIndicator(
+                        value: buffered,
+                        minHeight: _scrubbing ? 4.0 : AppSpacing.progressHeight,
+                        color: AppColors.shortsProgressBuffer,
+                        backgroundColor: AppColors.shortsProgressTrack,
+                      ),
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: currentPlayed,
+                        child: Container(
+                          height:
+                              _scrubbing ? 4.0 : AppSpacing.progressHeight,
+                          color: AppColors.shortsProgressPlayed,
+                        ),
+                      ),
+                      if (_scrubbing)
+                        Positioned(
+                          left: (constraints.maxWidth * currentPlayed - 6)
+                              .clamp(0.0, constraints.maxWidth - 12),
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: const BoxDecoration(
+                              color: AppColors.shortsProgressPlayed,
+                              shape: BoxShape.circle,
+                            ),
                           ),
+                        ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
         if (state?.status == PlayerStatus.loading ||

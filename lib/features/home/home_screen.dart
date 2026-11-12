@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../shorts/shorts_screen.dart';
 import '../watch/watch_panel.dart';
+import '../watch/mini_player_inset.dart';
 import '../../core/playback/player_ui_state.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -214,6 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               : AppSpacing.lg,
                         ),
                       ),
+                      const SliverBottomInset(),
                     ],
                   ),
                 ),
@@ -256,7 +258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   .read(homeProvider.notifier)
                   .rememberChannel(item.id, item.channelName),
             );
-            context.push('/watch/${item.id}');
+            openWatchPanel(ref, item.id);
           },
         );
       }

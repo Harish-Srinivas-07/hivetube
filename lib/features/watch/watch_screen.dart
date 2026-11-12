@@ -20,6 +20,7 @@ import '../../core/yt/watch_info.dart';
 import '../../core/yt/yt_comments.dart';
 import '../../core/yt/ryd.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/common.dart';
 import '../../widgets/player/player_controls.dart';
@@ -49,8 +50,19 @@ final dislikeCountProvider = FutureProvider.family<int?, String>((
 });
 
 class WatchScreen extends ConsumerStatefulWidget {
-  const WatchScreen({super.key, required this.id});
+  const WatchScreen({
+    super.key,
+    required this.id,
+    this.videoOverride,
+    this.placeholderVideo = false,
+    this.embedded = false,
+    this.onMinimize,
+  });
   final String id;
+  final Widget? videoOverride;
+  final bool placeholderVideo;
+  final bool embedded;
+  final VoidCallback? onMinimize;
   @override
   ConsumerState<WatchScreen> createState() => _WatchScreenState();
 }
@@ -79,18 +91,46 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   int seconds = 5;
 
   @override
+  void didUpdateWidget(WatchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.id != id) {
+      countdown?.cancel();
+      countdownFor = null;
+      setState(() {
+        id = widget.id;
+        started = null;
+        panel = null;
+        extra.clear();
+        continuation = null;
+        reaction = reactions[widget.id] ?? 0;
+        filtered = null;
+        filteredContinuation = null;
+        relatedFilter = 'All';
+      });
+      if (scroll.hasClients) {
+        scroll.jumpTo(0);
+      }
+      if (!widget.embedded) {
+        unawaited(_start(ref.read(playbackProvider)));
+      }
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     id = widget.id;
     scroll.addListener(() {
       if (scroll.position.extentAfter < 400) unawaited(_loadMore());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(watchPanelProvider.notifier).close();
-      ref.read(playerUiProvider.notifier).setPanelProgress(0);
-      unawaited(_start(ref.read(playbackProvider)));
-    });
+    if (!widget.embedded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(watchPanelProvider.notifier).close();
+        ref.read(playerUiProvider.notifier).setPanelProgress(0);
+        unawaited(_start(ref.read(playbackProvider)));
+      });
+    }
   }
 
   Future<void> _start(PlaybackService? service) async {
@@ -122,6 +162,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   void _open(String next, {bool record = true}) {
     if (id == next) return;
+    if (widget.embedded) {
+      openWatchPanel(ref, next);
+      return;
+    }
     if (record) previous.add(id);
     countdown?.cancel();
     countdownFor = null;
@@ -136,6 +180,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       filteredContinuation = null;
       relatedFilter = 'All';
     });
+    if (scroll.hasClients) {
+      scroll.jumpTo(0);
+    }
     unawaited(_start(ref.read(playbackProvider)));
   }
 
@@ -212,6 +259,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       setState(() => panel = null);
       return;
     }
+    if (widget.embedded) {
+      widget.onMinimize?.call();
+      return;
+    }
     if (mounted && context.canPop()) {
       context.pop();
     } else if (mounted) {
@@ -223,7 +274,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   void dispose() {
     countdown?.cancel();
     scroll.dispose();
-    unawaited(_activeService?.stop());
+    if (!widget.embedded) {
+      unawaited(_activeService?.stop());
+    }
     super.dispose();
   }
 
@@ -291,31 +344,34 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final viewport = MediaQuery.sizeOf(context);
     final width = viewport.width;
     final wide = !ui.isFullscreen && (width >= 900 || width > viewport.height);
-    Widget player = ColoredBox(
-      color: AppColors.shortsBackground,
-      child: service == null
-          ? const Center(child: CircularProgressIndicator())
-          : SharedPlayer(
-              service: service,
-              chapters: info?.chapters ?? const [],
-              onChapters: () => _showChapters(info?.chapters ?? const []),
-              onMinimize: () => unawaited(_back()),
-              onPrevious: previous.isEmpty
-                  ? null
-                  : () {
-                      final old = previous.removeLast();
-                      _open(old, record: false);
-                    },
-              onNext: next == null
-                  ? null
-                  : () {
-                      if (queue.isNotEmpty && queue.first.id == next.id) {
-                        queue.removeAt(0);
-                      }
-                      _open(next.id);
-                    },
-            ),
-    );
+    Widget player = widget.placeholderVideo
+        ? const SizedBox.expand()
+        : ColoredBox(
+            color: AppColors.shortsBackground,
+            child: service == null
+                ? const Center(child: CircularProgressIndicator())
+                : SharedPlayer(
+                    service: service,
+                    videoOverride: widget.videoOverride,
+                    chapters: info?.chapters ?? const [],
+                    onChapters: () => _showChapters(info?.chapters ?? const []),
+                    onMinimize: () => unawaited(_back()),
+                    onPrevious: previous.isEmpty
+                        ? null
+                        : () {
+                            final old = previous.removeLast();
+                            _open(old, record: false);
+                          },
+                    onNext: next == null
+                        ? null
+                        : () {
+                            if (queue.isNotEmpty && queue.first.id == next.id) {
+                              queue.removeAt(0);
+                            }
+                            _open(next.id);
+                          },
+                  ),
+          );
     if (!ui.isFullscreen) {
       player = AspectRatio(
         aspectRatio: AppSpacing.thumbnailRatio,
@@ -793,6 +849,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         itemCount: related.length,
         itemBuilder: (context, index) => _video(related[index]),
       ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: MediaQuery.paddingOf(context).bottom + AppSpacing.xxl,
+        ),
+      ),
     ],
   );
   Future<void> _selectRelated(WatchInfo info, String label) async {
@@ -982,30 +1043,49 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     onTap: () => _open(item.id),
     child: compact
         ? ListTile(
-            leading: SizedBox(
-              width: 130,
-              child: CachedNetworkImage(
-                imageUrl: item.thumbUrl,
-                fit: BoxFit.cover,
+            leading: ClipRRect(
+              borderRadius: AppRadius.smBorder,
+              child: SizedBox(
+                width: 130,
+                child: AspectRatio(
+                  aspectRatio: AppSpacing.thumbnailRatio,
+                  child: CachedNetworkImage(
+                    imageUrl: item.thumbUrl,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) => const ColoredBox(color: AppColors.shortsBackground),
+                  ),
+                ),
               ),
             ),
             title: Text(
               item.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall,
             ),
-            subtitle: Text(item.channelName),
+            subtitle: Text(
+              [item.channelName, item.viewsText].where((s) => s.isNotEmpty).join(' · '),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
             trailing: _menu(item),
           )
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AspectRatio(
-                aspectRatio: AppSpacing.thumbnailRatio,
-                child: CachedNetworkImage(
-                  imageUrl: item.thumbUrl,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _, _) => const SizedBox.shrink(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: ClipRRect(
+                  borderRadius: AppRadius.mdBorder,
+                  child: AspectRatio(
+                    aspectRatio: AppSpacing.thumbnailRatio,
+                    child: CachedNetworkImage(
+                      imageUrl: item.thumbUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => const ColoredBox(color: AppColors.shortsBackground),
+                    ),
+                  ),
                 ),
               ),
               ListTile(
@@ -1017,6 +1097,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   item.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 subtitle: Text(
                   [
@@ -1024,6 +1105,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     item.viewsText,
                     item.publishedText,
                   ].where((s) => s.isNotEmpty).join(' · '),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 trailing: _menu(item),
               ),

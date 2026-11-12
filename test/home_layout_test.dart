@@ -109,6 +109,7 @@ void main() {
     await tester.pump();
     expect(find.text('Unable to load Home'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 100));
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -16,6 +17,8 @@ class PlayerSeekBar extends StatefulWidget {
     this.overlayVisible = true,
     this.onScrubCancel,
     this.chapters = const [],
+    this.seeking = false,
+    this.buffering = false,
   });
 
   final List<WatchChapter> chapters;
@@ -23,19 +26,62 @@ class PlayerSeekBar extends StatefulWidget {
   final ValueChanged<Duration> onScrubStart, onScrubUpdate, onScrubEnd;
   final bool overlayVisible;
   final VoidCallback? onScrubCancel;
+  final bool seeking;
+  final bool buffering;
 
   @override
   State<PlayerSeekBar> createState() => _PlayerSeekBarState();
 }
 
-class _PlayerSeekBarState extends State<PlayerSeekBar> {
+class _PlayerSeekBarState extends State<PlayerSeekBar>
+    with SingleTickerProviderStateMixin {
   bool active = false;
   Duration current = Duration.zero;
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   Duration _position(double dx, double width) => Duration(
     milliseconds:
         (widget.duration.inMilliseconds * (dx / width).clamp(0.0, 1.0)).round(),
   );
+
+  String _format(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (widget.duration.inHours > 0) {
+      final h = d.inHours;
+      final remM = m.remainder(60).toString().padLeft(2, '0');
+      return '$h:$remM:$s';
+    }
+    return '$m:$s';
+  }
+
+  String? _chapterTitle(Duration pos) {
+    if (widget.chapters.isEmpty) return null;
+    WatchChapter? match;
+    for (final c in widget.chapters) {
+      if (c.start <= pos) {
+        match = c;
+      } else {
+        break;
+      }
+    }
+    return match?.title;
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -49,6 +95,11 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
         setState(() {});
         widget.onScrubUpdate(current);
       }
+
+      final chapter = _chapterTitle(position);
+      final bubbleText = active
+          ? '${_format(current)} / ${_format(widget.duration)}${chapter != null ? ' • $chapter' : ''}'
+          : '';
 
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -88,33 +139,38 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
                 widget.onScrubEnd(current);
               },
         child: SizedBox(
-          height: 32,
+          height: 20,
           child: Stack(
             clipBehavior: Clip.none,
             fit: StackFit.expand,
             children: [
               RepaintBoundary(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: active ? 1 : 0),
-                  duration: const Duration(milliseconds: 150),
-                  builder: (context, animation, _) => CustomPaint(
-                    painter: _SeekPainter(
-                      fraction(position),
-                      fraction(widget.buffered),
-                      animation,
-                      widget.overlayVisible,
-                      widget.chapters.map((c) => fraction(c.start)).toList(),
+                child: AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, _) => TweenAnimationBuilder<double>(
+                    tween: Tween(end: active ? 1 : 0),
+                    duration: const Duration(milliseconds: 150),
+                    builder: (context, animation, _) => CustomPaint(
+                      painter: _SeekPainter(
+                        fraction(position),
+                        fraction(widget.buffered),
+                        animation,
+                        widget.overlayVisible,
+                        widget.chapters.map((c) => fraction(c.start)).toList(),
+                        seeking: widget.seeking || widget.buffering,
+                        pulseValue: _pulseController.value,
+                      ),
                     ),
                   ),
                 ),
               ),
               if (active)
                 Positioned(
-                  left: (constraints.maxWidth * fraction(position) - 30).clamp(
-                    0.0,
-                    (constraints.maxWidth - 60).clamp(0.0, double.infinity),
+                  left: (constraints.maxWidth * fraction(position) - 60).clamp(
+                    8.0,
+                    (constraints.maxWidth - 200).clamp(8.0, double.infinity),
                   ),
-                  top: -30,
+                  top: -36,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppColors.shortsScrim,
@@ -126,9 +182,12 @@ class _PlayerSeekBarState extends State<PlayerSeekBar> {
                         vertical: AppSpacing.xs,
                       ),
                       child: Text(
-                        '${current.inMinutes}:${current.inSeconds.remainder(60).toString().padLeft(2, '0')}',
+                        bubbleText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppColors.shortsForeground,
+                          fontSize: 12,
                         ),
                       ),
                     ),
@@ -148,16 +207,21 @@ class _SeekPainter extends CustomPainter {
     this.buffered,
     this.active,
     this.overlayVisible,
-    this.chapters,
-  );
+    this.chapters, {
+    this.seeking = false,
+    this.pulseValue = 0.0,
+  });
+
   final List<double> chapters;
   final double position, buffered;
   final double active;
   final bool overlayVisible;
+  final bool seeking;
+  final double pulseValue;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final y = size.height / 2;
+    final y = size.height - 3;
     final stroke = 2.0 + 2.0 * active;
     void line(double end, Color color) {
       canvas.drawLine(
@@ -183,10 +247,29 @@ class _SeekPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
-    if (active > 0) {
+    if (active > 0 || seeking) {
+      final thumbRadius = active > 0 ? 6.0 : 4.0;
+      final center = Offset(size.width * position, y);
+
+      if (seeking) {
+        // Draw subtle spinner ring around thumb while seeking/buffering
+        final sweep = 2 * pi * 0.7;
+        final startAngle = 2 * pi * pulseValue;
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: thumbRadius + 3),
+          startAngle,
+          sweep,
+          false,
+          Paint()
+            ..color = AppColors.primary
+            ..strokeWidth = 2
+            ..style = PaintingStyle.stroke,
+        );
+      }
+
       canvas.drawCircle(
-        Offset(size.width * position, y),
-        6 * active,
+        center,
+        thumbRadius * (active > 0 ? active : 1.0),
         Paint()..color = const Color(0xFFFF0000),
       );
     }
@@ -198,5 +281,7 @@ class _SeekPainter extends CustomPainter {
       oldDelegate.buffered != buffered ||
       oldDelegate.active != active ||
       oldDelegate.overlayVisible != overlayVisible ||
+      oldDelegate.seeking != seeking ||
+      (seeking && oldDelegate.pulseValue != pulseValue) ||
       oldDelegate.chapters.toString() != chapters.toString();
 }

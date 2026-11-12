@@ -46,5 +46,8 @@ app.*.map.json
 
 # Local configuration and native dependencies
 android/local.properties
+/android/build/
+*.dll
+ref/
 **/Pods/
 .env*

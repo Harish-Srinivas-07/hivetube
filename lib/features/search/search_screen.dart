@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
 import '../../features/home/home_variety.dart';
+import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 
@@ -212,6 +212,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Expanded(
                 child: ListView(
                   controller: scroll,
+                  padding: EdgeInsets.only(
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        (ref.watch(watchPanelProvider) != null
+                            ? 120
+                            : AppSpacing.lg),
+                  ),
                   children: [
                     if (loadingSuggestions)
                       const LinearProgressIndicator(minHeight: 2),
@@ -236,7 +243,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           subtitle: item.channelName.isEmpty
                               ? null
                               : Text(item.channelName),
-                          onTap: () => context.push('/watch/${item.id}'),
+                          onTap: () => openWatchPanel(ref, item.id),
                         ),
                     if (activeQuery.isNotEmpty && dropped.isNotEmpty)
                       ListTile(

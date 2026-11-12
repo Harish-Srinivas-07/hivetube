@@ -51,7 +51,7 @@ class SharedPlayer extends ConsumerStatefulWidget {
 }
 
 class _SharedPlayerState extends ConsumerState<SharedPlayer> {
-  Timer? hideTimer, seekTimer, hudTimer;
+  Timer? hideTimer, seekTimer, hudTimer, _doubleTapCommitTimer;
   late PlayerSettingsSession _settingsSession;
   int seekTotal = 0;
   Duration? seekTarget;
@@ -128,10 +128,17 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       previousTarget: seekTarget,
     );
     seekTarget = step.target;
-    unawaited(s.seek(seekTarget!));
-    seekTimer?.cancel();
     setState(() => seekTotal = step.totalSeconds);
-    seekTimer = Timer(const Duration(milliseconds: 700), () {
+
+    _doubleTapCommitTimer?.cancel();
+    _doubleTapCommitTimer = Timer(const Duration(milliseconds: 400), () {
+      if (seekTarget != null) {
+        unawaited(s.seekTo(seekTarget!));
+      }
+    });
+
+    seekTimer?.cancel();
+    seekTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
         setState(() {
           seekTotal = 0;
@@ -276,6 +283,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   void dispose() {
     hideTimer?.cancel();
     seekTimer?.cancel();
+    _doubleTapCommitTimer?.cancel();
     hudTimer?.cancel();
     _settingsSession.dispose();
     widget.service.removeListener(_changed);
@@ -360,7 +368,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   _updateVertical(d, constraints.maxHeight, ui.isFullscreen),
               onVerticalDragEnd: (d) => _endVertical(d, ui.isFullscreen),
             ),
-            if (ui.panelProgress < .7)
+            if (ui.panelProgress == 0 || ui.panelProgress > .3)
               IgnorePointer(
                 ignoring: !ui.overlayVisible,
                 child: AnimatedOpacity(
@@ -391,49 +399,54 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           children: [
                             Align(
                               alignment: Alignment.topCenter,
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: AppSpacing.sm),
-                                  _glassIcon(
-                                    icon: LucideIcons.chevronDown,
-                                    tooltip: 'Minimize',
-                                    onPressed: widget.onMinimize,
-                                  ),
-                                  const Spacer(),
-                                  if (state.captions.isNotEmpty)
-                                    IconButton(
-                                      onPressed: () => unawaited(
-                                        service.setCaption(
-                                          state.selectedCaption == null
-                                              ? 0
-                                              : null,
-                                        ),
-                                      ),
-                                      tooltip: 'Captions',
-                                      color: state.selectedCaption == null
-                                          ? AppColors.shortsForeground
-                                          : const Color(0xFFFF0000),
-                                      icon: const Icon(LucideIcons.captions),
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  top: ui.isFullscreen ? AppSpacing.md : AppSpacing.sm,
+                                ),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: AppSpacing.sm),
+                                    _glassIcon(
+                                      icon: LucideIcons.chevronDown,
+                                      tooltip: 'Minimize',
+                                      onPressed: widget.onMinimize,
                                     ),
-                                  IconButton(
-                                    onPressed: () => ref
-                                        .read(contentPrefsProvider.notifier)
-                                        .setAutoplay(!autoplay),
-                                    tooltip: autoplay
-                                        ? 'Autoplay on'
-                                        : 'Autoplay off',
-                                    color: autoplay
-                                        ? const Color(0xFFFF0000)
-                                        : AppColors.shortsForeground,
-                                    icon: const Icon(LucideIcons.circlePlay),
-                                  ),
-                                  _glassIcon(
-                                    icon: LucideIcons.settings,
-                                    tooltip: 'Settings',
-                                    onPressed: _settings,
-                                  ),
-                                  const SizedBox(width: AppSpacing.sm),
-                                ],
+                                    const Spacer(),
+                                    if (state.captions.isNotEmpty)
+                                      IconButton(
+                                        onPressed: () => unawaited(
+                                          service.setCaption(
+                                            state.selectedCaption == null
+                                                ? 0
+                                                : null,
+                                          ),
+                                        ),
+                                        tooltip: 'Captions',
+                                        color: state.selectedCaption == null
+                                            ? AppColors.shortsForeground
+                                            : const Color(0xFFFF0000),
+                                        icon: const Icon(LucideIcons.captions),
+                                      ),
+                                    IconButton(
+                                      onPressed: () => ref
+                                          .read(contentPrefsProvider.notifier)
+                                          .setAutoplay(!autoplay),
+                                      tooltip: autoplay
+                                          ? 'Autoplay on'
+                                          : 'Autoplay off',
+                                      color: autoplay
+                                          ? const Color(0xFFFF0000)
+                                          : AppColors.shortsForeground,
+                                      icon: const Icon(LucideIcons.circlePlay),
+                                    ),
+                                    _glassIcon(
+                                      icon: LucideIcons.settings,
+                                      tooltip: 'Settings',
+                                      onPressed: _settings,
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                  ],
+                                ),
                               ),
                             ),
                             Center(
@@ -533,7 +546,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                             Positioned(
                               left: 0,
                               right: 0,
-                              bottom: ui.isFullscreen ? 32 : 12,
+                              bottom: ui.isFullscreen ? 28 : 16,
                               child: Row(
                                 children: [
                                   const SizedBox(width: AppSpacing.md),
@@ -603,17 +616,19 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   ),
                 ),
               ),
-            if (!widget.short && ui.panelProgress < .7)
+            if (!widget.short && (ui.panelProgress == 0 || ui.panelProgress > .3))
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: ui.isFullscreen ? 70 : -15,
+                bottom: 0,
                 child: PlayerSeekBar(
                   overlayVisible: ui.overlayVisible,
-                  position: ui.position,
+                  position: ui.displayPosition,
                   buffered: ui.buffered,
                   duration: ui.duration,
                   chapters: widget.chapters,
+                  seeking: service.state.seekState == SeekState.seeking,
+                  buffering: service.state.status == PlayerStatus.buffering,
                   onScrubStart: (p) {
                     hideTimer?.cancel();
                     notifier.setOverlayVisible(true);
@@ -627,7 +642,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   },
                   onScrubEnd: (p) {
                     notifier.setScrubbing(false);
-                    unawaited(service.seek(p));
+                    unawaited(service.seekTo(p));
                     _scheduleHide();
                   },
                 ),

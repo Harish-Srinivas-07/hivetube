@@ -30,6 +30,8 @@ class PlayerUiState {
   final Duration scrubPosition, position, buffered, duration;
   final bool buffering, playing, completed, autoplay, recovering;
 
+  Duration get displayPosition => scrubbing ? scrubPosition : position;
+
   PlayerUiState copyWith({
     bool? overlayVisible,
     bool? locked,
@@ -81,10 +83,17 @@ class PlayerUiController extends Notifier<PlayerUiState> {
     final service = ref.watch(playbackProvider.select((value) => value));
     if (service == null) return PlayerUiState(autoplay: autoplay);
     final player = service.player;
+    var lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
     final subscriptions = <StreamSubscription<dynamic>>[
-      player.stream.position.listen(
-        (value) => state = state.copyWith(position: value),
-      ),
+      player.stream.position.listen((value) {
+        final now = DateTime.now();
+        if (now.difference(lastPositionUpdate) >= const Duration(milliseconds: 200) ||
+            value == Duration.zero ||
+            value >= state.duration) {
+          lastPositionUpdate = now;
+          state = state.copyWith(position: value);
+        }
+      }),
       player.stream.buffer.listen(
         (value) => state = state.copyWith(buffered: value),
       ),

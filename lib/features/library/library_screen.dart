@@ -7,19 +7,21 @@ class LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Column(
-      children: [
-        ListTile(
-          leading: const Icon(LucideIcons.settings),
-          title: const Text('Settings'),
-          onTap: () => context.push('/settings'),
-        ),
-        Expanded(
-          child: Center(
-            child: Text('You', style: Theme.of(context).textTheme.titleLarge),
+    body: SafeArea(
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(LucideIcons.settings),
+            title: const Text('Settings'),
+            onTap: () => context.push('/settings'),
           ),
-        ),
-      ],
+          Expanded(
+            child: Center(
+              child: Text('You', style: Theme.of(context).textTheme.titleLarge),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }

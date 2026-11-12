@@ -121,6 +121,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Minimize'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byType(SharedPlayer));
+    await tester.pump();
     await tester.tap(find.byTooltip('Close player'));
     await tester.pump();
     expect(container.read(watchPanelProvider), isNull);
