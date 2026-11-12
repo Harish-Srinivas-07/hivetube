@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../../core/content/channel_language_cache.dart';
+import '../../core/content/content_filter.dart';
+import '../../core/content/language_profile.dart';
 import '../../core/yt/models.dart';
 
 const contentLanguageOptions = <String, String>{
@@ -35,71 +38,13 @@ const contentLanguageNativeNames = <String, String>{
   'other': 'Other',
 };
 
-const languageTerms = <String, List<String>>{
-  'ta': ['tamil', 'kollywood', 'tamil nadu', 'chennai', 'madras', 'த\u0bcd'],
-  'en': ['english'],
-  'hi': ['hindi', 'bollywood', 'हिन्दी', 'हिंदी'],
-  'te': ['telugu', 'tollywood'],
-  'ml': ['malayalam', 'mollywood'],
-  'kn': ['kannada', 'sandalwood'],
-  'bn': ['bengali', 'bangla'],
-  'mr': ['marathi'],
-  'gu': ['gujarati'],
-  'pa': ['punjabi', 'ਪੰਜਾਬੀ'],
-  'ur': ['urdu'],
-  'or': ['odia', 'oriya'],
-  'other': [
-    'spanish',
-    'español',
-    'french',
-    'français',
-    'german',
-    'deutsch',
-    'portuguese',
-    'italian',
-  ],
-};
-
-const tamilTerms = [
-  'tamil',
-  'kollywood',
-  'tamil nadu',
-  'tamilnadu',
-  'chennai',
-  'madras',
-  'coimbatore',
-  'madurai',
-  'trichy',
-  'salem',
-  'tirunelveli',
-  'மதுரை',
-  'சென்னை',
-  'தமிழ்',
-  'கோயம்புத்தூர்',
-];
-
 String scriptLanguage(String text) {
-  final counts = <String, int>{};
-  for (final rune in text.runes) {
-    final language = switch (rune) {
-      >= 0x0B80 && <= 0x0BFF => 'ta',
-      >= 0x0900 && <= 0x097F => 'hi',
-      >= 0x0980 && <= 0x09FF => 'bn',
-      >= 0x0A00 && <= 0x0A7F => 'pa',
-      >= 0x0A80 && <= 0x0AFF => 'gu',
-      >= 0x0B00 && <= 0x0B7F => 'or',
-      >= 0x0C00 && <= 0x0C7F => 'te',
-      >= 0x0D00 && <= 0x0D7F => 'ml',
-      >= 0x0C80 && <= 0x0CFF => 'kn',
-      >= 0x0600 && <= 0x06FF => 'ur',
-      _ => null,
-    };
-    if (language != null) {
-      counts.update(language, (count) => count + 1, ifAbsent: () => 1);
-    }
-  }
-  if (counts.isEmpty) return 'en';
-  return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+  final detected = LanguageProfileRegistry.instance.detectScript(text);
+  if (detected != null) return detected;
+
+  // If no script, try lexicon classification
+  final lex = LanguageProfileRegistry.instance.classify(text);
+  return lex ?? 'en';
 }
 
 String _metadata(VideoItem item) =>
@@ -107,10 +52,12 @@ String _metadata(VideoItem item) =>
 
 bool hiddenLanguage(VideoItem item, Set<String> hidden) {
   final text = _metadata(item);
-  if (hidden.contains(scriptLanguage(text))) return true;
+  final detected = scriptLanguage(text);
+  if (hidden.contains(detected)) return true;
+
   for (final language in hidden) {
-    for (final term in languageTerms[language] ?? const <String>[]) {
-      if (text.contains(term.toLowerCase())) return true;
+    if (LanguageProfileRegistry.instance.lexiconMatches(text, language)) {
+      return true;
     }
   }
   return false;
@@ -118,26 +65,78 @@ bool hiddenLanguage(VideoItem item, Set<String> hidden) {
 
 int homeLanguageScore(VideoItem item, Set<String> preferred) {
   final text = _metadata(item);
-  final script = scriptLanguage(text);
-  // Latin is neutral: it covers English and unknown-language metadata.
-  var score = script != 'en' && preferred.contains(script) ? 3 : 0;
-  if (preferred.contains('other') &&
-      (languageTerms['other'] ?? const []).any(text.contains)) {
-    score += 3;
+  final lang = scriptLanguage(text);
+
+  int score = 0;
+  if (preferred.contains(lang)) {
+    score += (lang != 'en') ? 5 : 2;
   }
-  if (tamilTerms.any(text.contains)) score += 2;
+
+  for (final pref in preferred) {
+    final s = LanguageProfileRegistry.instance.scoreLexicon(text, pref);
+    if (s > 0 && LanguageProfileRegistry.instance.lexiconMatches(text, pref)) score += min(s, 5);
+  }
   return score;
 }
 
 bool isLocalLanguageQuery(String query, Set<String> shownLanguages) {
   final normalized = query.toLowerCase();
-  return shownLanguages
-      .where((language) => language != 'en')
-      .any(
-        (language) => (languageTerms[language] ?? const <String>[]).any(
-          normalized.contains,
-        ),
-      );
+  for (final lang in shownLanguages) {
+    if (lang == 'en') continue;
+    final profile = LanguageProfileRegistry.instance.get(lang);
+    if (profile == null) continue;
+    if (normalized.contains(profile.nativeName.toLowerCase()) ||
+        normalized.contains(profile.englishName.toLowerCase()) ||
+        normalized.contains(profile.englishName.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int? publishedAgeDays(VideoItem item, {DateTime? now}) {
+  final current = now ?? DateTime.now();
+  if (item.publishedAt != null) return current.difference(item.publishedAt!).inDays.clamp(0, 36500);
+  final value = item.publishedText.toLowerCase();
+  final match = RegExp(r'(\d+)\s*(minute|hour|day|week|month|year)').firstMatch(value);
+  if (match == null) return null;
+  final amount = int.tryParse(match.group(1) ?? '');
+  if (amount == null) return null;
+  final unit = match.group(2)!;
+  if (unit == 'minute' || unit == 'hour') return 0;
+  if (unit == 'day') return amount;
+  if (unit == 'week') return amount * 7;
+  if (unit == 'month') return amount * 30;
+  return amount * 365;
+}
+
+List<VideoItem> mixByPublishedAge(List<VideoItem> items, {required Random random}) {
+  final fresh = <VideoItem>[];
+  final recent = <VideoItem>[];
+  final evergreen = <VideoItem>[];
+  for (final item in items) {
+    final age = publishedAgeDays(item);
+    if (age != null && age <= 7) {
+      fresh.add(item);
+    } else if (age != null && age <= 60) {
+      recent.add(item);
+    } else {
+      evergreen.add(item);
+    }
+  }
+  fresh.shuffle(random);
+  recent.shuffle(random);
+  evergreen.shuffle(random);
+  final output = <VideoItem>[];
+  final freshTarget = (items.length * .6).floor();
+  final recentTarget = (items.length * .3).floor();
+  final evergreenTarget = items.length - freshTarget - recentTarget;
+  output.addAll(fresh.take(freshTarget));
+  output.addAll(recent.take(recentTarget));
+  output.addAll(evergreen.take(evergreenTarget));
+  final used = output.map((e) => e.id).toSet();
+  output.addAll([...recent, ...evergreen, ...fresh].where((e) => !used.contains(e.id)));
+  return output;
 }
 
 List<VideoItem> rankHomeItems(
@@ -146,108 +145,25 @@ List<VideoItem> rankHomeItems(
   required Set<String> hidden,
   required Set<String> seen,
   required Random random,
+  bool strictHome = true,
+  String source = 'home',
+  Map<String, String?> probeResults = const {},
+  ChannelLanguageCache? channelCache,
 }) {
-  final ranked =
-      <({VideoItem item, int score, bool seen, int tie, int order})>[];
-  var order = 0;
-  for (final item in items) {
-    if (hiddenLanguage(item, hidden)) continue;
-    ranked.add((
-      item: item,
-      score: homeLanguageScore(item, preferred),
-      seen: seen.contains(item.id),
-      tie: random.nextInt(1 << 31),
-      order: order++,
-    ));
-  }
-  ranked.sort((a, b) {
-    if (a.seen != b.seen) return a.seen ? 1 : -1;
-    final score = b.score.compareTo(a.score);
-    if (score != 0) return score;
-    final tie = a.tie.compareTo(b.tie);
-    return tie != 0 ? tie : a.order.compareTo(b.order);
-  });
-  return ranked.map((entry) => entry.item).toList();
-}
-
-const tamilQueryPools = <String, List<String>>{
-  'Music': [
-    'tamil songs',
-    'tamil new songs',
-    'tamil melody',
-    'tamil hits',
-    'tamil bgm',
-  ],
-  'Movies': [
-    'tamil movie trailer',
-    'kollywood',
-    'tamil cinema news',
-    'tamil movie scenes',
-  ],
-  'Comedy': ['tamil comedy', 'tamil memes', 'tamil stand up'],
-  'News': ['tamil news live', 'tamil nadu news today', 'chennai news'],
-  'Cooking': ['tamil samayal', 'tamil nadu recipes', 'chennai street food'],
-  'Gaming': ['tamil gaming', 'tamil gamer live'],
-  'Tech': ['tamil tech review', 'tamil mobile review'],
-  'Sports': ['ipl highlights', 'csk', 'tamil cricket commentary'],
-  'Science': ['tamil science', 'tamil education'],
-  'Education': ['tamil science', 'tamil education'],
-  'Live': ['tamil live stream', 'tamil nadu live'],
-  'Podcasts': ['tamil podcast', 'tamil interviews'],
-};
-
-const englishQueryPools = <String, List<String>>{
-  'Music': ['music', 'new music', 'live music'],
-  'Movies': ['movie trailer', 'cinema news'],
-  'Comedy': ['stand up comedy', 'comedy clips'],
-  'News': ['world news live', 'technology news'],
-  'Cooking': ['easy recipes', 'street food'],
-  'Gaming': ['gaming', 'gaming live'],
-  'Tech': ['tech review', 'mobile review'],
-  'Sports': ['sports highlights', 'cricket highlights'],
-  'Science': ['science', 'science education'],
-  'Education': ['science education', 'learning'],
-  'Live': ['live stream'],
-  'Podcasts': ['podcast interviews'],
-};
-
-const _localQueryWords = <String, String>{
-  'ta': 'tamil',
-  'hi': 'hindi',
-  'te': 'telugu',
-  'ml': 'malayalam',
-  'kn': 'kannada',
-  'bn': 'bengali',
-  'mr': 'marathi',
-  'gu': 'gujarati',
-  'pa': 'punjabi',
-  'ur': 'urdu',
-  'or': 'odia',
-};
-
-const _otherQueryPools = <String, List<String>>{
-  'Music': ['spanish songs', 'french music'],
-  'Movies': ['spanish movie trailer', 'french cinema'],
-  'Comedy': ['spanish comedy', 'french stand up'],
-  'News': ['spanish news live', 'french news'],
-  'Cooking': ['spanish recipes', 'french cooking'],
-  'Gaming': ['spanish gaming', 'french gaming'],
-  'Tech': ['spanish tech review', 'french tech review'],
-  'Sports': ['spanish sports highlights', 'french sports'],
-  'Science': ['spanish science', 'french science'],
-  'Education': ['spanish education', 'french education'],
-  'Live': ['spanish live stream', 'french live stream'],
-  'Podcasts': ['spanish podcast', 'french podcast'],
-};
-
-List<String> _languageQueryPool(String language, String topic) {
-  if (language == 'ta') return tamilQueryPools[topic] ?? ['tamil $topic'];
-  if (language == 'en') {
-    return englishQueryPools[topic] ?? [topic.toLowerCase()];
-  }
-  if (language == 'other') return _otherQueryPools[topic] ?? ['spanish $topic'];
-  final word = _localQueryWords[language] ?? 'english';
-  return ['$word ${topic.toLowerCase()}', '$word ${topic.toLowerCase()} live'];
+  final filter = ContentFilter(
+    channelCache: channelCache ?? ChannelLanguageCache.instance,
+    registry: LanguageProfileRegistry.instance,
+  );
+  return filter.filterVideos(
+    items,
+    shownLanguages: preferred,
+    hiddenLanguages: hidden,
+    strictHome: strictHome,
+    seen: seen,
+    random: random,
+    source: source,
+    probeResults: probeResults,
+  ).items;
 }
 
 List<String> chooseHomeQueries({
@@ -257,36 +173,13 @@ List<String> chooseHomeQueries({
   required Set<String> shownLanguages,
   required Random random,
 }) {
-  final topicChip = englishQueryPools.containsKey(chip) ? chip : 'All';
-  final topics = topicChip == 'All'
-      ? englishQueryPools.keys.toList()
-      : [topicChip];
-  if (topics.isEmpty) return const [];
-  topics.shuffle(random);
-  final count = topicChip == 'All'
-      ? (hasHistory ? (random.nextBool() ? 1 : 2) : 4)
-      : 1;
-  final selected = topics.take(count).toList();
-  final localLanguages = shownLanguages
-      .where((language) => language != 'en')
-      .toList();
-  final queries = <String>[
-    for (final topic in selected)
-      _randomVariant(
-        localLanguages.isNotEmpty && random.nextDouble() < localRatio
-            ? _languageQueryPool(
-                localLanguages[random.nextInt(localLanguages.length)],
-                topic,
-              )
-            : _languageQueryPool('en', topic),
-        random,
-      ),
-  ]..shuffle(random);
-  return queries;
+  return LanguageProfileRegistry.instance.buildQueries(
+    shownLanguages: shownLanguages,
+    chip: chip,
+    localRatio: localRatio,
+    random: random,
+  );
 }
-
-String _randomVariant(List<String> variants, Random random) =>
-    variants[random.nextInt(variants.length)];
 
 class SeenVideos {
   SeenVideos(this.entries);
@@ -301,11 +194,15 @@ class SeenVideos {
       for (final item in decoded.whereType<Map>()) {
         final id = item['id'];
         final time = DateTime.tryParse(item['at'] as String? ?? '');
-        if (id is String && time != null && now.difference(time).inDays < 7) {
+        if (id is String &&
+            time != null &&
+            now.difference(time) < const Duration(days: 7)) {
           entries[id] = time;
         }
       }
-      return SeenVideos(entries);
+      final recent = entries.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return SeenVideos(Map.fromEntries(recent.take(400)));
     } catch (_) {
       return SeenVideos({});
     }
@@ -313,17 +210,17 @@ class SeenVideos {
 
   void mark(Iterable<String> ids, DateTime now) {
     for (final id in ids) {
-      if (id.isNotEmpty) entries.remove(id);
-      if (id.isNotEmpty) entries[id] = now;
+      entries[id] = now;
     }
-    final oldest = entries.keys.length > 400 ? entries.length - 400 : 0;
-    for (final id in entries.keys.take(oldest).toList()) {
-      entries.remove(id);
-    }
+    final recent = entries.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    entries
+      ..clear()
+      ..addEntries(recent.take(400));
   }
 
   String encode() => jsonEncode([
-    for (final entry in entries.entries)
-      {'id': entry.key, 'at': entry.value.toIso8601String()},
+    for (final e in entries.entries)
+      {'id': e.key, 'at': e.value.toIso8601String()},
   ]);
 }

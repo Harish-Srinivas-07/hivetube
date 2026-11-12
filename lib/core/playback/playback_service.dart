@@ -67,7 +67,6 @@ class PlaybackSnapshot {
   StreamError? error;
   List<int> heights = [];
   List<Map<String, dynamic>> captions = [];
-  List<Map<String, dynamic>> captionTranslations = [];
   int? selectedCaption;
   bool captionError = false;
   Uint8List? frozenFrame;
@@ -196,7 +195,6 @@ class PlaybackService extends ChangeNotifier {
   }
 
   String? _captionLanguage;
-  String? _captionTranslation;
   DateTime? _lastWrite;
   Timer? _qualityTimer;
   Future<void> _commitTail = Future.value();
@@ -392,7 +390,6 @@ class PlaybackService extends ChangeNotifier {
       if (!_loadGuard.isCurrent(generation)) return;
       state.heights = selected.videos.map((e) => e.height).toList();
       state.captions = cache.captionTracks(value.videoId);
-      state.captionTranslations = cache.captionTranslations(value.videoId);
       if (_captionLanguage != null) {
         final matches =
             state.captions
@@ -471,7 +468,7 @@ class PlaybackService extends ChangeNotifier {
         _notify();
         final caption = state.selectedCaption;
         if (caption != null) {
-          unawaited(setCaption(caption, translateTo: _captionTranslation));
+          unawaited(setCaption(caption));
         }
         final focus = await _activateAudioFocus();
         _debugLog('_load: shouldPlay=$shouldPlay (play=${value.play}, visible=$_visible, userPaused=$_userPaused) focus=$focus');
@@ -652,7 +649,7 @@ class PlaybackService extends ChangeNotifier {
           'client': {
             'clientName': config['clientName'],
             'clientVersion': config['clientVersion'],
-            'hl': cache.player.hl,
+            'hl': 'en',
             'gl': cache.player.gl,
           },
         },
@@ -665,12 +662,11 @@ class PlaybackService extends ChangeNotifier {
     return transcriptToVtt(jsonDecode(body));
   }
 
-  Future<void> setCaption(int? index, {String? translateTo}) async {
+  Future<void> setCaption(int? index) async {
     if (index == null) {
       await player.setSubtitleTrack(SubtitleTrack.no());
       state.selectedCaption = null;
       _captionLanguage = null;
-      _captionTranslation = null;
       state.captionError = false;
       _notify();
       return;
@@ -688,7 +684,6 @@ class PlaybackService extends ChangeNotifier {
         );
         state.selectedCaption = index;
         _captionLanguage = track['languageCode'] as String?;
-        _captionTranslation = null;
         state.captionError = false;
         _notify();
         return;
@@ -698,7 +693,6 @@ class PlaybackService extends ChangeNotifier {
         queryParameters: {
           ...base.queryParameters,
           'fmt': 'vtt',
-          'tlang': ?translateTo,
         },
       );
       final httpRequest = await cache.player.network.client.getUrl(uri);
@@ -722,7 +716,6 @@ class PlaybackService extends ChangeNotifier {
       );
       state.selectedCaption = index;
       _captionLanguage = track['languageCode'] as String?;
-      _captionTranslation = translateTo;
       state.captionError = false;
     } catch (_) {
       if (!identical(current, request)) return;
@@ -846,7 +839,6 @@ class PlaybackController extends Notifier<PlaybackService?> {
           ref.read(visitorDataProvider).value != null &&
           !identical(_currentHttp, http)) {
         _currentHttp = http;
-        _service!.cache.player.hl = http.hl;
         _service!.cache.player.gl = http.gl;
         _service!.cache.clearCache();
       }

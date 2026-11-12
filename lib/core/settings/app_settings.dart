@@ -3,30 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../../features/shorts/shorts_screen.dart';
 
-const languages = <String, String>{
-  'en': 'English',
-  'hi': 'हिन्दी',
-  'ta': 'தமிழ்',
-  'ml': 'മലയാളം',
-  'te': 'తెలుగు',
-  'kn': 'ಕನ್ನಡ',
-  'bn': 'বাংলা',
-  'mr': 'मराठी',
-  'gu': 'ગુજરાતી',
-  'pa': 'ਪੰਜਾਬੀ',
-  'ur': 'اردو',
-  'or': 'ଓଡ଼ିଆ',
-  'other': 'Other',
-  'es': 'Español',
-  'fr': 'Français',
-  'de': 'Deutsch',
-  'pt': 'Português',
-  'ja': '日本語',
-  'ko': '한국어',
-  'ar': 'العربية',
-  'ru': 'Русский',
-  'it': 'Italiano',
-};
 const regions = <String, String>{
   'IN': 'India',
   'US': 'United States',
@@ -45,26 +21,6 @@ const regions = <String, String>{
   'JP': 'Japan',
   'KR': 'South Korea',
 };
-const languageAdjectives = <String, String>{
-  'hi': 'hindi',
-  'ta': 'tamil',
-  'ml': 'malayalam',
-  'te': 'telugu',
-  'kn': 'kannada',
-  'bn': 'bengali',
-  'mr': 'marathi',
-  'gu': 'gujarati',
-  'pa': 'punjabi',
-  'es': 'spanish',
-  'fr': 'french',
-  'de': 'german',
-  'pt': 'portuguese',
-  'ja': 'japanese',
-  'ko': 'korean',
-  'ar': 'arabic',
-  'ru': 'russian',
-  'it': 'italian',
-};
 const regionAdjectives = <String, String>{
   'IN': 'indian',
   'AE': 'emirati',
@@ -81,7 +37,7 @@ const regionAdjectives = <String, String>{
 
 class AppSettings {
   const AppSettings({
-    required this.hl,
+    String? hl,
     required this.gl,
     this.localContent = true,
     this.autoplay = false,
@@ -89,17 +45,24 @@ class AppSettings {
     this.contentLanguages = const {'ta', 'en'},
     this.hiddenLanguages = const {'hi'},
     this.localRatio = 0.6,
+    this.strictHome = true,
   });
-  final String hl, gl;
+  String get hl => 'en';
+  final String gl;
   final bool localContent;
   final bool autoplay;
   final int revision;
   final Set<String> contentLanguages, hiddenLanguages;
   final double localRatio;
+  final bool strictHome;
   int get prefsVersion => revision;
-  String get cacheKey => '${hl}_$gl';
-  static AppSettings defaults(Locale locale) =>
-      const AppSettings(hl: 'en', gl: 'IN');
+  String get cacheKey {
+    final shown = contentLanguages.toList()..sort();
+    final hidden = hiddenLanguages.toList()..sort();
+    return '${gl}_${shown.join("-")}_${hidden.join("-")}_${(localRatio * 100).round()}_${strictHome ? "strict" : "lenient"}';
+  }
+  static AppSettings defaults([Locale? _]) =>
+      const AppSettings(gl: 'IN', strictHome: true);
   AppSettings copyWith({
     String? hl,
     String? gl,
@@ -109,8 +72,8 @@ class AppSettings {
     Set<String>? contentLanguages,
     Set<String>? hiddenLanguages,
     double? localRatio,
+    bool? strictHome,
   }) => AppSettings(
-    hl: hl ?? this.hl,
     gl: gl ?? this.gl,
     localContent: localContent ?? this.localContent,
     autoplay: autoplay ?? this.autoplay,
@@ -118,19 +81,18 @@ class AppSettings {
     contentLanguages: contentLanguages ?? this.contentLanguages,
     hiddenLanguages: hiddenLanguages ?? this.hiddenLanguages,
     localRatio: localRatio ?? this.localRatio,
+    strictHome: strictHome ?? this.strictHome,
   );
 }
 
 List<String> regionalQueries(String query, AppSettings settings) {
   if (!settings.localContent) return [query];
-  final adjective = languageAdjectives[settings.hl];
+  final adjective = regionAdjectives[settings.gl];
   return adjective == null ? [query] : ['$adjective $query', query];
 }
 
 String homeCacheKey(AppSettings settings) {
-  final content = settings.contentLanguages.toList()..sort();
-  final hidden = settings.hiddenLanguages.toList()..sort();
-  return 'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}_${content.join('-')}_${hidden.join('-')}_${settings.localRatio}';
+  return 'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}';
 }
 
 final initialAppSettingsProvider = Provider<AppSettings>(
@@ -168,44 +130,34 @@ class AppSettingsController extends Notifier<AppSettings> {
     Set<String>? contentLanguages,
     Set<String>? hiddenLanguages,
     double? localRatio,
+    bool? strictHome,
   }) async {
     final old = state;
     final shown = Set<String>.of(contentLanguages ?? old.contentLanguages);
     if (shown.isEmpty) shown.add('en');
     final hidden = Set<String>.of(hiddenLanguages ?? old.hiddenLanguages)
       ..removeAll(shown);
-    final nextHl =
-        hl ??
-        (contentLanguages == null
-            ? old.hl
-            : shown.contains('en')
-            ? 'en'
-            : shown.contains('other')
-            ? 'en'
-            : shown.length == 1 && shown.single != 'other'
-            ? shown.single
-            : old.hl);
     final next = old.copyWith(
-      hl: nextHl,
       gl: gl,
       localContent: localContent,
       contentLanguages: shown,
       hiddenLanguages: hidden,
       localRatio: localRatio,
+      strictHome: strictHome,
       revision: old.revision + 1,
     );
-    if (old.hl == next.hl &&
-        old.gl == next.gl &&
+    if (old.gl == next.gl &&
         old.localContent == next.localContent &&
         old.contentLanguages.length == next.contentLanguages.length &&
         old.contentLanguages.containsAll(next.contentLanguages) &&
         old.hiddenLanguages.length == next.hiddenLanguages.length &&
         old.hiddenLanguages.containsAll(next.hiddenLanguages) &&
-        old.localRatio == next.localRatio) {
+        old.localRatio == next.localRatio &&
+        old.strictHome == next.strictHome) {
       return;
     }
     final db = ref.read(dbProvider);
-    await db.setValue('settings_hl', next.hl);
+    await db.deleteValue('settings_hl');
     await db.setValue('settings_gl', next.gl);
     await db.setValue('settings_local_content', next.localContent.toString());
     await db.setValue(
@@ -217,9 +169,11 @@ class AppSettingsController extends Notifier<AppSettings> {
       next.hiddenLanguages.join(','),
     );
     await db.setValue('settings_local_ratio', next.localRatio.toString());
+    await db.setValue('settings_strict_home', next.strictHome.toString());
     await db.setValue('settings_prefs_version', next.prefsVersion.toString());
     await db.deleteValue(homeCacheKey(old));
     await db.deleteValue(homeCacheKey(next));
+    await db.deleteValue('home_seen_videos_v1');
     ref.read(shortsSelectionProvider.notifier).clear();
     state = next;
   }

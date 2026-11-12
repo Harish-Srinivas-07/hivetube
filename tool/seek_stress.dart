@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/innertube/clients.dart';
@@ -13,15 +13,10 @@ import 'package:hivetube/core/streams/relay_server.dart';
 import 'package:hivetube/core/streams/stream_cache.dart';
 import 'package:hivetube/core/streams/stream_selector.dart';
 
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  test(
-    'seek stress test across 3 videos (30 seeks each)',
-    timeout: const Timeout(Duration(minutes: 10)),
-    () async {
-      HttpOverrides.global = null;
-      MediaKit.ensureInitialized();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = null;
+  MediaKit.ensureInitialized();
 
       final clients = InnertubeClients(
         jsonDecode(await File('assets/innertube_clients.json').readAsString()),
@@ -307,6 +302,5 @@ void main() {
       await relay.close();
       network.close();
       dio.close();
-    },
-  );
+      exit(totalFail == 0 ? 0 : 1);
 }

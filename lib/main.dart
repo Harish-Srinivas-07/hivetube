@@ -3,6 +3,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/router.dart';
+import 'core/content/language_profile.dart';
 import 'core/settings/app_settings.dart';
 import 'core/db/app_db.dart';
 import 'core/providers.dart';
@@ -15,6 +16,7 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  await LanguageProfileRegistry.instance.ensureLoaded();
   final audioHandler = await AudioService.init(
     builder: HiveAudioHandler.new,
     config: const AudioServiceConfig(
@@ -27,7 +29,6 @@ Future<void> main() async {
   final defaults = AppSettings.defaults(
     WidgetsBinding.instance.platformDispatcher.locale,
   );
-  final savedHl = await db.getValue('settings_hl');
   final savedGl = await db.getValue('settings_gl');
   final savedLocal = await db.getValue('settings_local_content');
   final savedAutoplay = await db.getValue('settings_autoplay');
@@ -36,6 +37,7 @@ Future<void> main() async {
   final savedLocalRatio =
       await db.getValue('settings_local_ratio') ??
       await db.getValue('settings_tamil_ratio');
+  final savedStrictHome = await db.getValue('settings_strict_home');
   final savedPrefsVersion = await db.getValue('settings_prefs_version');
   Set<String> parseLanguages(String? value, Set<String> fallback) {
     final parsed = value
@@ -45,8 +47,19 @@ Future<void> main() async {
     return parsed == null || parsed.isEmpty ? fallback : parsed;
   }
 
+  // One-time migration to English-only: clear old stored hl, visitorData, and home caches
+  final hlMigrated = await db.getValue('settings_hl_en_migrated');
+  if (hlMigrated != 'true') {
+    await db.deleteValue('settings_hl');
+    await db.deleteValue('content_hl_v1');
+    await db.deleteValuesStartingWith('visitor_data_');
+    await db.deleteValuesStartingWith('home_cache_');
+    await db.setValue('settings_hl_en_migrated', 'true');
+    final nextVersion = ((int.tryParse(savedPrefsVersion ?? '') ?? 0) + 1).toString();
+    await db.setValue('settings_prefs_version', nextVersion);
+  }
+
   final settings = defaults.copyWith(
-    hl: languages.containsKey(savedHl) ? savedHl : defaults.hl,
     gl: regions.containsKey(savedGl) ? savedGl : defaults.gl,
     localContent: savedLocal != 'false',
     autoplay: savedAutoplay == 'true',
@@ -61,6 +74,7 @@ Future<void> main() async {
     localRatio:
         double.tryParse(savedLocalRatio ?? '')?.clamp(0.0, 1.0).toDouble() ??
         defaults.localRatio,
+    strictHome: savedStrictHome != 'false',
     revision: int.tryParse(savedPrefsVersion ?? '') ?? 0,
   );
   HomeCache? cache;
@@ -96,6 +110,8 @@ class HiveTubeApp extends StatelessWidget {
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
     themeMode: ThemeMode.system,
+    locale: const Locale('en'),
+    supportedLocales: const [Locale('en')],
     routerConfig: appRouter,
   );
 }

@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/content/content_filter.dart';
+import '../../core/content/language_profile.dart';
 import '../../core/db/history_entry.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
@@ -66,6 +69,7 @@ class HomeController extends AsyncNotifier<HomeData> {
   List<VideoItem> _pendingFresh = [];
   String? _sessionKey;
   int _seed = DateTime.now().microsecondsSinceEpoch;
+  Set<String> _refreshExcluded = {};
 
   Future<void> ensureAvatar(VideoItem item) async {
     if (item.channelAvatarUrl.isNotEmpty) return;
@@ -243,6 +247,20 @@ class HomeController extends AsyncNotifier<HomeData> {
       while (next < channels.length && !token.isCancelled) {
         final id = channels[next++];
         var cached = _rssCache[id];
+        if (cached == null) {
+          try {
+            final raw = await ref.read(dbProvider).getValue('home_rss_cache_$id');
+            if (raw != null) {
+              final json = jsonDecode(raw) as Map<String, dynamic>;
+              final fetched = DateTime.tryParse(json['fetched'] as String? ?? '');
+              final entries = (json['items'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((e) => VideoItem.fromJson(Map<String, dynamic>.from(e)))
+                  .toList();
+              if (fetched != null) cached = (fetched: fetched, items: entries);
+            }
+          } catch (_) {}
+        }
         if (cached == null ||
             now.difference(cached.fetched) >= const Duration(minutes: 30)) {
           try {
@@ -251,6 +269,10 @@ class HomeController extends AsyncNotifier<HomeData> {
               items: await api.rss.uploads(id, cancelToken: token),
             );
             _rssCache[id] = cached;
+            await ref.read(dbProvider).setValue('home_rss_cache_$id', jsonEncode({
+              'fetched': now.toIso8601String(),
+              'items': cached.items.map((e) => e.toJson()).toList(),
+            }));
           } catch (_) {
             if (!token.isCancelled) {
               errors.add('Subscriptions');
@@ -312,7 +334,6 @@ class HomeController extends AsyncNotifier<HomeData> {
     final api = await ref.read(ytApiProvider.future);
     final settings = ref.read(contentPrefsProvider);
     if (token.isCancelled ||
-        api.search.http.hl != settings.hl ||
         api.search.http.gl != settings.gl) {
       throw StateError('Regional session changed');
     }
@@ -332,17 +353,32 @@ class HomeController extends AsyncNotifier<HomeData> {
     );
     final preferred = settings.contentLanguages;
     final hidden = settings.hiddenLanguages;
+    final strictHome = settings.strictHome;
+    final filter = ref.read(contentFilterProvider);
+    final probe = await ref.read(captionProbeProvider.future);
     final random = Random(_seed);
-    List<VideoItem> rank(List<VideoItem> items) => rankHomeItems(
-      items,
-      preferred: preferred,
-      hidden: hidden,
-      seen: seen.ids,
-      random: random,
-    );
+    final discoveryLanguage = preferred.where((language) => language != 'en').firstOrNull;
+    final discoveryPlan = discoveryLanguage == null
+        ? null
+        : await (await ref.read(discoveryEngineProvider.future)).plan(
+            language: discoveryLanguage,
+            chip: chip,
+            random: random,
+          );
+    final refreshExcluded = Set<String>.of(_refreshExcluded);
+    List<VideoItem> Function(List<VideoItem>) rankFor(String source) =>
+        (items) => filter.filterVideos(
+              items,
+              shownLanguages: preferred,
+              hiddenLanguages: hidden,
+              strictHome: strictHome,
+              seen: seen.ids,
+              random: random,
+              source: source,
+            ).items.where((item) => !refreshExcluded.contains(item.id)).toList();
     final uploadFuture = _subscriptions(
       api,
-      channels,
+      {...channels, ...?discoveryPlan?.channelIds}.toList(),
       token,
       errors,
     ).then((items) => items.where((v) => !watched.contains(v.id)).toList());
@@ -353,8 +389,9 @@ class HomeController extends AsyncNotifier<HomeData> {
       sources.add(
         HomeSource(
           weight: weight,
-          transform: rank,
+          transform: rankFor('search:$query'),
           fetch: (cursor) async {
+            final started = DateTime.now();
             if (cursor != null) {
               return api.search.videos(
                 query,
@@ -369,14 +406,39 @@ class HomeController extends AsyncNotifier<HomeData> {
               cancelToken: token,
             );
             if (page.searchDateFilters.isNotEmpty) {
-              activeParams =
-                  page.searchDateFilters[random.nextInt(
-                    page.searchDateFilters.length,
-                  )];
+              activeParams = page.searchDateFilters.length > 1
+                  ? page.searchDateFilters[1]
+                  : page.searchDateFilters.first;
               page = await api.search.videos(
                 query,
                 params: activeParams,
                 cancelToken: token,
+              );
+            }
+            if (page.searchSortParams.isNotEmpty) {
+              final sort = page.searchSortParams.first;
+              activeParams = sort;
+              page = await api.search.videos(
+                query,
+                params: sort,
+                cancelToken: token,
+              );
+            }
+            if (cursor == null) {
+              final matched = page.items.where((item) => filter.evaluate(
+                id: item.id,
+                title: item.title,
+                channelId: item.channelId,
+                channelName: item.channelName,
+                shownLanguages: preferred,
+                hiddenLanguages: hidden,
+                strictHome: strictHome,
+              ).kept).length;
+              await ref.read(discoveryStoreProvider).recordQuery(
+                query,
+                newItems: page.items.where((item) => !seen.ids.contains(item.id)).length,
+                precision: page.items.isEmpty ? 0 : matched / page.items.length,
+                dwellMs: DateTime.now().difference(started).inMilliseconds,
               );
             }
             if (page.continuation != null && random.nextBool()) {
@@ -394,11 +456,28 @@ class HomeController extends AsyncNotifier<HomeData> {
     }
 
     if (chip == 'All') {
-      for (final entry in history.where((h) => !h.isShort).take(6)) {
+      final validSeeds = history
+          .where((h) => !h.isShort)
+          .where((h) {
+            final eval = filter.evaluate(
+              id: h.videoId,
+              title: '',
+              channelId: '',
+              channelName: h.channelName,
+              shownLanguages: preferred,
+              hiddenLanguages: hidden,
+              strictHome: strictHome,
+              surface: ContentSurface.strict,
+            );
+            return eval.kept;
+          })
+          .take(6);
+
+      for (final entry in validSeeds) {
         sources.add(
           HomeSource(
             weight: 2,
-            transform: rank,
+            transform: rankFor('related:${entry.videoId}'),
             fetch: (cursor) => api.next.related(
               entry.videoId,
               continuation: cursor,
@@ -407,33 +486,35 @@ class HomeController extends AsyncNotifier<HomeData> {
           ),
         );
       }
-      if (channels.isNotEmpty) {
+      if (channels.isNotEmpty || (discoveryPlan?.channelIds.isNotEmpty ?? false)) {
         sources.add(
           HomeSource(
             weight: 2,
-            transform: rank,
+            transform: rankFor('subscriptions'),
             fetch: (_) async => VideoPage(await uploadFuture, null),
           ),
         );
       }
-      for (final query in chooseHomeQueries(
-        chip: 'All',
-        hasHistory: history.isNotEmpty,
-        localRatio: settings.localRatio,
-        shownLanguages: settings.contentLanguages,
-        random: random,
-      )) {
+      final personalSourceCount = sources.length;
+      final homeQueries = discoveryPlan?.queries.isNotEmpty == true
+          ? discoveryPlan!.queries
+          : chooseHomeQueries(
+              chip: 'All',
+              hasHistory: history.isNotEmpty,
+              localRatio: settings.localRatio,
+              shownLanguages: settings.contentLanguages,
+              random: random,
+            );
+      for (final query in homeQueries) {
         searchSource(
           query,
-          weight: isLocalLanguageQuery(query, settings.contentLanguages)
-              ? 3
-              : 1,
+          weight: personal ? 1 : 2,
         );
       }
       sources.add(
         HomeSource(
           weight: 1,
-          transform: rank,
+          transform: rankFor('browse:home'),
           fetch: (cursor) =>
               api.browse.home(continuation: cursor, cancelToken: token),
         ),
@@ -442,14 +523,14 @@ class HomeController extends AsyncNotifier<HomeData> {
         sources.add(
           HomeSource(
             weight: 1,
-            transform: rank,
+            transform: rankFor('browse:live'),
             fetch: (c) => api.browse.live(continuation: c, cancelToken: token),
           ),
         );
         sources.add(
           HomeSource(
             weight: 1,
-            transform: rank,
+            transform: rankFor('browse:gaming'),
             fetch: (c) =>
                 api.browse.gaming(continuation: c, cancelToken: token),
           ),
@@ -457,17 +538,19 @@ class HomeController extends AsyncNotifier<HomeData> {
         sources.add(
           HomeSource(
             weight: 1,
-            transform: rank,
+            transform: rankFor('browse:podcasts'),
             fetch: (c) =>
                 api.browse.podcasts(continuation: c, cancelToken: token),
           ),
         );
       }
+      final rotatingSources = sources.sublist(personalSourceCount)..shuffle(random);
+      sources.replaceRange(personalSourceCount, sources.length, rotatingSources);
     } else if (chip == 'Recently uploaded') {
       sources.add(
         HomeSource(
           weight: 2,
-          transform: rank,
+          transform: rankFor('subscriptions'),
           fetch: (_) async => VideoPage(await uploadFuture, null),
         ),
       );
@@ -475,11 +558,45 @@ class HomeController extends AsyncNotifier<HomeData> {
       sources.add(
         HomeSource(
           weight: 1,
-          transform: rank,
-          fetch: (_) async => VideoPage(
-            await api.charts.trending(settings.gl, cancelToken: token),
-            null,
-          ),
+          transform: rankFor('charts:trending'),
+          fetch: (_) async {
+            final page = await api.charts.trending(settings.gl, cancelToken: token);
+            var items = filter.filterVideos(
+              page,
+              shownLanguages: preferred,
+              hiddenLanguages: hidden,
+              strictHome: strictHome,
+              seen: seen.ids,
+              random: random,
+              source: 'charts:trending',
+            ).items;
+            if (items.length < 15) {
+              final topUpQueries = discoveryPlan?.queries.isNotEmpty == true ? discoveryPlan!.queries : chooseHomeQueries(
+                chip: 'Trending',
+                hasHistory: personal,
+                localRatio: settings.localRatio,
+                shownLanguages: preferred,
+                random: random,
+              );
+              for (final q in topUpQueries) {
+                if (items.length >= 15) break;
+                try {
+                  final res = await api.search.videos(q, cancelToken: token);
+                  final topped = filter.filterVideos(
+                    res.items,
+                    shownLanguages: preferred,
+                    hiddenLanguages: hidden,
+                    strictHome: strictHome,
+                    seen: seen.ids,
+                    random: random,
+                    source: 'topup:$q',
+                  ).items;
+                  items = [...items, ...topped];
+                } catch (_) {}
+              }
+            }
+            return VideoPage(items, null);
+          },
         ),
       );
     } else if (chip == 'Live kiosk' ||
@@ -488,33 +605,72 @@ class HomeController extends AsyncNotifier<HomeData> {
       sources.add(
         HomeSource(
           weight: 1,
-          transform: rank,
-          fetch: (c) => switch (chip) {
-            'Live kiosk' => api.browse.live(
-              continuation: c,
-              cancelToken: token,
-            ),
-            'Gaming kiosk' => api.browse.gaming(
-              continuation: c,
-              cancelToken: token,
-            ),
-            _ => api.browse.podcasts(continuation: c, cancelToken: token),
+          transform: rankFor('kiosk:$chip'),
+          fetch: (c) async {
+            final page = await switch (chip) {
+              'Live kiosk' => api.browse.live(
+                continuation: c,
+                cancelToken: token,
+              ),
+              'Gaming kiosk' => api.browse.gaming(
+                continuation: c,
+                cancelToken: token,
+              ),
+              _ => api.browse.podcasts(continuation: c, cancelToken: token),
+            };
+            var items = filter.filterVideos(
+              page.items,
+              shownLanguages: preferred,
+              hiddenLanguages: hidden,
+              strictHome: strictHome,
+              seen: seen.ids,
+              random: random,
+              source: 'kiosk:$chip',
+            ).items;
+            if (items.length < 15) {
+              final topic = chip.replaceAll(' kiosk', '');
+              final topUpQueries = discoveryPlan?.queries.isNotEmpty == true ? discoveryPlan!.queries : chooseHomeQueries(
+                chip: topic,
+                hasHistory: personal,
+                localRatio: settings.localRatio,
+                shownLanguages: preferred,
+                random: random,
+              );
+              for (final q in topUpQueries) {
+                if (items.length >= 15) break;
+                try {
+                  final res = await api.search.videos(q, cancelToken: token);
+                  final topped = filter.filterVideos(
+                    res.items,
+                    shownLanguages: preferred,
+                    hiddenLanguages: hidden,
+                    strictHome: strictHome,
+                    seen: seen.ids,
+                    random: random,
+                    source: 'topup:$q',
+                  ).items;
+                  items = [...items, ...topped];
+                } catch (_) {}
+              }
+            }
+            return VideoPage(items, page.continuation);
           },
         ),
       );
     } else if (homeTopics.containsKey(chip)) {
-      for (final query in chooseHomeQueries(
-        chip: chip,
-        hasHistory: personal,
-        localRatio: settings.localRatio,
-        shownLanguages: settings.contentLanguages,
-        random: random,
-      )) {
+      final topicQueries = discoveryPlan?.queries.isNotEmpty == true
+          ? discoveryPlan!.queries
+          : chooseHomeQueries(
+              chip: chip,
+              hasHistory: personal,
+              localRatio: settings.localRatio,
+              shownLanguages: settings.contentLanguages,
+              random: random,
+            );
+      for (final query in topicQueries) {
         searchSource(
           query,
-          weight: isLocalLanguageQuery(query, settings.contentLanguages)
-              ? 3
-              : 1,
+          weight: personal ? 1 : 2,
           live: chip == 'Live',
         );
       }
@@ -590,7 +746,66 @@ class HomeController extends AsyncNotifier<HomeData> {
       }),
     );
     await startFuture;
-    final videos = await mixer.next(24);
+    var videos = await mixer.next(24);
+    // ASR caption probe before render on ambiguous Latin items
+    final ambiguous = <({String videoId, String? channelId, String? channelName})>[];
+    for (final v in videos) {
+      if (filter.isAmbiguous(title: v.title, channelId: v.channelId, channelName: v.channelName)) {
+        ambiguous.add((videoId: v.id, channelId: v.channelId, channelName: v.channelName));
+      }
+    }
+    var asrResults = <String, String?>{};
+    if (ambiguous.isNotEmpty) {
+      asrResults = await probe.probeBatch(ambiguous.take(20).toList(), asrOnly: true);
+      videos = filter.filterVideos(
+        videos,
+        shownLanguages: preferred,
+        hiddenLanguages: hidden,
+        strictHome: strictHome,
+        seen: seen.ids,
+        probeResults: asrResults,
+        random: random,
+        source: 'probe_refine',
+      ).items;
+    }
+    var refillTries = 0;
+    while (videos.length < 24 && mixer.hasMore && refillTries < 3) {
+      refillTries++;
+      final more = await mixer.next(24 - videos.length);
+      if (more.isEmpty) break;
+      videos.addAll(more);
+    }
+    videos = mixByPublishedAge(videos, random: random);
+    if (discoveryLanguage != null) {
+      final registry = LanguageProfileRegistry.instance;
+      final store = ref.read(discoveryStoreProvider);
+      final nonLanguageTokens = <String>{};
+      for (final item in videos) {
+        final script = registry.detectScript('${item.title} ${item.channelName}');
+        if (script != null && script != discoveryLanguage) {
+          nonLanguageTokens.addAll(RegExp(r"[a-zA-Z][a-zA-Z']{2,}").allMatches('${item.title} ${item.channelName}').map((e) => e.group(0)!.toLowerCase()));
+        }
+      }
+      for (final item in videos) {
+        if (item.channelId.isEmpty) continue;
+        final script = registry.detectScript('${item.title} ${item.channelName}');
+        final asr = asrResults[item.id]?.toLowerCase().split('-').first;
+        final confirmed = script == discoveryLanguage || asr == discoveryLanguage;
+        final rejected = (script != null && script != discoveryLanguage) || (asr != null && asr != discoveryLanguage);
+        if (confirmed || rejected) {
+          await store.observeChannel(
+            channelId: item.channelId,
+            videoId: item.id,
+            language: discoveryLanguage,
+            groundTruthMatch: confirmed,
+            topics: [chip],
+          );
+        }
+        if (confirmed) {
+          await store.mineTerms(language: discoveryLanguage, title: item.title, verifiedNonLanguageTerms: nonLanguageTokens);
+        }
+      }
+    }
     final shortPages = await shortFuture;
     if (successes == 0 && queries.isNotEmpty) errors.add('Shorts');
     final dedupedShorts = <String, ShortItem>{};
@@ -636,7 +851,7 @@ class HomeController extends AsyncNotifier<HomeData> {
       hidden: hidden,
       seen: seen.ids,
     );
-    final trending = rank(await chartsFuture);
+    final trending = rankFor('charts:trending')(await chartsFuture);
     if (token.isCancelled) throw StateError('Home request cancelled');
     for (final source in sources) {
       if (source.error != null) errors.add('Feed');
@@ -682,12 +897,14 @@ class HomeController extends AsyncNotifier<HomeData> {
 
   Future<void> refresh() async {
     final chip = state.value?.chip ?? 'All';
+    _refreshExcluded = state.value?.videos.take(10).map((v) => v.id).toSet() ?? {};
     _cancel();
     _seed = DateTime.now().microsecondsSinceEpoch;
     final generation = _generation;
     final token = _token;
     final result = await AsyncValue.guard(() => _fetch(chip, token));
     if (generation == _generation) state = result;
+    _refreshExcluded = {};
   }
 
   void select(String chip) {

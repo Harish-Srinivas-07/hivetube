@@ -175,3 +175,53 @@ class SbCache extends Table {
   @override
   Set<Column> get primaryKey => {videoId};
 }
+
+class LearnedChannels extends Table {
+  TextColumn get channelId => text()();
+  TextColumn get language => text()();
+  IntColumn get votes => integer().withDefault(const Constant(0))();
+  IntColumn get lastSeen => integer()();
+  TextColumn get topics => text().withDefault(const Constant(''))();
+  @override
+  Set<Column> get primaryKey => {channelId};
+}
+
+class LearnedTerms extends Table {
+  TextColumn get term => text()();
+  TextColumn get language => text()();
+  IntColumn get strength => integer().withDefault(const Constant(0))();
+  IntColumn get seenCount => integer().withDefault(const Constant(1))();
+  IntColumn get lastSeen => integer()();
+  @override
+  Set<Column> get primaryKey => {term, language};
+}
+
+class DiscoveryQueries extends Table {
+  TextColumn get query => text()();
+  IntColumn get lastUsed => integer()();
+  IntColumn get yieldNew => integer().withDefault(const Constant(0))();
+  RealColumn get precision => real().nullable()();
+  IntColumn get dwellMs => integer().withDefault(const Constant(0))();
+  @override
+  Set<Column> get primaryKey => {query};
+}
+
+class SuggestionCache extends Table {
+  TextColumn get seed => text()();
+  TextColumn get suggestionsJson => text()();
+  IntColumn get fetchedAt => integer()();
+  @override
+  Set<Column> get primaryKey => {seed};
+}
+
+class ChannelEvidence extends Table {
+  TextColumn get channelId => text()();
+  TextColumn get videoId => text()();
+  TextColumn get language => text()();
+  BoolColumn get matched => boolean()();
+  IntColumn get lastSeen => integer()();
+  @override
+  Set<Column> get primaryKey => {channelId, videoId};
+}
+
+

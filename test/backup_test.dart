@@ -60,5 +60,29 @@ UCBCyU7B3gT8bU3Hq34bWw2w,http://www.youtube.com/channel/UCBCyU7B3gT8bU3Hq34bWw2w
     await db1.close();
     await db2.close();
   });
+
+  test('BackupService does not export hl and ignores hl on import', () async {
+    final db1 = AppDb(NativeDatabase.memory());
+    await db1.setValue('content_gl_v1', 'IN');
+    await db1.setValue('settings_hl', 'ta');
+    await db1.setValue('content_hl_v1', 'ta');
+
+    final service1 = BackupService(db1);
+    final jsonString = await service1.exportJson();
+    expect(jsonString.contains('"content_hl_v1"'), isFalse);
+    expect(jsonString.contains('"settings_hl"'), isFalse);
+
+    // Import into db2 with legacy json having hl
+    final db2 = AppDb(NativeDatabase.memory());
+    final service2 = BackupService(db2);
+    const legacyBackup = '{"format":"hivetube_backup_v1","prefs":{"content_hl_v1":"hi","settings_hl":"hi","content_gl_v1":"US"}}';
+    await service2.importJson(legacyBackup);
+    expect(await db2.getValue('content_hl_v1'), isNull);
+    expect(await db2.getValue('settings_hl'), isNull);
+    expect(await db2.getValue('content_gl_v1'), 'US');
+
+    await db1.close();
+    await db2.close();
+  });
 }
 

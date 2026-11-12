@@ -35,7 +35,6 @@ void main() {
       expect(await db.getValue(oldKey), 'initial-cache');
 
       const next = AppSettings(
-        hl: 'te',
         gl: 'US',
         contentLanguages: {'te'},
         hiddenLanguages: {'hi'},

@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/settings/app_settings.dart';
 import '../features/home/home_variety.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 
@@ -22,7 +23,7 @@ Future<void> showContentLanguageSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: Colors.transparent,
+    backgroundColor: AppColors.transparent,
     constraints: BoxConstraints(
       maxHeight:
           MediaQuery.sizeOf(context).height *
@@ -191,9 +192,6 @@ Future<void> showContentLanguageSheet(
                         _LanguageRow(
                           code: entry.key,
                           englishName: entry.value,
-                          nativeName:
-                              contentLanguageNativeNames[entry.key] ??
-                              entry.value,
                           isShown: shown.contains(entry.key),
                           isHidden: hidden.contains(entry.key),
                           onShow: (value) => setShown(entry.key, value),
@@ -325,13 +323,12 @@ class _LanguageRow extends StatelessWidget {
   const _LanguageRow({
     required this.code,
     required this.englishName,
-    required this.nativeName,
     required this.isShown,
     required this.isHidden,
     required this.onShow,
     required this.onHide,
   });
-  final String code, englishName, nativeName;
+  final String code, englishName;
   final bool isShown, isHidden;
   final ValueChanged<bool> onShow, onHide;
 
@@ -351,19 +348,11 @@ class _LanguageRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(nativeName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (nativeName != englishName)
-                  Text(
-                    englishName,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-              ],
+            child: Text(
+              englishName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
           IconButton(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
@@ -140,7 +141,7 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
                   ),
                   TextButton.icon(
                     onPressed: _createNewPlaylist,
-                    icon: const Icon(LucideIcons.plus, size: 18),
+                    icon: const Icon(LucideIcons.plus, size: AppSizes.iconSm),
                     label: const Text('New playlist'),
                   ),
                 ],

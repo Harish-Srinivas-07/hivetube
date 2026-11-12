@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+import 'app_db_executor_vm.dart'
+    if (dart.library.ui) 'app_db_executor_flutter.dart';
 
 import 'history_entry.dart';
 import 'tables.dart';
@@ -29,6 +30,11 @@ part 'app_db.g.dart';
     AudioCache,
     LyricsCache,
     SbCache,
+    LearnedChannels,
+    LearnedTerms,
+    DiscoveryQueries,
+    SuggestionCache,
+    ChannelEvidence,
   ],
   daos: [
     SubscriptionsDao,
@@ -43,49 +49,55 @@ part 'app_db.g.dart';
   ],
 )
 class AppDb extends _$AppDb {
-  AppDb([QueryExecutor? executor])
-      : super(executor ?? driftDatabase(name: 'hivetube'));
+  AppDb([QueryExecutor? executor]) : super(executor ?? defaultAppDbExecutor());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async {
-          await m.createAll();
-          final now = DateTime.now().millisecondsSinceEpoch;
-          await into(playlists).insert(
-            PlaylistsCompanion.insert(
-              name: 'Watch Later',
-              scope: const Value('yt'),
-              remoteId: const Value('watch_later'),
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
-        },
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.createTable(profile);
-            await m.createTable(subscriptions);
-            await m.createTable(feedItems);
-            await m.createTable(media);
-            await m.createTable(reactions);
-            await m.createTable(history);
-            await m.createTable(playlists);
-            await m.createTable(playlistItems);
-            await m.createTable(savedRemote);
-            await m.createTable(searchHistory);
-            await m.createTable(rydCache);
-            await m.createTable(downloads);
-            await m.createTable(audioCache);
-            await m.createTable(lyricsCache);
-            await m.createTable(sbCache);
-
-            await _migrateFromV1();
-          }
-        },
+    onCreate: (m) async {
+      await m.createAll();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await into(playlists).insert(
+        PlaylistsCompanion.insert(
+          name: 'Watch Later',
+          scope: const Value('yt'),
+          remoteId: const Value('watch_later'),
+          createdAt: now,
+          updatedAt: now,
+        ),
       );
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.createTable(profile);
+        await m.createTable(subscriptions);
+        await m.createTable(feedItems);
+        await m.createTable(media);
+        await m.createTable(reactions);
+        await m.createTable(history);
+        await m.createTable(playlists);
+        await m.createTable(playlistItems);
+        await m.createTable(savedRemote);
+        await m.createTable(searchHistory);
+        await m.createTable(rydCache);
+        await m.createTable(downloads);
+        await m.createTable(audioCache);
+        await m.createTable(lyricsCache);
+        await m.createTable(sbCache);
+
+        await _migrateFromV1();
+      }
+      if (from < 3) {
+        await m.createTable(learnedChannels);
+        await m.createTable(learnedTerms);
+        await m.createTable(discoveryQueries);
+        await m.createTable(suggestionCache);
+        await m.createTable(channelEvidence);
+      }
+    },
+  );
 
   Future<void> _migrateFromV1() async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -176,6 +188,9 @@ class AppDb extends _$AppDb {
 
   Future<int> deleteValue(String key) =>
       (delete(prefs)..where((p) => p.key.equals(key))).go();
+
+  Future<int> deleteValuesStartingWith(String prefix) =>
+      (delete(prefs)..where((p) => p.key.like('$prefix%'))).go();
 
   Future<int> clearAppData() async {
     await delete(subscriptions).go();

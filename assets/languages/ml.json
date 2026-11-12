@@ -1,0 +1,327 @@
+{
+  "code": "ml",
+  "englishName": "Malayalam",
+  "nativeName": "മലയാളം",
+  "scriptRanges": [
+    [
+      3328,
+      3455
+    ]
+  ],
+  "seedChannels": [],
+  "topicNames": [
+    "Music",
+    "Movies",
+    "Comedy",
+    "News",
+    "Cooking",
+    "Gaming",
+    "Tech",
+    "Sports",
+    "Science",
+    "Education",
+    "Live",
+    "Podcasts"
+  ],
+  "topicTemplates": {
+    "Music": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Movies": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Comedy": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "News": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Cooking": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Gaming": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Tech": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Sports": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Science": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Education": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Live": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Podcasts": [
+      "{language} {topic} {freshness}",
+      "malayalam {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "All": [
+      "{language} {topic} {freshness}",
+      "{artist} {language} latest",
+      "{film} {language} trailer new",
+      "{festival} {language} songs"
+    ]
+  },
+  "freshnessWords": [
+    "latest",
+    "new",
+    "new upload",
+    "today",
+    "this week",
+    "recent"
+  ],
+  "seasonalTerms": [
+    {
+      "endMonth": 1,
+      "name": "Pongal",
+      "endDay": 18,
+      "startMonth": 1,
+      "startDay": 8,
+      "query": "Pongal"
+    },
+    {
+      "endMonth": 11,
+      "name": "Deepavali",
+      "endDay": 20,
+      "startMonth": 10,
+      "startDay": 1,
+      "query": "Deepavali"
+    },
+    {
+      "endMonth": 8,
+      "name": "Aadi",
+      "endDay": 15,
+      "startMonth": 7,
+      "startDay": 1,
+      "query": "Aadi"
+    },
+    {
+      "endMonth": 7,
+      "name": "school reopening",
+      "endDay": 15,
+      "startMonth": 5,
+      "startDay": 20,
+      "query": "school reopening"
+    },
+    {
+      "endMonth": 4,
+      "name": "exam season",
+      "endDay": 30,
+      "startMonth": 2,
+      "startDay": 1,
+      "query": "exam season"
+    },
+    {
+      "endMonth": 6,
+      "name": "IPL season",
+      "endDay": 10,
+      "startMonth": 3,
+      "startDay": 15,
+      "query": "IPL"
+    }
+  ],
+  "slotValues": {
+    "film": [],
+    "artist": []
+  },
+  "lexiconStrong": [
+    "malayalam",
+    "mollywood",
+    "cinema",
+    "chithram",
+    "gaanangal",
+    "paattu",
+    "pattu",
+    "sangeetham",
+    "nalla",
+    "valare",
+    "engane",
+    "evide",
+    "eppol",
+    "aaru",
+    "entha",
+    "parayu",
+    "nokku",
+    "kandu",
+    "vannu",
+    "poyi",
+    "und",
+    "illa",
+    "thannu",
+    "varu",
+    "pokoo",
+    "snehikku",
+    "sauhrudam",
+    "changathi",
+    "aliyan",
+    "bava",
+    "chettan",
+    "aniyann",
+    "chechi",
+    "aniyathi",
+    "achan",
+    "muthassan",
+    "muthassi",
+    "kudumbam",
+    "kalyanam",
+    "utsavam",
+    "onam",
+    "vishu",
+    "ambalam",
+    "palli",
+    "bhakthi",
+    "keerthanam",
+    "nadanam",
+    "pachakam",
+    "oone",
+    "ruchikaram",
+    "curry",
+    "varuthathu",
+    "vartha",
+    "vaarthakal",
+    "keralam",
+    "keralite",
+    "malayali",
+    "kochi",
+    "trivandrum",
+    "thiruvananthapuram",
+    "calicut",
+    "kozhikode",
+    "kannur",
+    "thrissur",
+    "kollam",
+    "alappuzha",
+    "kottayam",
+    "palakkad",
+    "malappuram",
+    "wayanad",
+    "kasaragod",
+    "idukki",
+    "pathanamthitta",
+    "naadakam",
+    "kadha",
+    "charcha",
+    "chiri",
+    "thamaasha",
+    "comedy",
+    "kali",
+    "neethi",
+    "vidyabhyasam",
+    "padanam",
+    "joli",
+    "krishi",
+    "karshakan",
+    "naadu",
+    "graamam",
+    "nagarom",
+    "vazhi",
+    "yathra",
+    "jeevitham",
+    "swapnam"
+  ],
+  "lexiconWeak": [
+    "amma"
+  ],
+  "negativeCollisionsByLanguage": {
+    "ta": [
+      "pattu",
+      "nalla",
+      "illa",
+      "kudumbam",
+      "kalyanam",
+      "neethi",
+      "vazhi"
+    ],
+    "hi": [
+      "charcha"
+    ],
+    "bn": [
+      "cinema"
+    ],
+    "kn": [
+      "cinema",
+      "illa",
+      "bava"
+    ],
+    "te": [
+      "cinema",
+      "bava",
+      "charcha",
+      "jeevitham"
+    ]
+  },
+  "seedChannelCandidates": [
+    {
+      "name": "Asianet News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Karikku",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Manorama News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Mathrubhumi News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Muzik247",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Saina Music",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    }
+  ],
+  "schemaVersion": 2
+}

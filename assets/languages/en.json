@@ -1,0 +1,228 @@
+{
+  "code": "en",
+  "englishName": "English",
+  "nativeName": "English",
+  "scriptRanges": [
+    [
+      32,
+      126
+    ]
+  ],
+  "seedChannels": [],
+  "topicNames": [
+    "Music",
+    "Movies",
+    "Comedy",
+    "News",
+    "Cooking",
+    "Gaming",
+    "Tech",
+    "Sports",
+    "Science",
+    "Education",
+    "Live",
+    "Podcasts"
+  ],
+  "topicTemplates": {
+    "Music": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Movies": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Comedy": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "News": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Cooking": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Gaming": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Tech": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Sports": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Science": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Education": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Live": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Podcasts": [
+      "{language} {topic} {freshness}",
+      "english {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "All": [
+      "{language} {topic} {freshness}",
+      "{artist} {language} latest",
+      "{film} {language} trailer new",
+      "{festival} {language} songs"
+    ]
+  },
+  "freshnessWords": [
+    "latest",
+    "new",
+    "new upload",
+    "today",
+    "this week",
+    "recent"
+  ],
+  "seasonalTerms": [
+    {
+      "endMonth": 1,
+      "name": "Pongal",
+      "endDay": 18,
+      "startMonth": 1,
+      "startDay": 8,
+      "query": "Pongal"
+    },
+    {
+      "endMonth": 11,
+      "name": "Deepavali",
+      "endDay": 20,
+      "startMonth": 10,
+      "startDay": 1,
+      "query": "Deepavali"
+    },
+    {
+      "endMonth": 8,
+      "name": "Aadi",
+      "endDay": 15,
+      "startMonth": 7,
+      "startDay": 1,
+      "query": "Aadi"
+    },
+    {
+      "endMonth": 7,
+      "name": "school reopening",
+      "endDay": 15,
+      "startMonth": 5,
+      "startDay": 20,
+      "query": "school reopening"
+    },
+    {
+      "endMonth": 4,
+      "name": "exam season",
+      "endDay": 30,
+      "startMonth": 2,
+      "startDay": 1,
+      "query": "exam season"
+    },
+    {
+      "endMonth": 6,
+      "name": "IPL season",
+      "endDay": 10,
+      "startMonth": 3,
+      "startDay": 15,
+      "query": "IPL"
+    }
+  ],
+  "slotValues": {
+    "film": [],
+    "artist": []
+  },
+  "lexiconStrong": [
+    "the",
+    "and",
+    "with",
+    "official",
+    "video",
+    "trailer",
+    "highlights",
+    "review",
+    "ep",
+    "season",
+    "gameplay",
+    "episode"
+  ],
+  "lexiconWeak": [],
+  "negativeCollisionsByLanguage": {
+    "other": [
+      "trailer"
+    ]
+  },
+  "seedChannelCandidates": [
+    {
+      "name": "BBC News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "CNN",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Veritasium",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Kurzgesagt",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "IGN",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "TED",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Netflix",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    }
+  ],
+  "schemaVersion": 2
+}

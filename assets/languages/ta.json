@@ -1,0 +1,551 @@
+{
+  "code": "ta",
+  "englishName": "Tamil",
+  "nativeName": "தமிழ்",
+  "scriptRanges": [
+    [
+      2944,
+      3071
+    ]
+  ],
+  "seedChannels": [],
+  "topicNames": [
+    "Music",
+    "Movies",
+    "Comedy",
+    "News",
+    "Cooking",
+    "Gaming",
+    "Tech",
+    "Sports",
+    "Science",
+    "Education",
+    "Live",
+    "Podcasts"
+  ],
+  "topicTemplates": {
+    "Music": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Movies": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Comedy": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "News": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Cooking": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Gaming": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Tech": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Sports": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Science": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Education": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Live": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Podcasts": [
+      "{language} {topic} {freshness}",
+      "tamil {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "All": [
+      "{language} {topic} {freshness}",
+      "{artist} {language} latest",
+      "{film} {language} trailer new",
+      "{festival} {language} songs"
+    ]
+  },
+  "freshnessWords": [
+    "latest",
+    "new",
+    "new upload",
+    "today",
+    "this week",
+    "recent"
+  ],
+  "seasonalTerms": [
+    {
+      "endMonth": 1,
+      "name": "Pongal",
+      "endDay": 18,
+      "startMonth": 1,
+      "startDay": 8,
+      "query": "Pongal"
+    },
+    {
+      "endMonth": 11,
+      "name": "Deepavali",
+      "endDay": 20,
+      "startMonth": 10,
+      "startDay": 1,
+      "query": "Deepavali"
+    },
+    {
+      "endMonth": 8,
+      "name": "Aadi",
+      "endDay": 15,
+      "startMonth": 7,
+      "startDay": 1,
+      "query": "Aadi"
+    },
+    {
+      "endMonth": 7,
+      "name": "school reopening",
+      "endDay": 15,
+      "startMonth": 5,
+      "startDay": 20,
+      "query": "school reopening"
+    },
+    {
+      "endMonth": 4,
+      "name": "exam season",
+      "endDay": 30,
+      "startMonth": 2,
+      "startDay": 1,
+      "query": "exam season"
+    },
+    {
+      "endMonth": 6,
+      "name": "IPL season",
+      "endDay": 10,
+      "startMonth": 3,
+      "startDay": 15,
+      "query": "IPL"
+    }
+  ],
+  "slotValues": {
+    "film": [],
+    "artist": []
+  },
+  "lexiconStrong": [
+    "kollywood",
+    "padam",
+    "paadal",
+    "paadalgal",
+    "paatu",
+    "pattu",
+    "geetham",
+    "isai",
+    "nalla",
+    "romba",
+    "eppadi",
+    "enge",
+    "eppo",
+    "yaaru",
+    "enna",
+    "solla",
+    "sollunga",
+    "paaru",
+    "paarunga",
+    "vandhadhu",
+    "pochu",
+    "aachu",
+    "irukku",
+    "irukanga",
+    "illa",
+    "illai",
+    "kudunga",
+    "vaanga",
+    "ponga",
+    "kadhal",
+    "natpu",
+    "thangachi",
+    "thatha",
+    "paati",
+    "kudumbam",
+    "kalyanam",
+    "thiruvizha",
+    "pongal",
+    "deepavali",
+    "kovil",
+    "bakthi",
+    "thevaram",
+    "thiruppugazh",
+    "samayal",
+    "sappadu",
+    "suvai",
+    "virundhu",
+    "seidhi",
+    "seithigal",
+    "tamizhan",
+    "tamilan",
+    "madurai",
+    "coimbatore",
+    "kovai",
+    "trichy",
+    "salem",
+    "tirunelveli",
+    "kanyakumari",
+    "thanjavur",
+    "karur",
+    "erode",
+    "vellore",
+    "nadagam",
+    "kadhai",
+    "pechu",
+    "sirappu",
+    "sirippu",
+    "nakkeeran",
+    "mokkai",
+    "asathal",
+    "kalakkal",
+    "neethi",
+    "theerpu",
+    "padippu",
+    "kalvi",
+    "velai",
+    "thozhil",
+    "vivasayam",
+    "uzhavan",
+    "gramam",
+    "nagaram",
+    "theru",
+    "vazhi",
+    "payanam",
+    "uyir",
+    "vaazhkai",
+    "kanavu",
+    "nambikkai",
+    "veera",
+    "vetri",
+    "ariviyal",
+    "thozhilnutpam"
+  ],
+  "lexiconWeak": [
+    "machan",
+    "machi",
+    "thambi",
+    "anna",
+    "akka",
+    "amma",
+    "appa"
+  ],
+  "negativeCollisionsByLanguage": {
+    "ml": [
+      "pattu",
+      "nalla",
+      "illa",
+      "kudumbam",
+      "kalyanam",
+      "neethi",
+      "vazhi"
+    ],
+    "kn": [
+      "yaaru",
+      "illa",
+      "theerpu"
+    ],
+    "te": [
+      "theerpu"
+    ]
+  },
+  "seedChannelCandidates": [
+    {
+      "topics": [
+        "Music"
+      ],
+      "name": "Sun TV"
+    },
+    {
+      "topics": [
+        "Movies"
+      ],
+      "name": "Sony Music South"
+    },
+    {
+      "topics": [
+        "News"
+      ],
+      "name": "Think Music India"
+    },
+    {
+      "topics": [
+        "Cooking"
+      ],
+      "name": "Saregama Tamil"
+    },
+    {
+      "topics": [
+        "Comedy"
+      ],
+      "name": "Tips Tamil"
+    },
+    {
+      "topics": [
+        "Tech"
+      ],
+      "name": "Divo Music"
+    },
+    {
+      "topics": [
+        "Gaming"
+      ],
+      "name": "Lahari Music Tamil"
+    },
+    {
+      "topics": [
+        "Education"
+      ],
+      "name": "Zee Music South"
+    },
+    {
+      "topics": [
+        "Devotional"
+      ],
+      "name": "Wunderbar Films"
+    },
+    {
+      "topics": [
+        "Sports"
+      ],
+      "name": "Anirudh Ravichander"
+    },
+    {
+      "topics": [
+        "Music"
+      ],
+      "name": "Vijay Antony"
+    },
+    {
+      "topics": [
+        "Movies"
+      ],
+      "name": "Polimer News"
+    },
+    {
+      "topics": [
+        "News"
+      ],
+      "name": "Thanthi TV"
+    },
+    {
+      "topics": [
+        "Cooking"
+      ],
+      "name": "Puthiya Thalaimurai TV"
+    },
+    {
+      "topics": [
+        "Comedy"
+      ],
+      "name": "News18 Tamil Nadu"
+    },
+    {
+      "topics": [
+        "Tech"
+      ],
+      "name": "Sun News"
+    },
+    {
+      "topics": [
+        "Gaming"
+      ],
+      "name": "Sathiyam TV"
+    },
+    {
+      "topics": [
+        "Education"
+      ],
+      "name": "News7 Tamil"
+    },
+    {
+      "topics": [
+        "Devotional"
+      ],
+      "name": "Kalaignar Seithigal"
+    },
+    {
+      "topics": [
+        "Sports"
+      ],
+      "name": "Malaimurasu"
+    },
+    {
+      "topics": [
+        "Music"
+      ],
+      "name": "Vikatan TV"
+    },
+    {
+      "topics": [
+        "Movies"
+      ],
+      "name": "Village Cooking Channel"
+    },
+    {
+      "topics": [
+        "News"
+      ],
+      "name": "Madras Samayal"
+    },
+    {
+      "topics": [
+        "Cooking"
+      ],
+      "name": "Chef Deena Kitchen"
+    },
+    {
+      "topics": [
+        "Comedy"
+      ],
+      "name": "HomeCooking Tamil"
+    },
+    {
+      "topics": [
+        "Tech"
+      ],
+      "name": "Irfan's View"
+    },
+    {
+      "topics": [
+        "Gaming"
+      ],
+      "name": "BehindwoodsTV"
+    },
+    {
+      "topics": [
+        "Education"
+      ],
+      "name": "Parithabangal"
+    },
+    {
+      "topics": [
+        "Devotional"
+      ],
+      "name": "Micset Tamil"
+    },
+    {
+      "topics": [
+        "Sports"
+      ],
+      "name": "Nakkalites"
+    },
+    {
+      "topics": [
+        "Music"
+      ],
+      "name": "Blacksheep Tamil"
+    },
+    {
+      "topics": [
+        "Movies"
+      ],
+      "name": "Put Chutney"
+    },
+    {
+      "topics": [
+        "News"
+      ],
+      "name": "A2D Channel"
+    },
+    {
+      "topics": [
+        "Cooking"
+      ],
+      "name": "Tamil Tech"
+    },
+    {
+      "topics": [
+        "Comedy"
+      ],
+      "name": "Tech Boss Tamil"
+    },
+    {
+      "topics": [
+        "Tech"
+      ],
+      "name": "Daves Tamil"
+    },
+    {
+      "topics": [
+        "Gaming"
+      ],
+      "name": "Gaming Tamizhan"
+    },
+    {
+      "topics": [
+        "Education"
+      ],
+      "name": "AJ Gaming Tamil"
+    },
+    {
+      "topics": [
+        "Devotional"
+      ],
+      "name": "Vetri IAS Academy"
+    },
+    {
+      "topics": [
+        "Sports"
+      ],
+      "name": "Sura's Academy"
+    },
+    {
+      "topics": [
+        "Music"
+      ],
+      "name": "Aadhan Tamil"
+    },
+    {
+      "topics": [
+        "Movies"
+      ],
+      "name": "Tamil Trekker"
+    },
+    {
+      "topics": [
+        "News"
+      ],
+      "name": "Tamil Mithran"
+    },
+    {
+      "topics": [
+        "Cooking"
+      ],
+      "name": "Aalayam TV"
+    },
+    {
+      "topics": [
+        "Comedy"
+      ],
+      "name": "Isaiaruvi"
+    }
+  ],
+  "schemaVersion": 2
+}

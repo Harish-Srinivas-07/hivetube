@@ -80,7 +80,6 @@ class BackupService {
       'content_shown_languages_v1',
       'content_hidden_languages_v1',
       'content_language_mode_v1',
-      'content_hl_v1',
       'content_gl_v1',
       'theme_mode',
       'history_paused',
@@ -177,16 +176,19 @@ class BackupService {
       final subs = data['subscriptions'] as List? ?? const [];
       for (final s in subs) {
         if (s is Map && s['channelId'] is String) {
-          await db.into(db.subscriptions).insertOnConflictUpdate(
-            SubscriptionsCompanion.insert(
-              channelId: s['channelId'] as String,
-              name: (s['name'] as String?) ?? '',
-              avatarUrl: (s['avatarUrl'] as String?) ?? '',
-              subscribedAt: (s['subscribedAt'] as int?) ??
-                  DateTime.now().millisecondsSinceEpoch,
-              lastFeedAt: Value((s['lastFeedAt'] as int?) ?? 0),
-            ),
-          );
+          await db
+              .into(db.subscriptions)
+              .insertOnConflictUpdate(
+                SubscriptionsCompanion.insert(
+                  channelId: s['channelId'] as String,
+                  name: (s['name'] as String?) ?? '',
+                  avatarUrl: (s['avatarUrl'] as String?) ?? '',
+                  subscribedAt:
+                      (s['subscribedAt'] as int?) ??
+                      DateTime.now().millisecondsSinceEpoch,
+                  lastFeedAt: Value((s['lastFeedAt'] as int?) ?? 0),
+                ),
+              );
         }
       }
 
@@ -199,23 +201,27 @@ class BackupService {
           final now = DateTime.now().millisecondsSinceEpoch;
 
           int plId;
-          final existing = await (db.select(db.playlists)
-                ..where((t) => t.name.equals(plName) & t.scope.equals(scope)))
-              .getSingleOrNull();
+          final existing =
+              await (db.select(db.playlists)..where(
+                    (t) => t.name.equals(plName) & t.scope.equals(scope),
+                  ))
+                  .getSingleOrNull();
 
           if (existing != null) {
             plId = existing.id;
           } else {
-            plId = await db.into(db.playlists).insert(
-              PlaylistsCompanion.insert(
-                name: plName,
-                scope: Value(scope),
-                remoteId: Value(remoteId),
-                thumbUrl: Value(pl['thumbUrl'] as String?),
-                createdAt: (pl['createdAt'] as int?) ?? now,
-                updatedAt: (pl['updatedAt'] as int?) ?? now,
-              ),
-            );
+            plId = await db
+                .into(db.playlists)
+                .insert(
+                  PlaylistsCompanion.insert(
+                    name: plName,
+                    scope: Value(scope),
+                    remoteId: Value(remoteId),
+                    thumbUrl: Value(pl['thumbUrl'] as String?),
+                    createdAt: (pl['createdAt'] as int?) ?? now,
+                    updatedAt: (pl['updatedAt'] as int?) ?? now,
+                  ),
+                );
           }
 
           final items = pl['items'] as List? ?? const [];
@@ -223,27 +229,32 @@ class BackupService {
             if (item is Map && item['videoId'] is String) {
               final vId = item['videoId'] as String;
               if (item['title'] != null) {
-                await db.into(db.media).insertOnConflictUpdate(
-                  MediaCompanion.insert(
-                    videoId: vId,
-                    title: item['title'] as String,
-                    channelId: '',
-                    channelName: (item['channelName'] as String?) ?? '',
-                    durationSec: Value(item['durationSec'] as int?),
-                    thumbUrl: (item['thumbUrl'] as String?) ??
-                        'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
-                    updatedAt: now,
-                  ),
-                );
+                await db
+                    .into(db.media)
+                    .insertOnConflictUpdate(
+                      MediaCompanion.insert(
+                        videoId: vId,
+                        title: item['title'] as String,
+                        channelId: '',
+                        channelName: (item['channelName'] as String?) ?? '',
+                        durationSec: Value(item['durationSec'] as int?),
+                        thumbUrl:
+                            (item['thumbUrl'] as String?) ??
+                            'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
+                        updatedAt: now,
+                      ),
+                    );
               }
-              await db.into(db.playlistItems).insertOnConflictUpdate(
-                PlaylistItemsCompanion.insert(
-                  playlistId: plId,
-                  videoId: vId,
-                  position: (item['position'] as int?) ?? 0,
-                  addedAt: (item['addedAt'] as int?) ?? now,
-                ),
-              );
+              await db
+                  .into(db.playlistItems)
+                  .insertOnConflictUpdate(
+                    PlaylistItemsCompanion.insert(
+                      playlistId: plId,
+                      videoId: vId,
+                      position: (item['position'] as int?) ?? 0,
+                      addedAt: (item['addedAt'] as int?) ?? now,
+                    ),
+                  );
             }
           }
         }
@@ -255,58 +266,70 @@ class BackupService {
           final vId = h['videoId'] as String;
           final now = DateTime.now().millisecondsSinceEpoch;
           if (h['title'] != null) {
-            await db.into(db.media).insertOnConflictUpdate(
-              MediaCompanion.insert(
-                videoId: vId,
-                title: h['title'] as String,
-                channelId: (h['channelId'] as String?) ?? '',
-                channelName: (h['channelName'] as String?) ?? '',
-                durationSec: Value(h['durationSec'] as int?),
-                thumbUrl: (h['thumbUrl'] as String?) ??
-                    'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
-                updatedAt: now,
-              ),
-            );
+            await db
+                .into(db.media)
+                .insertOnConflictUpdate(
+                  MediaCompanion.insert(
+                    videoId: vId,
+                    title: h['title'] as String,
+                    channelId: (h['channelId'] as String?) ?? '',
+                    channelName: (h['channelName'] as String?) ?? '',
+                    durationSec: Value(h['durationSec'] as int?),
+                    thumbUrl:
+                        (h['thumbUrl'] as String?) ??
+                        'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
+                    updatedAt: now,
+                  ),
+                );
           }
-          await db.into(db.history).insert(
-            HistoryCompanion.insert(
-              videoId: vId,
-              positionMs: (h['positionMs'] as int?) ?? 0,
-              durationMs: (h['durationMs'] as int?) ?? 0,
-              at: (h['at'] as int?) ?? now,
-              scope: Value((h['scope'] as String?) ?? 'yt'),
-            ),
-          );
+          await db
+              .into(db.history)
+              .insert(
+                HistoryCompanion.insert(
+                  videoId: vId,
+                  positionMs: (h['positionMs'] as int?) ?? 0,
+                  durationMs: (h['durationMs'] as int?) ?? 0,
+                  at: (h['at'] as int?) ?? now,
+                  scope: Value((h['scope'] as String?) ?? 'yt'),
+                ),
+              );
         }
       }
 
       final reactions = data['reactions'] as List? ?? const [];
       for (final r in reactions) {
         if (r is Map && r['videoId'] is String && r['value'] is int) {
-          await db.into(db.reactions).insertOnConflictUpdate(
-            ReactionsCompanion.insert(
-              videoId: r['videoId'] as String,
-              value: r['value'] as int,
-              at: (r['at'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
-              scope: Value((r['scope'] as String?) ?? 'yt'),
-            ),
-          );
+          await db
+              .into(db.reactions)
+              .insertOnConflictUpdate(
+                ReactionsCompanion.insert(
+                  videoId: r['videoId'] as String,
+                  value: r['value'] as int,
+                  at:
+                      (r['at'] as int?) ??
+                      DateTime.now().millisecondsSinceEpoch,
+                  scope: Value((r['scope'] as String?) ?? 'yt'),
+                ),
+              );
         }
       }
 
       final savedRemotes = data['saved_remote'] as List? ?? const [];
       for (final sr in savedRemotes) {
         if (sr is Map && sr['id'] is String) {
-          await db.into(db.savedRemote).insertOnConflictUpdate(
-            SavedRemoteCompanion.insert(
-              id: sr['id'] as String,
-              kind: (sr['kind'] as String?) ?? 'playlist',
-              title: (sr['title'] as String?) ?? '',
-              thumbUrl: Value(sr['thumbUrl'] as String?),
-              savedAt: (sr['savedAt'] as int?) ??
-                  DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
+          await db
+              .into(db.savedRemote)
+              .insertOnConflictUpdate(
+                SavedRemoteCompanion.insert(
+                  id: sr['id'] as String,
+                  kind: (sr['kind'] as String?) ?? 'playlist',
+                  title: (sr['title'] as String?) ?? '',
+                  thumbUrl: Value(sr['thumbUrl'] as String?),
+                  savedAt:
+                      (sr['savedAt'] as int?) ??
+                      DateTime.now().millisecondsSinceEpoch,
+                ),
+              );
         }
       }
 
@@ -322,11 +345,12 @@ class BackupService {
       if (prefs is Map) {
         for (final entry in prefs.entries) {
           if (entry.key is String && entry.value is String) {
-            await db.setValue(entry.key as String, entry.value as String);
+            final key = entry.key as String;
+            if (key == 'content_hl_v1' || key == 'settings_hl') continue;
+            await db.setValue(key, entry.value as String);
           }
         }
       }
     });
   }
 }
-

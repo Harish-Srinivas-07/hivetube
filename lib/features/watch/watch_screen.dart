@@ -21,6 +21,7 @@ import '../../core/yt/yt_comments.dart';
 import '../../core/yt/ryd.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/common.dart';
 import '../../widgets/player/player_controls.dart';
@@ -596,7 +597,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               InkWell(
-                borderRadius: BorderRadius.circular(AppSpacing.sm),
+                borderRadius: AppRadius.smBorder,
                 onTap: () => setState(() => panel = 'Description'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,7 +644,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               Row(
                 children: [
                   InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    borderRadius: AppRadius.pillBorder,
                     onTap: info.channelId.isNotEmpty
                         ? () => context.push('/channel/${info.channelId}')
                         : null,
@@ -809,9 +810,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       color: Theme.of(
                         context,
                       ).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(AppSpacing.md),
+                      borderRadius: AppRadius.lgBorder,
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(AppSpacing.md),
+                        borderRadius: AppRadius.lgBorder,
                         onTap: () => setState(() => panel = 'Comments'),
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.md),
@@ -844,7 +845,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                   const Spacer(),
                                   Icon(
                                     LucideIcons.chevronRight,
-                                    size: 18,
+                                    size: AppSizes.iconSm,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.onSurfaceVariant,
@@ -1019,7 +1020,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   children: [
                     Icon(
                       LucideIcons.thumbsUp,
-                      size: 20,
+                      size: AppSizes.iconMd,
                       color: reaction == 1 ? colors.primary : colors.onSurface,
                     ),
                     if (info.likes.isNotEmpty) ...[
@@ -1065,7 +1066,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     children: [
                       Icon(
                         LucideIcons.thumbsDown,
-                        size: 20,
+                        size: AppSizes.iconMd,
                         color: reaction == -1 ? colors.primary : colors.onSurface,
                       ),
                       if (dislikes != null) ...[
@@ -1094,11 +1095,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       padding: const EdgeInsets.only(right: AppSpacing.sm),
       child: Material(
         color: scheme.surfaceContainerHighest,
-        borderRadius: const BorderRadius.all(Radius.circular(AppSpacing.xxxl)),
+        borderRadius: AppRadius.pillBorder,
         child: InkWell(
-          borderRadius: const BorderRadius.all(
-            Radius.circular(AppSpacing.xxxl),
-          ),
+          borderRadius: AppRadius.pillBorder,
           onTap: action,
           child: Padding(
             padding: const EdgeInsets.symmetric(
@@ -1108,7 +1107,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 20, color: scheme.onSurface),
+                Icon(icon, size: AppSizes.iconSm, color: scheme.onSurface),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
                   label,
@@ -1226,11 +1225,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           children: [
             const SizedBox(height: AppSpacing.sm),
             Container(
-              width: 40,
-              height: 4,
+              width: AppSpacing.contentSheetHandleWidth,
+              height: AppSpacing.contentSheetHandleHeight,
               decoration: BoxDecoration(
                 color: Theme.of(context).dividerColor,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: AppRadius.pillBorder,
               ),
             ),
             ListTile(

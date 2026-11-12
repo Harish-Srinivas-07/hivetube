@@ -1,0 +1,228 @@
+{
+  "code": "ur",
+  "englishName": "Urdu",
+  "nativeName": "اردو",
+  "scriptRanges": [
+    [
+      1536,
+      1791
+    ]
+  ],
+  "seedChannels": [],
+  "topicNames": [
+    "Music",
+    "Movies",
+    "Comedy",
+    "News",
+    "Cooking",
+    "Gaming",
+    "Tech",
+    "Sports",
+    "Science",
+    "Education",
+    "Live",
+    "Podcasts"
+  ],
+  "topicTemplates": {
+    "Music": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Movies": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Comedy": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "News": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Cooking": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Gaming": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Tech": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Sports": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Science": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Education": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Live": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Podcasts": [
+      "{language} {topic} {freshness}",
+      "urdu {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "All": [
+      "{language} {topic} {freshness}",
+      "{artist} {language} latest",
+      "{film} {language} trailer new",
+      "{festival} {language} songs"
+    ]
+  },
+  "freshnessWords": [
+    "latest",
+    "new",
+    "new upload",
+    "today",
+    "this week",
+    "recent"
+  ],
+  "seasonalTerms": [
+    {
+      "endMonth": 1,
+      "name": "Pongal",
+      "endDay": 18,
+      "startMonth": 1,
+      "startDay": 8,
+      "query": "Pongal"
+    },
+    {
+      "endMonth": 11,
+      "name": "Deepavali",
+      "endDay": 20,
+      "startMonth": 10,
+      "startDay": 1,
+      "query": "Deepavali"
+    },
+    {
+      "endMonth": 8,
+      "name": "Aadi",
+      "endDay": 15,
+      "startMonth": 7,
+      "startDay": 1,
+      "query": "Aadi"
+    },
+    {
+      "endMonth": 7,
+      "name": "school reopening",
+      "endDay": 15,
+      "startMonth": 5,
+      "startDay": 20,
+      "query": "school reopening"
+    },
+    {
+      "endMonth": 4,
+      "name": "exam season",
+      "endDay": 30,
+      "startMonth": 2,
+      "startDay": 1,
+      "query": "exam season"
+    },
+    {
+      "endMonth": 6,
+      "name": "IPL season",
+      "endDay": 10,
+      "startMonth": 3,
+      "startDay": 15,
+      "query": "IPL"
+    }
+  ],
+  "slotValues": {
+    "film": [],
+    "artist": []
+  },
+  "lexiconStrong": [
+    "urdu",
+    "drama",
+    "ghazal",
+    "shayari",
+    "qawwali",
+    "naat",
+    "muhabbat",
+    "dastaan",
+    "kahani",
+    "shayeri",
+    "khabar",
+    "pakistani",
+    "lahore",
+    "karachi",
+    "adab",
+    "afsaana"
+  ],
+  "lexiconWeak": [],
+  "negativeCollisionsByLanguage": {
+    "or": [
+      "khabar"
+    ],
+    "gu": [
+      "khabar"
+    ],
+    "hi": [
+      "ghazal",
+      "shayari",
+      "qawwali",
+      "kahani",
+      "khabar"
+    ]
+  },
+  "seedChannelCandidates": [
+    {
+      "name": "ARY Digital",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "HUM TV",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Geo News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Coke Studio",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Har Pal Geo",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    }
+  ],
+  "schemaVersion": 2
+}

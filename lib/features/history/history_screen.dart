@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
@@ -110,7 +112,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Search history...',
-                prefixIcon: const Icon(LucideIcons.search, size: 20),
+                prefixIcon: const Icon(LucideIcons.search, size: AppSizes.iconMd),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                 ),
@@ -231,7 +233,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => Container(
                           color: theme.colorScheme.surfaceContainerHigh,
-                          child: const Icon(LucideIcons.video, size: 24),
+                          child: const Icon(LucideIcons.video, size: AppSizes.icon),
                         ),
                       ),
                     ),
@@ -247,8 +249,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         ),
                         child: LinearProgressIndicator(
                           value: progress,
-                          minHeight: 3,
-                          backgroundColor: Colors.black45,
+                          minHeight: AppSizes.progressBarHeight,
+                          backgroundColor: AppColors.thumbnailBadge,
                           valueColor: AlwaysStoppedAnimation<Color>(
                             theme.colorScheme.primary,
                           ),
@@ -290,7 +292,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(LucideIcons.x, size: 18),
+                icon: const Icon(LucideIcons.x, size: AppSizes.iconSm),
                 onPressed: () {
                   ref
                       .read(dbProvider)

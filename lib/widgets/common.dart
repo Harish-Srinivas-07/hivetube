@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
 
 String avatarImageUrl(String url) => url.replaceFirst(
@@ -42,7 +43,7 @@ class Avatar extends StatelessWidget {
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 180),
+                fadeInDuration: AppMotion.fast,
                 placeholder: (_, _) => fallback(),
                 errorWidget: (_, _, _) => fallback(),
               ),

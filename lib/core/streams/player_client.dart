@@ -30,10 +30,12 @@ class PlayerClient {
     this.clients,
     this.visitor,
     this.refreshVisitor, {
-    this.hl = 'en',
+    String hl = 'en',
     this.gl = 'IN',
   });
-  String hl, gl;
+  String gl;
+  String get hl => 'en';
+  set hl(String _) {}
   final NetworkFamily network;
   final InnertubeClients clients;
   final String? Function() visitor;
@@ -54,7 +56,7 @@ class PlayerClient {
     final contextClient = <String, dynamic>{
       for (final e in c.entries)
         if (e.key != 'ua' && e.key != 'id' && e.key != 'origin') e.key: e.value,
-      'hl': hl,
+      'hl': 'en',
       'gl': gl,
       if (visitor() != null) 'visitorData': visitor(),
     };

@@ -68,7 +68,7 @@ class InnertubeHttp {
 
 Map<String, dynamic> buildClientContext(
   Map<String, dynamic> client, {
-  required String hl,
+  String hl = 'en',
   required String gl,
   String? visitorData,
 }) => {
@@ -76,7 +76,7 @@ Map<String, dynamic> buildClientContext(
     'clientName': client['clientName'],
     'clientVersion': client['clientVersion'],
     if (client['platform'] != null) 'platform': client['platform'],
-    'hl': hl,
+    'hl': 'en',
     'gl': gl,
     'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
     'visitorData': ?visitorData,

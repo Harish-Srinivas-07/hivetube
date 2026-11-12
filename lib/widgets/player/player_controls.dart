@@ -14,6 +14,9 @@ import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/settings/app_settings.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
@@ -374,7 +377,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 child: AnimatedOpacity(
                   key: const ValueKey('playerOverlay'),
                   opacity: ui.overlayVisible ? 1 : 0,
-                  duration: const Duration(milliseconds: 200),
+                  duration: AppMotion.base,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -385,9 +388,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.black.withValues(alpha: .55),
+                                AppColors.playerControlGlass,
                                 AppColors.transparent,
-                                Colors.black.withValues(alpha: .55),
+                                AppColors.playerControlGlass,
                               ],
                             ),
                           ),
@@ -401,7 +404,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               alignment: Alignment.topCenter,
                               child: Padding(
                                 padding: EdgeInsets.only(
-                                  top: ui.isFullscreen ? AppSpacing.md : AppSpacing.sm,
+                                  top: ui.isFullscreen
+                                      ? AppSpacing.md
+                                      : AppSpacing.sm,
                                 ),
                                 child: Row(
                                   children: [
@@ -424,7 +429,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                         tooltip: 'Captions',
                                         color: state.selectedCaption == null
                                             ? AppColors.shortsForeground
-                                            : const Color(0xFFFF0000),
+                                            : AppColors.primary,
                                         icon: const Icon(LucideIcons.captions),
                                       ),
                                     IconButton(
@@ -435,7 +440,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                           ? 'Autoplay on'
                                           : 'Autoplay off',
                                       color: autoplay
-                                          ? const Color(0xFFFF0000)
+                                          ? AppColors.primary
                                           : AppColors.shortsForeground,
                                       icon: const Icon(LucideIcons.circlePlay),
                                     ),
@@ -523,7 +528,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               }
                                               if (mounted) _scheduleHide();
                                             },
-                                            iconSize: 40,
+                                            iconSize: AppSizes.avatar,
                                             icon: Icon(
                                               state.status == PlayerStatus.ended
                                                   ? LucideIcons.rotateCcw
@@ -551,11 +556,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                 children: [
                                   const SizedBox(width: AppSpacing.md),
                                   DecoratedBox(
-                                    decoration: BoxDecoration(
+                                    decoration: const BoxDecoration(
                                       color: AppColors.playerControlGlass,
-                                      borderRadius: BorderRadius.circular(
-                                        AppSpacing.xl,
-                                      ),
+                                      borderRadius: AppRadius.pillBorder,
                                     ),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -616,7 +619,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   ),
                 ),
               ),
-            if (!widget.short && (ui.panelProgress == 0 || ui.panelProgress > .3))
+            if (!widget.short &&
+                (ui.panelProgress == 0 || ui.panelProgress > .3))
               Positioned(
                 left: 0,
                 right: 0,
@@ -655,7 +659,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                       : Alignment.centerRight,
                   child: ClipOval(
                     child: ColoredBox(
-                      color: Colors.black.withValues(alpha: .55),
+                      color: AppColors.playerControlGlass,
                       child: SizedBox(
                         width: constraints.maxWidth / 2,
                         height: constraints.maxHeight,

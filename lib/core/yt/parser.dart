@@ -101,6 +101,34 @@ List<String> searchUploadDateParams(dynamic json) {
   return params;
 }
 
+Map<String, String> searchFreshnessParams(dynamic json) {
+  final found = <String, String>{};
+  for (final node in findAll(json, 'searchFilterGroupRenderer')) {
+    if (node is! Map) continue;
+    final group = _text(node['title']).toLowerCase();
+    for (final filter in findAll(node, 'searchFilterRenderer')) {
+      if (filter is! Map) continue;
+      final label = _text(filter['label']).trim().toLowerCase();
+      final endpoint = safeNav(filter, ['navigationEndpoint', 'searchEndpoint', 'params']);
+      if (endpoint is! String || endpoint.isEmpty) continue;
+      if (group.contains('upload')) {
+        if (label.contains('today')) found['today'] = endpoint;
+        if (label.contains('week')) found['week'] = endpoint;
+        if (label.contains('month')) found['month'] = endpoint;
+      }
+      if (group.contains('sort') && (label.contains('upload') || label.contains('date') || label.contains('latest'))) {
+        found['sortUpload'] = endpoint;
+      }
+    }
+  }
+  return found;
+}
+
+List<String> searchUploadSortParams(dynamic json) {
+  final value = searchFreshnessParams(json)['sortUpload'];
+  return value == null ? const [] : [value];
+}
+
 String _channelAvatar(dynamic value) {
   final supported = safeNav(value, [
     'channelThumbnailSupportedRenderers',
@@ -243,6 +271,7 @@ VideoPage parseVideos(dynamic json) {
     items,
     continuationToken(json),
     searchDateFilters: searchUploadDateParams(json),
+    searchSortParams: searchUploadSortParams(json),
   );
 }
 
@@ -504,14 +533,20 @@ SearchResultPage parseSearchResults(dynamic json) {
     }
   }
 
+  final videos = parseVideos(json).items;
+
   // Shorts
   final shorts = parseShorts(json);
-  if (shorts.isNotEmpty) {
+  if (videos.isEmpty && shorts.isNotEmpty) {
+    for (final s in shorts) {
+      items.add(ShortSearchResult(s));
+    }
+  } else if (shorts.isNotEmpty) {
     items.add(ShortsShelfSearchResult(shorts));
   }
 
   // Videos
-  for (final v in parseVideos(json).items) {
+  for (final v in videos) {
     if (seenVideos.add(v.id)) {
       items.add(VideoSearchResult(v));
     }

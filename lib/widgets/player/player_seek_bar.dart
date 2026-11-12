@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/yt/watch_info.dart';
@@ -44,7 +45,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: AppMotion.pulse,
     )..repeat();
   }
 
@@ -149,7 +150,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
                   animation: _pulseController,
                   builder: (context, _) => TweenAnimationBuilder<double>(
                     tween: Tween(end: active ? 1 : 0),
-                    duration: const Duration(milliseconds: 150),
+                    duration: AppMotion.fast,
                     builder: (context, animation, _) => CustomPaint(
                       painter: _SeekPainter(
                         fraction(position),
@@ -270,7 +271,7 @@ class _SeekPainter extends CustomPainter {
       canvas.drawCircle(
         center,
         thumbRadius * (active > 0 ? active : 1.0),
-        Paint()..color = const Color(0xFFFF0000),
+        Paint()..color = AppColors.primary,
       );
     }
   }

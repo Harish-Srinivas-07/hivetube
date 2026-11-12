@@ -6,9 +6,11 @@ import '../../core/providers.dart';
 import '../home/home_controller.dart';
 import '../home/home_screen.dart';
 import '../home/home_variety.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/glass_surface.dart';
+import 'content_debug_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -148,23 +150,10 @@ class SettingsScreen extends ConsumerWidget {
         child: GlassSurface(
           borderRadius: AppRadius.mdBorder,
           child: Material(
-            color: Colors.transparent,
+            color: AppColors.transparent,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ListTile(
-                  title: const Text('Language'),
-                  subtitle: Text(languages[settings.hl] ?? settings.hl),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => pick(
-                    'Language',
-                    languages,
-                    settings.hl,
-                    (value) => ref
-                        .read(contentPrefsProvider.notifier)
-                        .update(hl: value),
-                  ),
-                ),
                 ListTile(
                   title: const Text('Location'),
                   subtitle: Text(regions[settings.gl] ?? settings.gl),
@@ -212,6 +201,14 @@ class SettingsScreen extends ConsumerWidget {
                     settings.hiddenLanguages,
                     true,
                   ),
+                ),
+                SwitchListTile(
+                  title: const Text('Strict Home'),
+                  subtitle: const Text('Show only videos in selected languages'),
+                  value: settings.strictHome,
+                  onChanged: (value) => ref
+                      .read(contentPrefsProvider.notifier)
+                      .update(strictHome: value),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -263,6 +260,18 @@ class SettingsScreen extends ConsumerWidget {
                       },
                     );
                   },
+                ),
+                ListTile(
+                  leading: const Icon(LucideIcons.bug),
+                  title: const Text('Content debug'),
+                  subtitle: const Text('Home trace and language filter diagnostic log'),
+                  trailing: const Icon(LucideIcons.chevronRight),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ContentDebugScreen(),
+                    ),
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(LucideIcons.trash2),

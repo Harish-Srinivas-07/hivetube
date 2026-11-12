@@ -3,18 +3,18 @@ import '../../core/yt/models.dart';
 import 'home_variety.dart';
 
 const homeTopics = <String, String>{
-  'Music': 'tamil songs',
-  'Movies': 'tamil movie trailer',
-  'Gaming': 'tamil gaming',
-  'Live': 'tamil live stream',
-  'News': 'tamil news live',
-  'Podcasts': 'tamil podcast',
-  'Sports': 'ipl highlights',
-  'Comedy': 'tamil comedy',
-  'Cooking': 'tamil samayal',
-  'Science': 'tamil science',
-  'Tech': 'tamil tech review',
-  'Education': 'tamil education',
+  'Music': 'Music',
+  'Movies': 'Movies',
+  'Gaming': 'Gaming',
+  'Live': 'Live',
+  'News': 'News',
+  'Podcasts': 'Podcasts',
+  'Sports': 'Sports',
+  'Comedy': 'Comedy',
+  'Cooking': 'Cooking',
+  'Science': 'Science',
+  'Tech': 'Tech',
+  'Education': 'Education',
 };
 
 List<String> shortsQueries({
@@ -42,6 +42,7 @@ List<ShortItem> buildShortsShelf(
   Set<String> preferred = const {'ta', 'en'},
   Set<String> hidden = const {'hi'},
   Set<String> seen = const {},
+  String source = 'shorts_shelf',
 }) {
   final rng = random ?? Random();
   final uniqueIds = <String>{};
@@ -67,6 +68,7 @@ List<ShortItem> buildShortsShelf(
     hidden: hidden,
     seen: seen,
     random: rng,
+    source: source,
   ).map((item) => item.id).toList();
   final byId = {for (final item in all) item.id: item};
   final ordered = ranked.map((id) => byId[id]!).toList();

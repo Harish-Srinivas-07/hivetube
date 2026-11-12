@@ -46,15 +46,15 @@ void main() {
     );
     expect(result.map((v) => v.id), ['a', 'b', 'c']);
   });
-  test('launch cache expires at twelve hours and ignores malformed data', () {
+  test('launch cache expires at thirty minutes and ignores malformed data', () {
     final now = DateTime.utc(2026);
     final cache = HomeCache(const [], const [], now);
     expect(
-      HomeCache.decode(cache.encode(), now.add(const Duration(hours: 11))),
+      HomeCache.decode(cache.encode(), now.add(const Duration(minutes: 29))),
       isNotNull,
     );
     expect(
-      HomeCache.decode(cache.encode(), now.add(const Duration(hours: 12))),
+      HomeCache.decode(cache.encode(), now.add(const Duration(minutes: 30))),
       isNull,
     );
     expect(HomeCache.decode(jsonEncode({'savedAt': 'bad'}), now), isNull);

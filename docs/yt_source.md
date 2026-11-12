@@ -2,6 +2,21 @@
 
 Research date: **2026-10-31** (rev 4: + SourecResource stream/lyrics engine 6.2; rev 3: YouPipe Music 6.1; video target 1080p). Targets: **Android + Windows/macOS/Linux**. Core: **pure Dart**. State: **Riverpod**. DB: **Drift**. No backend, no Google login, every request goes from the user's device on the user's own IP.
 
+## Current repository snapshot (2026-11-12)
+
+This section records code present in the repo. It does not mean each endpoint or device behavior was live-verified. The sections below remain research and design notes; use this snapshot when they differ from the implementation.
+
+- **InnerTube and browse:** `lib/core/innertube/` builds requests from `assets/innertube_clients.json`, uses English UI language plus the selected region, stores visitor data, and refreshes it once after a 403. `lib/core/yt/` contains browse, search, next/related, charts, comments, Shorts/reel, RSS, captions, and parsing services.
+- **Playback:** `lib/core/streams/player_client.dart` resolves player data. `stream_selector.dart`, `relay_server.dart`, and `net_family.dart` select formats, serve byte ranges through a local relay with an LRU chunk cache, and support a persisted IPv4 preference. Playback, audio service, and controls are in `lib/core/playback/` and `lib/features/watch/`.
+- **Home:** `lib/features/home/` mixes related videos, subscription uploads, search, browse, and charts. It filters and ranks results, tracks seen videos, and caches the feed locally. Signed-out `FEwhat_to_watch` can be empty, so the app builds a local feed from available sources.
+- **Language discovery:** `assets/languages/*.json` provides topic templates, freshness terms, seasonal slots, strong/weak lexicons, collision lists, and unverified channel-name candidates. `lib/core/content/discovery/` rotates generated queries, harvests cached suggestions, records up to 300 query outcomes with a 24-hour reuse window, and combines verified seed IDs with learned channels. Channel ID verification uses live search, channel details, RSS, and script/ASR checks; it has not completed in this DNS-restricted run. Seed candidates are not verified IDs.
+- **Tamil Home mix:** related and subscription sources retain weight 2; dynamic discovery searches use weight 1 when personal sources exist and 2 on cold start. RSS is capped at six concurrent requests and cached 30 minutes. Search requests read date and sort parameters from returned filter groups. The query bandit and age mix are implemented, but no live measurements were available to tune source weights or confirm the 60/30/10 age outcome.
+- **Freshness lab:** run `dart run tool/freshness_lab.dart`. It uses direct YouTube, suggestions, RSS, and player calls; writes seen IDs under the system temp directory. On 2026-11-12 its real first request failed DNS lookup for `www.youtube.com`; the comparison therefore has no observed item, language, age, overlap, or channel metrics. RSS strategies also require real verified-channel exports. No endpoint conclusion or target claim is inferred from that run.
+- **Language preferences:** `lib/core/content/` classifies title/channel metadata by script and lexicon, uses channel votes and caption probes, and records filter diagnostics. Profiles ship under `assets/languages/`. Settings choose shown/hidden languages, region, local-content ratio, and strict Home behavior. Content settings changes clear feed cache and seen state.
+- **Local data:** `lib/core/db/app_db.dart` is the Drift database; Flutter and VM/test executors are split into separate files. History, subscriptions, playlists, reactions, profile, and preferences are local. `lib/core/yt/backup_service.dart` handles backup import/export.
+- **UI:** shared theme tokens are in `lib/theme/`; reusable page, sheet, state, control, skeleton, feedback, and video-card widgets are in `lib/widgets/ui/`.
+- **Validation note (2026-11-12):** focused discovery, content-filter, Home-variety, Home-core, and Home-mixer tests passed (35 tests); `flutter analyze` reported no issues. The broader non-golden batch reached 123 passes and 3 failures; confirmed failures include a legacy backup `settings_hl` assertion and Settings-screen overflow/label assertions. The screenshot audit stopped before a summary. Device playback remains unverified. `tool/probe.dart` referenced by the older plan is absent; use available focused tools instead.
+
 > Status legend: ✅ = verified in current source of an actively maintained project (yt-dlp 2026-10-29, NewPipeExtractor 2026-10-26, Metrolist/innertubex 2026-10-22/25, ytmusicapi 2026-10-12). 🧪 = must pass `tool/probe.dart` (section 15) on your machine. I could NOT run live calls (my sandbox blocks youtube.com), so every 🧪 item is unconfirmed until you run the probe.
 
 ---
@@ -637,16 +652,11 @@ search_history(query, scope, at, PK(query,scope))
 - Import Google Takeout `subscriptions.csv` (format `Channel Id,Channel Url,Channel Title`, per NewPipe `YoutubeSubscriptionExtractor`).
 
 ### 11.3 YouTube home without login (local algorithm)
-1. "New from subscriptions": RSS (Y17) for all subscriptions, refreshed in parallel (cap 6 concurrent, at most once every 30 min), sorted by `publishedAt`.
-2. "For you" = **YouPipe HomeMixer (F10)**. Sources, all started at once:
-   - related (Y4 + continuations) of the **last 6 watched** videos, weight 2;
-   - **unwatched subscription uploads ≤14 days**, weight 2;
-   - topic-chip searches (Music, Gaming, Live, News…), weight 1, or 2 when nothing personal exists.
-   Mix round-robin by weight. No repeats, drop items ≥90% watched and disliked channels.
-   **Launch cache:** keep the first page + Shorts shelf in `prefs` for 12 h. Show it in the first frame; replace it with the fresh mix only if the user hasn't touched Home yet.
-3. "Trending": Y14 charts (country = device locale) + Y10/Y11/Y12 kiosks as chips.
-4. Try Y9 `FEwhat_to_watch` first. If it returns items, show them on top.
-- Cold start (no history/subs): charts + kiosks + a "pick topics" search chip row.
+1. "New from subscriptions": RSS (Y17) for subscriptions plus discovery channels, refreshed in parallel (cap 6 concurrent, at most once every 30 min), sorted by `publishedAt`.
+2. "For you" = local Home mixer. Personal sources stay first: related (Y4 + continuations) of the last 6 watched videos and unwatched subscription uploads, weight 2. Dynamic language-profile searches have weight 1 with personal sources and 2 on cold start; browse and discovery sources follow them. Search filter params come from `searchFilterGroupRenderer`. The discovery planner rotates profile templates, season/date terms, and language-filtered Y3 suggestions; a persisted query bandit avoids reuse for 24 h and retains its latest 300 results. Seen videos are demoted; uploads are age-mixed toward 60% ≤7 days, 30% ≤60 days, and 10% evergreen.
+3. **Launch cache:** cache is eligible for 30 minutes. Stale cache is not injected as the initial feed; a fresh mix replaces an eligible cache unless Home was touched. Pull-to-refresh changes the seed and excludes the previous first 10 IDs.
+4. "Trending": Y14 charts (country = device locale) + Y10/Y11/Y12 kiosks as chips. Try Y9 `FEwhat_to_watch` first; if it returns items, show them on top.
+- Cold start (no history/subscriptions): discovery searches, charts, kiosks, and a "pick topics" search chip row.
 
 YTM home: M1 is fine logged-out (ytmusicapi works unauthenticated). Add local "Quick picks from your likes": M8 radio of your top-played songs.
 

@@ -1,30 +1,26 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/playback/player_interactions.dart';
 import 'package:hivetube/core/yt/backup_service.dart';
 import 'package:hivetube/core/yt/takeout_parser.dart';
 
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+void main() async {
+  stdout.writeln('\n=== P4 Local Account Smoke Test ===');
+  var passed = 0;
+  var total = 0;
 
-  test('P4 Local Account Smoke Test', () async {
-    stdout.writeln('\n=== P4 Local Account Smoke Test ===');
-    var passed = 0;
-    var total = 0;
-
-    void check(String name, bool condition, [String details = '']) {
-      total++;
-      if (condition) {
-        passed++;
-        stdout.writeln('  [PASS] $name $details');
-      } else {
-        stdout.writeln('  [FAIL] $name $details');
-      }
-      expect(condition, isTrue, reason: name);
+  void check(String name, bool condition, [String details = '']) {
+    total++;
+    if (condition) {
+      passed++;
+      stdout.writeln('  [PASS] $name $details');
+    } else {
+      stdout.writeln('  [FAIL] $name $details');
     }
+    assert(condition, name);
+  }
 
     final db = AppDb(NativeDatabase.memory());
 
@@ -115,6 +111,14 @@ void main() {
     final backupService = BackupService(db);
     final jsonStr = await backupService.exportJson();
     final preview = backupService.inspectJson(jsonStr);
+
+    final beforeSubs = (await db.select(db.subscriptions).get()).length;
+    final beforePl = (await db.select(db.playlists).get()).length;
+    final beforePlItems = (await db.select(db.playlistItems).get()).length;
+    final beforeHist = (await db.select(db.history).get()).length;
+    final beforeReact = (await db.select(db.reactions).get()).length;
+    stdout.writeln('  [Backup Before] subs=$beforeSubs, playlists=$beforePl, items=$beforePlItems, history=$beforeHist, reactions=$beforeReact');
+
     check(
       'BackupService - export & inspect',
       preview.subscriptionCount >= 2 && preview.playlistCount >= 2,
@@ -124,6 +128,19 @@ void main() {
     final db2 = AppDb(NativeDatabase.memory());
     final backupService2 = BackupService(db2);
     await backupService2.importJson(jsonStr);
+
+    final afterSubs = (await db2.select(db2.subscriptions).get()).length;
+    final afterPl = (await db2.select(db2.playlists).get()).length;
+    final afterPlItems = (await db2.select(db2.playlistItems).get()).length;
+    final afterHist = (await db2.select(db2.history).get()).length;
+    final afterReact = (await db2.select(db2.reactions).get()).length;
+    stdout.writeln('  [Backup After]  subs=$afterSubs, playlists=$afterPl, items=$afterPlItems, history=$afterHist, reactions=$afterReact');
+
+    check('BackupService - import match subs', beforeSubs == afterSubs);
+    check('BackupService - import match playlists', afterPl == 2, '(deduped Watch Later + custom: $afterPl)');
+    check('BackupService - import match items', beforePlItems == afterPlItems);
+    check('BackupService - import match history', beforeHist == afterHist);
+    check('BackupService - import match reactions', beforeReact == afterReact);
     check('BackupService - import', await db2.subscriptionsDao.isSubscribed('UC_x5XG1OV2P6uZZ5FSM9Ttw'));
 
     // 7. Google Takeout CSV parsing
@@ -139,5 +156,5 @@ UCBCyU7B3gT8bU3Hq34bWw2w,http://www.youtube.com/channel/UCBCyU7B3gT8bU3Hq34bWw2w
 
     stdout.writeln('-----------------------------------');
     stdout.writeln('Smoke result: $passed/$total tests passed.');
-  });
+    exit(passed == total ? 0 : 1);
 }

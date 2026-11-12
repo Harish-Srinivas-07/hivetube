@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 
@@ -214,15 +215,15 @@ class _FloatingNavState extends State<FloatingNav> {
         ? AppColors.shortsProgressBuffer
         : colors.textSecondary;
     return AnimatedSize(
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
+      duration: AppMotion.slow,
+      curve: AppMotion.enter,
       child: Container(
         key: const ValueKey('floatingNavSurface'),
         decoration: BoxDecoration(
           color: widget.inverted
               ? AppColors.shortsNavGlassFill
               : colors.surface.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(AppRadius.pill),
+          borderRadius: AppRadius.pillBorder,
           border: Border.all(
             color: widget.inverted
                 ? AppColors.shortsNavGlassBorder
@@ -231,14 +232,14 @@ class _FloatingNavState extends State<FloatingNav> {
           ),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x0F141413),
+              color: AppColors.playerControlBorder,
               blurRadius: 16,
               offset: Offset(0, 4),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
+          borderRadius: AppRadius.pillBorder,
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: LayoutBuilder(
@@ -293,19 +294,17 @@ class _FloatingNavState extends State<FloatingNav> {
                             AnimatedPositioned(
                               duration: _isDragging
                                   ? Duration.zero
-                                  : const Duration(milliseconds: 320),
-                              curve: Curves.easeOutCubic,
+                                  : AppMotion.slow,
+                              curve: AppMotion.enter,
                               left: left,
                               width: width,
                               top: 0,
                               bottom: 0,
                               child: Container(
                                 key: const ValueKey('floatingNavIndicator'),
-                                decoration: BoxDecoration(
+                                decoration: const BoxDecoration(
                                   color: indicatorColor,
-                                  borderRadius: BorderRadius.circular(
-                                    AppRadius.pill,
-                                  ),
+                                  borderRadius: AppRadius.pillBorder,
                                 ),
                               ),
                             ),
@@ -344,16 +343,14 @@ class _FloatingNavState extends State<FloatingNav> {
                                         behavior: HitTestBehavior.opaque,
                                         child: ClipRect(
                                           child: AnimatedContainer(
-                                            duration: const Duration(
-                                              milliseconds: 200,
-                                            ),
+                                            duration: AppMotion.base,
                                             curve: Curves.easeInOut,
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 10,
+                                              horizontal: AppSpacing.md,
+                                              vertical: AppSpacing.sm,
                                             ),
                                             decoration: const BoxDecoration(
-                                              color: Colors.transparent,
+                                              color: AppColors.transparent,
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -389,13 +386,8 @@ class _FloatingNavState extends State<FloatingNav> {
                                                   ],
                                                 ),
                                                 AnimatedCrossFade(
-                                                  duration: const Duration(
-                                                    milliseconds: 180,
-                                                  ),
-                                                  reverseDuration:
-                                                      const Duration(
-                                                        milliseconds: 120,
-                                                      ),
+                                                  duration: AppMotion.fast,
+                                                  reverseDuration: AppMotion.fast,
                                                   firstCurve: Curves.easeIn,
                                                   secondCurve: Curves.easeOut,
                                                   sizeCurve: Curves.easeInOut,

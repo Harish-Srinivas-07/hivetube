@@ -16,6 +16,7 @@ import '../home/home_shorts.dart';
 import '../home/home_variety.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_settings_menu.dart';
 import '../../widgets/video_options_menu.dart';
 import 'package:share_plus/share_plus.dart';
@@ -404,9 +405,9 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                               if (index == items.length) {
                                 return Center(
                                   child: failed
-                                      ? TextButton(
-                                          onPressed: _load,
-                                          child: const Text('Retry'),
+                                      ? AppErrorState(
+                                          message: 'Unable to load Shorts',
+                                          onRetry: _load,
                                         )
                                       : const CircularProgressIndicator(),
                                 );
@@ -860,26 +861,9 @@ class _ShortPageState extends State<_ShortPage> {
           ),
         if (state?.status == PlayerStatus.error)
           Center(
-            child: Material(
-              color: AppColors.shortsScrim,
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Unable to play this Short',
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: AppColors.shortsForeground,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: service?.retry,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
+            child: AppErrorState(
+              message: 'Unable to play this Short',
+              onRetry: service?.retry,
             ),
           ),
       ],

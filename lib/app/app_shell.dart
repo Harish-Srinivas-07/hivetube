@@ -7,6 +7,7 @@ import '../core/playback/player_ui_state.dart';
 import '../features/watch/watch_panel.dart';
 import '../features/watch/mini_player_inset.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_top_bar.dart';
@@ -102,7 +103,7 @@ class AppShell extends ConsumerWidget {
           backgroundColor: shorts
               ? AppColors.shortsBackground
               : home
-              ? Colors.transparent
+              ? AppColors.transparent
               : null,
           extendBody: true,
           body: shorts
@@ -142,8 +143,8 @@ class AppShell extends ConsumerWidget {
                             // Wide layout: rail slides away when panel expands
                             if (wide)
                               AnimatedContainer(
-                                duration: const Duration(milliseconds: 280),
-                                curve: Curves.easeInOut,
+                                duration: AppMotion.slow,
+                                curve: AppMotion.emphasized,
                                 width: panelProgress < 0.5 ? 72 : 0,
                                 child: panelProgress < 0.5
                                     ? NavigationRail(
@@ -185,11 +186,11 @@ class AppShell extends ConsumerWidget {
             bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
             child: AnimatedSlide(
               offset: navVisible ? Offset.zero : const Offset(0, 2),
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeInOut,
+              duration: AppMotion.slow,
+              curve: AppMotion.emphasized,
               child: AnimatedOpacity(
                 opacity: navVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 200),
+                duration: AppMotion.base,
                 child: Center(
                   child: FloatingNav(
                     key: const ValueKey('bottomNavPill'),

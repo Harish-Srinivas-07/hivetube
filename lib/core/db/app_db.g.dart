@@ -6077,6 +6077,1735 @@ class SbCacheCompanion extends UpdateCompanion<SbCacheRow> {
   }
 }
 
+class $LearnedChannelsTable extends LearnedChannels
+    with TableInfo<$LearnedChannelsTable, LearnedChannel> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LearnedChannelsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _channelIdMeta = const VerificationMeta(
+    'channelId',
+  );
+  @override
+  late final GeneratedColumn<String> channelId = GeneratedColumn<String>(
+    'channel_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _languageMeta = const VerificationMeta(
+    'language',
+  );
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+    'language',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _votesMeta = const VerificationMeta('votes');
+  @override
+  late final GeneratedColumn<int> votes = GeneratedColumn<int>(
+    'votes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastSeenMeta = const VerificationMeta(
+    'lastSeen',
+  );
+  @override
+  late final GeneratedColumn<int> lastSeen = GeneratedColumn<int>(
+    'last_seen',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _topicsMeta = const VerificationMeta('topics');
+  @override
+  late final GeneratedColumn<String> topics = GeneratedColumn<String>(
+    'topics',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    channelId,
+    language,
+    votes,
+    lastSeen,
+    topics,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'learned_channels';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LearnedChannel> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('channel_id')) {
+      context.handle(
+        _channelIdMeta,
+        channelId.isAcceptableOrUnknown(data['channel_id']!, _channelIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_channelIdMeta);
+    }
+    if (data.containsKey('language')) {
+      context.handle(
+        _languageMeta,
+        language.isAcceptableOrUnknown(data['language']!, _languageMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_languageMeta);
+    }
+    if (data.containsKey('votes')) {
+      context.handle(
+        _votesMeta,
+        votes.isAcceptableOrUnknown(data['votes']!, _votesMeta),
+      );
+    }
+    if (data.containsKey('last_seen')) {
+      context.handle(
+        _lastSeenMeta,
+        lastSeen.isAcceptableOrUnknown(data['last_seen']!, _lastSeenMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSeenMeta);
+    }
+    if (data.containsKey('topics')) {
+      context.handle(
+        _topicsMeta,
+        topics.isAcceptableOrUnknown(data['topics']!, _topicsMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {channelId};
+  @override
+  LearnedChannel map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LearnedChannel(
+      channelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}channel_id'],
+      )!,
+      language: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language'],
+      )!,
+      votes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}votes'],
+      )!,
+      lastSeen: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_seen'],
+      )!,
+      topics: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}topics'],
+      )!,
+    );
+  }
+
+  @override
+  $LearnedChannelsTable createAlias(String alias) {
+    return $LearnedChannelsTable(attachedDatabase, alias);
+  }
+}
+
+class LearnedChannel extends DataClass implements Insertable<LearnedChannel> {
+  final String channelId;
+  final String language;
+  final int votes;
+  final int lastSeen;
+  final String topics;
+  const LearnedChannel({
+    required this.channelId,
+    required this.language,
+    required this.votes,
+    required this.lastSeen,
+    required this.topics,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['channel_id'] = Variable<String>(channelId);
+    map['language'] = Variable<String>(language);
+    map['votes'] = Variable<int>(votes);
+    map['last_seen'] = Variable<int>(lastSeen);
+    map['topics'] = Variable<String>(topics);
+    return map;
+  }
+
+  LearnedChannelsCompanion toCompanion(bool nullToAbsent) {
+    return LearnedChannelsCompanion(
+      channelId: Value(channelId),
+      language: Value(language),
+      votes: Value(votes),
+      lastSeen: Value(lastSeen),
+      topics: Value(topics),
+    );
+  }
+
+  factory LearnedChannel.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LearnedChannel(
+      channelId: serializer.fromJson<String>(json['channelId']),
+      language: serializer.fromJson<String>(json['language']),
+      votes: serializer.fromJson<int>(json['votes']),
+      lastSeen: serializer.fromJson<int>(json['lastSeen']),
+      topics: serializer.fromJson<String>(json['topics']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'channelId': serializer.toJson<String>(channelId),
+      'language': serializer.toJson<String>(language),
+      'votes': serializer.toJson<int>(votes),
+      'lastSeen': serializer.toJson<int>(lastSeen),
+      'topics': serializer.toJson<String>(topics),
+    };
+  }
+
+  LearnedChannel copyWith({
+    String? channelId,
+    String? language,
+    int? votes,
+    int? lastSeen,
+    String? topics,
+  }) => LearnedChannel(
+    channelId: channelId ?? this.channelId,
+    language: language ?? this.language,
+    votes: votes ?? this.votes,
+    lastSeen: lastSeen ?? this.lastSeen,
+    topics: topics ?? this.topics,
+  );
+  LearnedChannel copyWithCompanion(LearnedChannelsCompanion data) {
+    return LearnedChannel(
+      channelId: data.channelId.present ? data.channelId.value : this.channelId,
+      language: data.language.present ? data.language.value : this.language,
+      votes: data.votes.present ? data.votes.value : this.votes,
+      lastSeen: data.lastSeen.present ? data.lastSeen.value : this.lastSeen,
+      topics: data.topics.present ? data.topics.value : this.topics,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LearnedChannel(')
+          ..write('channelId: $channelId, ')
+          ..write('language: $language, ')
+          ..write('votes: $votes, ')
+          ..write('lastSeen: $lastSeen, ')
+          ..write('topics: $topics')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(channelId, language, votes, lastSeen, topics);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LearnedChannel &&
+          other.channelId == this.channelId &&
+          other.language == this.language &&
+          other.votes == this.votes &&
+          other.lastSeen == this.lastSeen &&
+          other.topics == this.topics);
+}
+
+class LearnedChannelsCompanion extends UpdateCompanion<LearnedChannel> {
+  final Value<String> channelId;
+  final Value<String> language;
+  final Value<int> votes;
+  final Value<int> lastSeen;
+  final Value<String> topics;
+  final Value<int> rowid;
+  const LearnedChannelsCompanion({
+    this.channelId = const Value.absent(),
+    this.language = const Value.absent(),
+    this.votes = const Value.absent(),
+    this.lastSeen = const Value.absent(),
+    this.topics = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LearnedChannelsCompanion.insert({
+    required String channelId,
+    required String language,
+    this.votes = const Value.absent(),
+    required int lastSeen,
+    this.topics = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : channelId = Value(channelId),
+       language = Value(language),
+       lastSeen = Value(lastSeen);
+  static Insertable<LearnedChannel> custom({
+    Expression<String>? channelId,
+    Expression<String>? language,
+    Expression<int>? votes,
+    Expression<int>? lastSeen,
+    Expression<String>? topics,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (channelId != null) 'channel_id': channelId,
+      if (language != null) 'language': language,
+      if (votes != null) 'votes': votes,
+      if (lastSeen != null) 'last_seen': lastSeen,
+      if (topics != null) 'topics': topics,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LearnedChannelsCompanion copyWith({
+    Value<String>? channelId,
+    Value<String>? language,
+    Value<int>? votes,
+    Value<int>? lastSeen,
+    Value<String>? topics,
+    Value<int>? rowid,
+  }) {
+    return LearnedChannelsCompanion(
+      channelId: channelId ?? this.channelId,
+      language: language ?? this.language,
+      votes: votes ?? this.votes,
+      lastSeen: lastSeen ?? this.lastSeen,
+      topics: topics ?? this.topics,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (channelId.present) {
+      map['channel_id'] = Variable<String>(channelId.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (votes.present) {
+      map['votes'] = Variable<int>(votes.value);
+    }
+    if (lastSeen.present) {
+      map['last_seen'] = Variable<int>(lastSeen.value);
+    }
+    if (topics.present) {
+      map['topics'] = Variable<String>(topics.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LearnedChannelsCompanion(')
+          ..write('channelId: $channelId, ')
+          ..write('language: $language, ')
+          ..write('votes: $votes, ')
+          ..write('lastSeen: $lastSeen, ')
+          ..write('topics: $topics, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LearnedTermsTable extends LearnedTerms
+    with TableInfo<$LearnedTermsTable, LearnedTerm> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LearnedTermsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _termMeta = const VerificationMeta('term');
+  @override
+  late final GeneratedColumn<String> term = GeneratedColumn<String>(
+    'term',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _languageMeta = const VerificationMeta(
+    'language',
+  );
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+    'language',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _strengthMeta = const VerificationMeta(
+    'strength',
+  );
+  @override
+  late final GeneratedColumn<int> strength = GeneratedColumn<int>(
+    'strength',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _seenCountMeta = const VerificationMeta(
+    'seenCount',
+  );
+  @override
+  late final GeneratedColumn<int> seenCount = GeneratedColumn<int>(
+    'seen_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _lastSeenMeta = const VerificationMeta(
+    'lastSeen',
+  );
+  @override
+  late final GeneratedColumn<int> lastSeen = GeneratedColumn<int>(
+    'last_seen',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    term,
+    language,
+    strength,
+    seenCount,
+    lastSeen,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'learned_terms';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LearnedTerm> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('term')) {
+      context.handle(
+        _termMeta,
+        term.isAcceptableOrUnknown(data['term']!, _termMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_termMeta);
+    }
+    if (data.containsKey('language')) {
+      context.handle(
+        _languageMeta,
+        language.isAcceptableOrUnknown(data['language']!, _languageMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_languageMeta);
+    }
+    if (data.containsKey('strength')) {
+      context.handle(
+        _strengthMeta,
+        strength.isAcceptableOrUnknown(data['strength']!, _strengthMeta),
+      );
+    }
+    if (data.containsKey('seen_count')) {
+      context.handle(
+        _seenCountMeta,
+        seenCount.isAcceptableOrUnknown(data['seen_count']!, _seenCountMeta),
+      );
+    }
+    if (data.containsKey('last_seen')) {
+      context.handle(
+        _lastSeenMeta,
+        lastSeen.isAcceptableOrUnknown(data['last_seen']!, _lastSeenMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSeenMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {term, language};
+  @override
+  LearnedTerm map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LearnedTerm(
+      term: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}term'],
+      )!,
+      language: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language'],
+      )!,
+      strength: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}strength'],
+      )!,
+      seenCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}seen_count'],
+      )!,
+      lastSeen: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_seen'],
+      )!,
+    );
+  }
+
+  @override
+  $LearnedTermsTable createAlias(String alias) {
+    return $LearnedTermsTable(attachedDatabase, alias);
+  }
+}
+
+class LearnedTerm extends DataClass implements Insertable<LearnedTerm> {
+  final String term;
+  final String language;
+  final int strength;
+  final int seenCount;
+  final int lastSeen;
+  const LearnedTerm({
+    required this.term,
+    required this.language,
+    required this.strength,
+    required this.seenCount,
+    required this.lastSeen,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['term'] = Variable<String>(term);
+    map['language'] = Variable<String>(language);
+    map['strength'] = Variable<int>(strength);
+    map['seen_count'] = Variable<int>(seenCount);
+    map['last_seen'] = Variable<int>(lastSeen);
+    return map;
+  }
+
+  LearnedTermsCompanion toCompanion(bool nullToAbsent) {
+    return LearnedTermsCompanion(
+      term: Value(term),
+      language: Value(language),
+      strength: Value(strength),
+      seenCount: Value(seenCount),
+      lastSeen: Value(lastSeen),
+    );
+  }
+
+  factory LearnedTerm.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LearnedTerm(
+      term: serializer.fromJson<String>(json['term']),
+      language: serializer.fromJson<String>(json['language']),
+      strength: serializer.fromJson<int>(json['strength']),
+      seenCount: serializer.fromJson<int>(json['seenCount']),
+      lastSeen: serializer.fromJson<int>(json['lastSeen']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'term': serializer.toJson<String>(term),
+      'language': serializer.toJson<String>(language),
+      'strength': serializer.toJson<int>(strength),
+      'seenCount': serializer.toJson<int>(seenCount),
+      'lastSeen': serializer.toJson<int>(lastSeen),
+    };
+  }
+
+  LearnedTerm copyWith({
+    String? term,
+    String? language,
+    int? strength,
+    int? seenCount,
+    int? lastSeen,
+  }) => LearnedTerm(
+    term: term ?? this.term,
+    language: language ?? this.language,
+    strength: strength ?? this.strength,
+    seenCount: seenCount ?? this.seenCount,
+    lastSeen: lastSeen ?? this.lastSeen,
+  );
+  LearnedTerm copyWithCompanion(LearnedTermsCompanion data) {
+    return LearnedTerm(
+      term: data.term.present ? data.term.value : this.term,
+      language: data.language.present ? data.language.value : this.language,
+      strength: data.strength.present ? data.strength.value : this.strength,
+      seenCount: data.seenCount.present ? data.seenCount.value : this.seenCount,
+      lastSeen: data.lastSeen.present ? data.lastSeen.value : this.lastSeen,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LearnedTerm(')
+          ..write('term: $term, ')
+          ..write('language: $language, ')
+          ..write('strength: $strength, ')
+          ..write('seenCount: $seenCount, ')
+          ..write('lastSeen: $lastSeen')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(term, language, strength, seenCount, lastSeen);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LearnedTerm &&
+          other.term == this.term &&
+          other.language == this.language &&
+          other.strength == this.strength &&
+          other.seenCount == this.seenCount &&
+          other.lastSeen == this.lastSeen);
+}
+
+class LearnedTermsCompanion extends UpdateCompanion<LearnedTerm> {
+  final Value<String> term;
+  final Value<String> language;
+  final Value<int> strength;
+  final Value<int> seenCount;
+  final Value<int> lastSeen;
+  final Value<int> rowid;
+  const LearnedTermsCompanion({
+    this.term = const Value.absent(),
+    this.language = const Value.absent(),
+    this.strength = const Value.absent(),
+    this.seenCount = const Value.absent(),
+    this.lastSeen = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LearnedTermsCompanion.insert({
+    required String term,
+    required String language,
+    this.strength = const Value.absent(),
+    this.seenCount = const Value.absent(),
+    required int lastSeen,
+    this.rowid = const Value.absent(),
+  }) : term = Value(term),
+       language = Value(language),
+       lastSeen = Value(lastSeen);
+  static Insertable<LearnedTerm> custom({
+    Expression<String>? term,
+    Expression<String>? language,
+    Expression<int>? strength,
+    Expression<int>? seenCount,
+    Expression<int>? lastSeen,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (term != null) 'term': term,
+      if (language != null) 'language': language,
+      if (strength != null) 'strength': strength,
+      if (seenCount != null) 'seen_count': seenCount,
+      if (lastSeen != null) 'last_seen': lastSeen,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LearnedTermsCompanion copyWith({
+    Value<String>? term,
+    Value<String>? language,
+    Value<int>? strength,
+    Value<int>? seenCount,
+    Value<int>? lastSeen,
+    Value<int>? rowid,
+  }) {
+    return LearnedTermsCompanion(
+      term: term ?? this.term,
+      language: language ?? this.language,
+      strength: strength ?? this.strength,
+      seenCount: seenCount ?? this.seenCount,
+      lastSeen: lastSeen ?? this.lastSeen,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (term.present) {
+      map['term'] = Variable<String>(term.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (strength.present) {
+      map['strength'] = Variable<int>(strength.value);
+    }
+    if (seenCount.present) {
+      map['seen_count'] = Variable<int>(seenCount.value);
+    }
+    if (lastSeen.present) {
+      map['last_seen'] = Variable<int>(lastSeen.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LearnedTermsCompanion(')
+          ..write('term: $term, ')
+          ..write('language: $language, ')
+          ..write('strength: $strength, ')
+          ..write('seenCount: $seenCount, ')
+          ..write('lastSeen: $lastSeen, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DiscoveryQueriesTable extends DiscoveryQueries
+    with TableInfo<$DiscoveryQueriesTable, DiscoveryQuery> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DiscoveryQueriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _queryMeta = const VerificationMeta('query');
+  @override
+  late final GeneratedColumn<String> query = GeneratedColumn<String>(
+    'query',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastUsedMeta = const VerificationMeta(
+    'lastUsed',
+  );
+  @override
+  late final GeneratedColumn<int> lastUsed = GeneratedColumn<int>(
+    'last_used',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _yieldNewMeta = const VerificationMeta(
+    'yieldNew',
+  );
+  @override
+  late final GeneratedColumn<int> yieldNew = GeneratedColumn<int>(
+    'yield_new',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _precisionMeta = const VerificationMeta(
+    'precision',
+  );
+  @override
+  late final GeneratedColumn<double> precision = GeneratedColumn<double>(
+    'precision',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dwellMsMeta = const VerificationMeta(
+    'dwellMs',
+  );
+  @override
+  late final GeneratedColumn<int> dwellMs = GeneratedColumn<int>(
+    'dwell_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    query,
+    lastUsed,
+    yieldNew,
+    precision,
+    dwellMs,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'discovery_queries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DiscoveryQuery> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('query')) {
+      context.handle(
+        _queryMeta,
+        query.isAcceptableOrUnknown(data['query']!, _queryMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_queryMeta);
+    }
+    if (data.containsKey('last_used')) {
+      context.handle(
+        _lastUsedMeta,
+        lastUsed.isAcceptableOrUnknown(data['last_used']!, _lastUsedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastUsedMeta);
+    }
+    if (data.containsKey('yield_new')) {
+      context.handle(
+        _yieldNewMeta,
+        yieldNew.isAcceptableOrUnknown(data['yield_new']!, _yieldNewMeta),
+      );
+    }
+    if (data.containsKey('precision')) {
+      context.handle(
+        _precisionMeta,
+        precision.isAcceptableOrUnknown(data['precision']!, _precisionMeta),
+      );
+    }
+    if (data.containsKey('dwell_ms')) {
+      context.handle(
+        _dwellMsMeta,
+        dwellMs.isAcceptableOrUnknown(data['dwell_ms']!, _dwellMsMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {query};
+  @override
+  DiscoveryQuery map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DiscoveryQuery(
+      query: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}query'],
+      )!,
+      lastUsed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_used'],
+      )!,
+      yieldNew: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}yield_new'],
+      )!,
+      precision: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}precision'],
+      ),
+      dwellMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}dwell_ms'],
+      )!,
+    );
+  }
+
+  @override
+  $DiscoveryQueriesTable createAlias(String alias) {
+    return $DiscoveryQueriesTable(attachedDatabase, alias);
+  }
+}
+
+class DiscoveryQuery extends DataClass implements Insertable<DiscoveryQuery> {
+  final String query;
+  final int lastUsed;
+  final int yieldNew;
+  final double? precision;
+  final int dwellMs;
+  const DiscoveryQuery({
+    required this.query,
+    required this.lastUsed,
+    required this.yieldNew,
+    this.precision,
+    required this.dwellMs,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['query'] = Variable<String>(query);
+    map['last_used'] = Variable<int>(lastUsed);
+    map['yield_new'] = Variable<int>(yieldNew);
+    if (!nullToAbsent || precision != null) {
+      map['precision'] = Variable<double>(precision);
+    }
+    map['dwell_ms'] = Variable<int>(dwellMs);
+    return map;
+  }
+
+  DiscoveryQueriesCompanion toCompanion(bool nullToAbsent) {
+    return DiscoveryQueriesCompanion(
+      query: Value(query),
+      lastUsed: Value(lastUsed),
+      yieldNew: Value(yieldNew),
+      precision: precision == null && nullToAbsent
+          ? const Value.absent()
+          : Value(precision),
+      dwellMs: Value(dwellMs),
+    );
+  }
+
+  factory DiscoveryQuery.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DiscoveryQuery(
+      query: serializer.fromJson<String>(json['query']),
+      lastUsed: serializer.fromJson<int>(json['lastUsed']),
+      yieldNew: serializer.fromJson<int>(json['yieldNew']),
+      precision: serializer.fromJson<double?>(json['precision']),
+      dwellMs: serializer.fromJson<int>(json['dwellMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'query': serializer.toJson<String>(query),
+      'lastUsed': serializer.toJson<int>(lastUsed),
+      'yieldNew': serializer.toJson<int>(yieldNew),
+      'precision': serializer.toJson<double?>(precision),
+      'dwellMs': serializer.toJson<int>(dwellMs),
+    };
+  }
+
+  DiscoveryQuery copyWith({
+    String? query,
+    int? lastUsed,
+    int? yieldNew,
+    Value<double?> precision = const Value.absent(),
+    int? dwellMs,
+  }) => DiscoveryQuery(
+    query: query ?? this.query,
+    lastUsed: lastUsed ?? this.lastUsed,
+    yieldNew: yieldNew ?? this.yieldNew,
+    precision: precision.present ? precision.value : this.precision,
+    dwellMs: dwellMs ?? this.dwellMs,
+  );
+  DiscoveryQuery copyWithCompanion(DiscoveryQueriesCompanion data) {
+    return DiscoveryQuery(
+      query: data.query.present ? data.query.value : this.query,
+      lastUsed: data.lastUsed.present ? data.lastUsed.value : this.lastUsed,
+      yieldNew: data.yieldNew.present ? data.yieldNew.value : this.yieldNew,
+      precision: data.precision.present ? data.precision.value : this.precision,
+      dwellMs: data.dwellMs.present ? data.dwellMs.value : this.dwellMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DiscoveryQuery(')
+          ..write('query: $query, ')
+          ..write('lastUsed: $lastUsed, ')
+          ..write('yieldNew: $yieldNew, ')
+          ..write('precision: $precision, ')
+          ..write('dwellMs: $dwellMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(query, lastUsed, yieldNew, precision, dwellMs);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DiscoveryQuery &&
+          other.query == this.query &&
+          other.lastUsed == this.lastUsed &&
+          other.yieldNew == this.yieldNew &&
+          other.precision == this.precision &&
+          other.dwellMs == this.dwellMs);
+}
+
+class DiscoveryQueriesCompanion extends UpdateCompanion<DiscoveryQuery> {
+  final Value<String> query;
+  final Value<int> lastUsed;
+  final Value<int> yieldNew;
+  final Value<double?> precision;
+  final Value<int> dwellMs;
+  final Value<int> rowid;
+  const DiscoveryQueriesCompanion({
+    this.query = const Value.absent(),
+    this.lastUsed = const Value.absent(),
+    this.yieldNew = const Value.absent(),
+    this.precision = const Value.absent(),
+    this.dwellMs = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DiscoveryQueriesCompanion.insert({
+    required String query,
+    required int lastUsed,
+    this.yieldNew = const Value.absent(),
+    this.precision = const Value.absent(),
+    this.dwellMs = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : query = Value(query),
+       lastUsed = Value(lastUsed);
+  static Insertable<DiscoveryQuery> custom({
+    Expression<String>? query,
+    Expression<int>? lastUsed,
+    Expression<int>? yieldNew,
+    Expression<double>? precision,
+    Expression<int>? dwellMs,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (query != null) 'query': query,
+      if (lastUsed != null) 'last_used': lastUsed,
+      if (yieldNew != null) 'yield_new': yieldNew,
+      if (precision != null) 'precision': precision,
+      if (dwellMs != null) 'dwell_ms': dwellMs,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DiscoveryQueriesCompanion copyWith({
+    Value<String>? query,
+    Value<int>? lastUsed,
+    Value<int>? yieldNew,
+    Value<double?>? precision,
+    Value<int>? dwellMs,
+    Value<int>? rowid,
+  }) {
+    return DiscoveryQueriesCompanion(
+      query: query ?? this.query,
+      lastUsed: lastUsed ?? this.lastUsed,
+      yieldNew: yieldNew ?? this.yieldNew,
+      precision: precision ?? this.precision,
+      dwellMs: dwellMs ?? this.dwellMs,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (query.present) {
+      map['query'] = Variable<String>(query.value);
+    }
+    if (lastUsed.present) {
+      map['last_used'] = Variable<int>(lastUsed.value);
+    }
+    if (yieldNew.present) {
+      map['yield_new'] = Variable<int>(yieldNew.value);
+    }
+    if (precision.present) {
+      map['precision'] = Variable<double>(precision.value);
+    }
+    if (dwellMs.present) {
+      map['dwell_ms'] = Variable<int>(dwellMs.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DiscoveryQueriesCompanion(')
+          ..write('query: $query, ')
+          ..write('lastUsed: $lastUsed, ')
+          ..write('yieldNew: $yieldNew, ')
+          ..write('precision: $precision, ')
+          ..write('dwellMs: $dwellMs, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SuggestionCacheTable extends SuggestionCache
+    with TableInfo<$SuggestionCacheTable, SuggestionCacheData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SuggestionCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _seedMeta = const VerificationMeta('seed');
+  @override
+  late final GeneratedColumn<String> seed = GeneratedColumn<String>(
+    'seed',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _suggestionsJsonMeta = const VerificationMeta(
+    'suggestionsJson',
+  );
+  @override
+  late final GeneratedColumn<String> suggestionsJson = GeneratedColumn<String>(
+    'suggestions_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [seed, suggestionsJson, fetchedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'suggestion_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SuggestionCacheData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('seed')) {
+      context.handle(
+        _seedMeta,
+        seed.isAcceptableOrUnknown(data['seed']!, _seedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_seedMeta);
+    }
+    if (data.containsKey('suggestions_json')) {
+      context.handle(
+        _suggestionsJsonMeta,
+        suggestionsJson.isAcceptableOrUnknown(
+          data['suggestions_json']!,
+          _suggestionsJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_suggestionsJsonMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {seed};
+  @override
+  SuggestionCacheData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SuggestionCacheData(
+      seed: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}seed'],
+      )!,
+      suggestionsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}suggestions_json'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SuggestionCacheTable createAlias(String alias) {
+    return $SuggestionCacheTable(attachedDatabase, alias);
+  }
+}
+
+class SuggestionCacheData extends DataClass
+    implements Insertable<SuggestionCacheData> {
+  final String seed;
+  final String suggestionsJson;
+  final int fetchedAt;
+  const SuggestionCacheData({
+    required this.seed,
+    required this.suggestionsJson,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['seed'] = Variable<String>(seed);
+    map['suggestions_json'] = Variable<String>(suggestionsJson);
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  SuggestionCacheCompanion toCompanion(bool nullToAbsent) {
+    return SuggestionCacheCompanion(
+      seed: Value(seed),
+      suggestionsJson: Value(suggestionsJson),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory SuggestionCacheData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SuggestionCacheData(
+      seed: serializer.fromJson<String>(json['seed']),
+      suggestionsJson: serializer.fromJson<String>(json['suggestionsJson']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'seed': serializer.toJson<String>(seed),
+      'suggestionsJson': serializer.toJson<String>(suggestionsJson),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  SuggestionCacheData copyWith({
+    String? seed,
+    String? suggestionsJson,
+    int? fetchedAt,
+  }) => SuggestionCacheData(
+    seed: seed ?? this.seed,
+    suggestionsJson: suggestionsJson ?? this.suggestionsJson,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  SuggestionCacheData copyWithCompanion(SuggestionCacheCompanion data) {
+    return SuggestionCacheData(
+      seed: data.seed.present ? data.seed.value : this.seed,
+      suggestionsJson: data.suggestionsJson.present
+          ? data.suggestionsJson.value
+          : this.suggestionsJson,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SuggestionCacheData(')
+          ..write('seed: $seed, ')
+          ..write('suggestionsJson: $suggestionsJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(seed, suggestionsJson, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SuggestionCacheData &&
+          other.seed == this.seed &&
+          other.suggestionsJson == this.suggestionsJson &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class SuggestionCacheCompanion extends UpdateCompanion<SuggestionCacheData> {
+  final Value<String> seed;
+  final Value<String> suggestionsJson;
+  final Value<int> fetchedAt;
+  final Value<int> rowid;
+  const SuggestionCacheCompanion({
+    this.seed = const Value.absent(),
+    this.suggestionsJson = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SuggestionCacheCompanion.insert({
+    required String seed,
+    required String suggestionsJson,
+    required int fetchedAt,
+    this.rowid = const Value.absent(),
+  }) : seed = Value(seed),
+       suggestionsJson = Value(suggestionsJson),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<SuggestionCacheData> custom({
+    Expression<String>? seed,
+    Expression<String>? suggestionsJson,
+    Expression<int>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (seed != null) 'seed': seed,
+      if (suggestionsJson != null) 'suggestions_json': suggestionsJson,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SuggestionCacheCompanion copyWith({
+    Value<String>? seed,
+    Value<String>? suggestionsJson,
+    Value<int>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return SuggestionCacheCompanion(
+      seed: seed ?? this.seed,
+      suggestionsJson: suggestionsJson ?? this.suggestionsJson,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (seed.present) {
+      map['seed'] = Variable<String>(seed.value);
+    }
+    if (suggestionsJson.present) {
+      map['suggestions_json'] = Variable<String>(suggestionsJson.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SuggestionCacheCompanion(')
+          ..write('seed: $seed, ')
+          ..write('suggestionsJson: $suggestionsJson, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ChannelEvidenceTable extends ChannelEvidence
+    with TableInfo<$ChannelEvidenceTable, ChannelEvidenceData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ChannelEvidenceTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _channelIdMeta = const VerificationMeta(
+    'channelId',
+  );
+  @override
+  late final GeneratedColumn<String> channelId = GeneratedColumn<String>(
+    'channel_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _videoIdMeta = const VerificationMeta(
+    'videoId',
+  );
+  @override
+  late final GeneratedColumn<String> videoId = GeneratedColumn<String>(
+    'video_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _languageMeta = const VerificationMeta(
+    'language',
+  );
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+    'language',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _matchedMeta = const VerificationMeta(
+    'matched',
+  );
+  @override
+  late final GeneratedColumn<bool> matched = GeneratedColumn<bool>(
+    'matched',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("matched" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _lastSeenMeta = const VerificationMeta(
+    'lastSeen',
+  );
+  @override
+  late final GeneratedColumn<int> lastSeen = GeneratedColumn<int>(
+    'last_seen',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    channelId,
+    videoId,
+    language,
+    matched,
+    lastSeen,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'channel_evidence';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ChannelEvidenceData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('channel_id')) {
+      context.handle(
+        _channelIdMeta,
+        channelId.isAcceptableOrUnknown(data['channel_id']!, _channelIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_channelIdMeta);
+    }
+    if (data.containsKey('video_id')) {
+      context.handle(
+        _videoIdMeta,
+        videoId.isAcceptableOrUnknown(data['video_id']!, _videoIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_videoIdMeta);
+    }
+    if (data.containsKey('language')) {
+      context.handle(
+        _languageMeta,
+        language.isAcceptableOrUnknown(data['language']!, _languageMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_languageMeta);
+    }
+    if (data.containsKey('matched')) {
+      context.handle(
+        _matchedMeta,
+        matched.isAcceptableOrUnknown(data['matched']!, _matchedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_matchedMeta);
+    }
+    if (data.containsKey('last_seen')) {
+      context.handle(
+        _lastSeenMeta,
+        lastSeen.isAcceptableOrUnknown(data['last_seen']!, _lastSeenMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSeenMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {channelId, videoId};
+  @override
+  ChannelEvidenceData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ChannelEvidenceData(
+      channelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}channel_id'],
+      )!,
+      videoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_id'],
+      )!,
+      language: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language'],
+      )!,
+      matched: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}matched'],
+      )!,
+      lastSeen: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_seen'],
+      )!,
+    );
+  }
+
+  @override
+  $ChannelEvidenceTable createAlias(String alias) {
+    return $ChannelEvidenceTable(attachedDatabase, alias);
+  }
+}
+
+class ChannelEvidenceData extends DataClass
+    implements Insertable<ChannelEvidenceData> {
+  final String channelId;
+  final String videoId;
+  final String language;
+  final bool matched;
+  final int lastSeen;
+  const ChannelEvidenceData({
+    required this.channelId,
+    required this.videoId,
+    required this.language,
+    required this.matched,
+    required this.lastSeen,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['channel_id'] = Variable<String>(channelId);
+    map['video_id'] = Variable<String>(videoId);
+    map['language'] = Variable<String>(language);
+    map['matched'] = Variable<bool>(matched);
+    map['last_seen'] = Variable<int>(lastSeen);
+    return map;
+  }
+
+  ChannelEvidenceCompanion toCompanion(bool nullToAbsent) {
+    return ChannelEvidenceCompanion(
+      channelId: Value(channelId),
+      videoId: Value(videoId),
+      language: Value(language),
+      matched: Value(matched),
+      lastSeen: Value(lastSeen),
+    );
+  }
+
+  factory ChannelEvidenceData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ChannelEvidenceData(
+      channelId: serializer.fromJson<String>(json['channelId']),
+      videoId: serializer.fromJson<String>(json['videoId']),
+      language: serializer.fromJson<String>(json['language']),
+      matched: serializer.fromJson<bool>(json['matched']),
+      lastSeen: serializer.fromJson<int>(json['lastSeen']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'channelId': serializer.toJson<String>(channelId),
+      'videoId': serializer.toJson<String>(videoId),
+      'language': serializer.toJson<String>(language),
+      'matched': serializer.toJson<bool>(matched),
+      'lastSeen': serializer.toJson<int>(lastSeen),
+    };
+  }
+
+  ChannelEvidenceData copyWith({
+    String? channelId,
+    String? videoId,
+    String? language,
+    bool? matched,
+    int? lastSeen,
+  }) => ChannelEvidenceData(
+    channelId: channelId ?? this.channelId,
+    videoId: videoId ?? this.videoId,
+    language: language ?? this.language,
+    matched: matched ?? this.matched,
+    lastSeen: lastSeen ?? this.lastSeen,
+  );
+  ChannelEvidenceData copyWithCompanion(ChannelEvidenceCompanion data) {
+    return ChannelEvidenceData(
+      channelId: data.channelId.present ? data.channelId.value : this.channelId,
+      videoId: data.videoId.present ? data.videoId.value : this.videoId,
+      language: data.language.present ? data.language.value : this.language,
+      matched: data.matched.present ? data.matched.value : this.matched,
+      lastSeen: data.lastSeen.present ? data.lastSeen.value : this.lastSeen,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChannelEvidenceData(')
+          ..write('channelId: $channelId, ')
+          ..write('videoId: $videoId, ')
+          ..write('language: $language, ')
+          ..write('matched: $matched, ')
+          ..write('lastSeen: $lastSeen')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(channelId, videoId, language, matched, lastSeen);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ChannelEvidenceData &&
+          other.channelId == this.channelId &&
+          other.videoId == this.videoId &&
+          other.language == this.language &&
+          other.matched == this.matched &&
+          other.lastSeen == this.lastSeen);
+}
+
+class ChannelEvidenceCompanion extends UpdateCompanion<ChannelEvidenceData> {
+  final Value<String> channelId;
+  final Value<String> videoId;
+  final Value<String> language;
+  final Value<bool> matched;
+  final Value<int> lastSeen;
+  final Value<int> rowid;
+  const ChannelEvidenceCompanion({
+    this.channelId = const Value.absent(),
+    this.videoId = const Value.absent(),
+    this.language = const Value.absent(),
+    this.matched = const Value.absent(),
+    this.lastSeen = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ChannelEvidenceCompanion.insert({
+    required String channelId,
+    required String videoId,
+    required String language,
+    required bool matched,
+    required int lastSeen,
+    this.rowid = const Value.absent(),
+  }) : channelId = Value(channelId),
+       videoId = Value(videoId),
+       language = Value(language),
+       matched = Value(matched),
+       lastSeen = Value(lastSeen);
+  static Insertable<ChannelEvidenceData> custom({
+    Expression<String>? channelId,
+    Expression<String>? videoId,
+    Expression<String>? language,
+    Expression<bool>? matched,
+    Expression<int>? lastSeen,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (channelId != null) 'channel_id': channelId,
+      if (videoId != null) 'video_id': videoId,
+      if (language != null) 'language': language,
+      if (matched != null) 'matched': matched,
+      if (lastSeen != null) 'last_seen': lastSeen,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ChannelEvidenceCompanion copyWith({
+    Value<String>? channelId,
+    Value<String>? videoId,
+    Value<String>? language,
+    Value<bool>? matched,
+    Value<int>? lastSeen,
+    Value<int>? rowid,
+  }) {
+    return ChannelEvidenceCompanion(
+      channelId: channelId ?? this.channelId,
+      videoId: videoId ?? this.videoId,
+      language: language ?? this.language,
+      matched: matched ?? this.matched,
+      lastSeen: lastSeen ?? this.lastSeen,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (channelId.present) {
+      map['channel_id'] = Variable<String>(channelId.value);
+    }
+    if (videoId.present) {
+      map['video_id'] = Variable<String>(videoId.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (matched.present) {
+      map['matched'] = Variable<bool>(matched.value);
+    }
+    if (lastSeen.present) {
+      map['last_seen'] = Variable<int>(lastSeen.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChannelEvidenceCompanion(')
+          ..write('channelId: $channelId, ')
+          ..write('videoId: $videoId, ')
+          ..write('language: $language, ')
+          ..write('matched: $matched, ')
+          ..write('lastSeen: $lastSeen, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDb extends GeneratedDatabase {
   _$AppDb(QueryExecutor e) : super(e);
   $AppDbManager get managers => $AppDbManager(this);
@@ -6096,6 +7825,19 @@ abstract class _$AppDb extends GeneratedDatabase {
   late final $AudioCacheTable audioCache = $AudioCacheTable(this);
   late final $LyricsCacheTable lyricsCache = $LyricsCacheTable(this);
   late final $SbCacheTable sbCache = $SbCacheTable(this);
+  late final $LearnedChannelsTable learnedChannels = $LearnedChannelsTable(
+    this,
+  );
+  late final $LearnedTermsTable learnedTerms = $LearnedTermsTable(this);
+  late final $DiscoveryQueriesTable discoveryQueries = $DiscoveryQueriesTable(
+    this,
+  );
+  late final $SuggestionCacheTable suggestionCache = $SuggestionCacheTable(
+    this,
+  );
+  late final $ChannelEvidenceTable channelEvidence = $ChannelEvidenceTable(
+    this,
+  );
   late final SubscriptionsDao subscriptionsDao = SubscriptionsDao(
     this as AppDb,
   );
@@ -6130,6 +7872,11 @@ abstract class _$AppDb extends GeneratedDatabase {
     audioCache,
     lyricsCache,
     sbCache,
+    learnedChannels,
+    learnedTerms,
+    discoveryQueries,
+    suggestionCache,
+    channelEvidence,
   ];
 }
 
@@ -9518,6 +11265,1016 @@ typedef $$SbCacheTableProcessedTableManager =
       SbCacheRow,
       PrefetchHooks Function()
     >;
+typedef $$LearnedChannelsTableCreateCompanionBuilder =
+    LearnedChannelsCompanion Function({
+      required String channelId,
+      required String language,
+      Value<int> votes,
+      required int lastSeen,
+      Value<String> topics,
+      Value<int> rowid,
+    });
+typedef $$LearnedChannelsTableUpdateCompanionBuilder =
+    LearnedChannelsCompanion Function({
+      Value<String> channelId,
+      Value<String> language,
+      Value<int> votes,
+      Value<int> lastSeen,
+      Value<String> topics,
+      Value<int> rowid,
+    });
+
+class $$LearnedChannelsTableFilterComposer
+    extends Composer<_$AppDb, $LearnedChannelsTable> {
+  $$LearnedChannelsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get votes => $composableBuilder(
+    column: $table.votes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get topics => $composableBuilder(
+    column: $table.topics,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LearnedChannelsTableOrderingComposer
+    extends Composer<_$AppDb, $LearnedChannelsTable> {
+  $$LearnedChannelsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get votes => $composableBuilder(
+    column: $table.votes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get topics => $composableBuilder(
+    column: $table.topics,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LearnedChannelsTableAnnotationComposer
+    extends Composer<_$AppDb, $LearnedChannelsTable> {
+  $$LearnedChannelsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get channelId =>
+      $composableBuilder(column: $table.channelId, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<int> get votes =>
+      $composableBuilder(column: $table.votes, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSeen =>
+      $composableBuilder(column: $table.lastSeen, builder: (column) => column);
+
+  GeneratedColumn<String> get topics =>
+      $composableBuilder(column: $table.topics, builder: (column) => column);
+}
+
+class $$LearnedChannelsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDb,
+          $LearnedChannelsTable,
+          LearnedChannel,
+          $$LearnedChannelsTableFilterComposer,
+          $$LearnedChannelsTableOrderingComposer,
+          $$LearnedChannelsTableAnnotationComposer,
+          $$LearnedChannelsTableCreateCompanionBuilder,
+          $$LearnedChannelsTableUpdateCompanionBuilder,
+          (
+            LearnedChannel,
+            BaseReferences<_$AppDb, $LearnedChannelsTable, LearnedChannel>,
+          ),
+          LearnedChannel,
+          PrefetchHooks Function()
+        > {
+  $$LearnedChannelsTableTableManager(_$AppDb db, $LearnedChannelsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LearnedChannelsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LearnedChannelsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LearnedChannelsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> channelId = const Value.absent(),
+                Value<String> language = const Value.absent(),
+                Value<int> votes = const Value.absent(),
+                Value<int> lastSeen = const Value.absent(),
+                Value<String> topics = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LearnedChannelsCompanion(
+                channelId: channelId,
+                language: language,
+                votes: votes,
+                lastSeen: lastSeen,
+                topics: topics,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String channelId,
+                required String language,
+                Value<int> votes = const Value.absent(),
+                required int lastSeen,
+                Value<String> topics = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LearnedChannelsCompanion.insert(
+                channelId: channelId,
+                language: language,
+                votes: votes,
+                lastSeen: lastSeen,
+                topics: topics,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$LearnedChannelsTable, LearnedChannel>(table),
+                  BaseReferences<
+                    _$AppDb,
+                    $LearnedChannelsTable,
+                    LearnedChannel
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LearnedChannelsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDb,
+      $LearnedChannelsTable,
+      LearnedChannel,
+      $$LearnedChannelsTableFilterComposer,
+      $$LearnedChannelsTableOrderingComposer,
+      $$LearnedChannelsTableAnnotationComposer,
+      $$LearnedChannelsTableCreateCompanionBuilder,
+      $$LearnedChannelsTableUpdateCompanionBuilder,
+      (
+        LearnedChannel,
+        BaseReferences<_$AppDb, $LearnedChannelsTable, LearnedChannel>,
+      ),
+      LearnedChannel,
+      PrefetchHooks Function()
+    >;
+typedef $$LearnedTermsTableCreateCompanionBuilder =
+    LearnedTermsCompanion Function({
+      required String term,
+      required String language,
+      Value<int> strength,
+      Value<int> seenCount,
+      required int lastSeen,
+      Value<int> rowid,
+    });
+typedef $$LearnedTermsTableUpdateCompanionBuilder =
+    LearnedTermsCompanion Function({
+      Value<String> term,
+      Value<String> language,
+      Value<int> strength,
+      Value<int> seenCount,
+      Value<int> lastSeen,
+      Value<int> rowid,
+    });
+
+class $$LearnedTermsTableFilterComposer
+    extends Composer<_$AppDb, $LearnedTermsTable> {
+  $$LearnedTermsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get term => $composableBuilder(
+    column: $table.term,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get strength => $composableBuilder(
+    column: $table.strength,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get seenCount => $composableBuilder(
+    column: $table.seenCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LearnedTermsTableOrderingComposer
+    extends Composer<_$AppDb, $LearnedTermsTable> {
+  $$LearnedTermsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get term => $composableBuilder(
+    column: $table.term,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get strength => $composableBuilder(
+    column: $table.strength,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get seenCount => $composableBuilder(
+    column: $table.seenCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LearnedTermsTableAnnotationComposer
+    extends Composer<_$AppDb, $LearnedTermsTable> {
+  $$LearnedTermsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get term =>
+      $composableBuilder(column: $table.term, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<int> get strength =>
+      $composableBuilder(column: $table.strength, builder: (column) => column);
+
+  GeneratedColumn<int> get seenCount =>
+      $composableBuilder(column: $table.seenCount, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSeen =>
+      $composableBuilder(column: $table.lastSeen, builder: (column) => column);
+}
+
+class $$LearnedTermsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDb,
+          $LearnedTermsTable,
+          LearnedTerm,
+          $$LearnedTermsTableFilterComposer,
+          $$LearnedTermsTableOrderingComposer,
+          $$LearnedTermsTableAnnotationComposer,
+          $$LearnedTermsTableCreateCompanionBuilder,
+          $$LearnedTermsTableUpdateCompanionBuilder,
+          (
+            LearnedTerm,
+            BaseReferences<_$AppDb, $LearnedTermsTable, LearnedTerm>,
+          ),
+          LearnedTerm,
+          PrefetchHooks Function()
+        > {
+  $$LearnedTermsTableTableManager(_$AppDb db, $LearnedTermsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LearnedTermsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LearnedTermsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LearnedTermsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> term = const Value.absent(),
+                Value<String> language = const Value.absent(),
+                Value<int> strength = const Value.absent(),
+                Value<int> seenCount = const Value.absent(),
+                Value<int> lastSeen = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LearnedTermsCompanion(
+                term: term,
+                language: language,
+                strength: strength,
+                seenCount: seenCount,
+                lastSeen: lastSeen,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String term,
+                required String language,
+                Value<int> strength = const Value.absent(),
+                Value<int> seenCount = const Value.absent(),
+                required int lastSeen,
+                Value<int> rowid = const Value.absent(),
+              }) => LearnedTermsCompanion.insert(
+                term: term,
+                language: language,
+                strength: strength,
+                seenCount: seenCount,
+                lastSeen: lastSeen,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$LearnedTermsTable, LearnedTerm>(table),
+                  BaseReferences<_$AppDb, $LearnedTermsTable, LearnedTerm>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LearnedTermsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDb,
+      $LearnedTermsTable,
+      LearnedTerm,
+      $$LearnedTermsTableFilterComposer,
+      $$LearnedTermsTableOrderingComposer,
+      $$LearnedTermsTableAnnotationComposer,
+      $$LearnedTermsTableCreateCompanionBuilder,
+      $$LearnedTermsTableUpdateCompanionBuilder,
+      (LearnedTerm, BaseReferences<_$AppDb, $LearnedTermsTable, LearnedTerm>),
+      LearnedTerm,
+      PrefetchHooks Function()
+    >;
+typedef $$DiscoveryQueriesTableCreateCompanionBuilder =
+    DiscoveryQueriesCompanion Function({
+      required String query,
+      required int lastUsed,
+      Value<int> yieldNew,
+      Value<double?> precision,
+      Value<int> dwellMs,
+      Value<int> rowid,
+    });
+typedef $$DiscoveryQueriesTableUpdateCompanionBuilder =
+    DiscoveryQueriesCompanion Function({
+      Value<String> query,
+      Value<int> lastUsed,
+      Value<int> yieldNew,
+      Value<double?> precision,
+      Value<int> dwellMs,
+      Value<int> rowid,
+    });
+
+class $$DiscoveryQueriesTableFilterComposer
+    extends Composer<_$AppDb, $DiscoveryQueriesTable> {
+  $$DiscoveryQueriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get query => $composableBuilder(
+    column: $table.query,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastUsed => $composableBuilder(
+    column: $table.lastUsed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get yieldNew => $composableBuilder(
+    column: $table.yieldNew,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get precision => $composableBuilder(
+    column: $table.precision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dwellMs => $composableBuilder(
+    column: $table.dwellMs,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DiscoveryQueriesTableOrderingComposer
+    extends Composer<_$AppDb, $DiscoveryQueriesTable> {
+  $$DiscoveryQueriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get query => $composableBuilder(
+    column: $table.query,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastUsed => $composableBuilder(
+    column: $table.lastUsed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get yieldNew => $composableBuilder(
+    column: $table.yieldNew,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get precision => $composableBuilder(
+    column: $table.precision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get dwellMs => $composableBuilder(
+    column: $table.dwellMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DiscoveryQueriesTableAnnotationComposer
+    extends Composer<_$AppDb, $DiscoveryQueriesTable> {
+  $$DiscoveryQueriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get query =>
+      $composableBuilder(column: $table.query, builder: (column) => column);
+
+  GeneratedColumn<int> get lastUsed =>
+      $composableBuilder(column: $table.lastUsed, builder: (column) => column);
+
+  GeneratedColumn<int> get yieldNew =>
+      $composableBuilder(column: $table.yieldNew, builder: (column) => column);
+
+  GeneratedColumn<double> get precision =>
+      $composableBuilder(column: $table.precision, builder: (column) => column);
+
+  GeneratedColumn<int> get dwellMs =>
+      $composableBuilder(column: $table.dwellMs, builder: (column) => column);
+}
+
+class $$DiscoveryQueriesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDb,
+          $DiscoveryQueriesTable,
+          DiscoveryQuery,
+          $$DiscoveryQueriesTableFilterComposer,
+          $$DiscoveryQueriesTableOrderingComposer,
+          $$DiscoveryQueriesTableAnnotationComposer,
+          $$DiscoveryQueriesTableCreateCompanionBuilder,
+          $$DiscoveryQueriesTableUpdateCompanionBuilder,
+          (
+            DiscoveryQuery,
+            BaseReferences<_$AppDb, $DiscoveryQueriesTable, DiscoveryQuery>,
+          ),
+          DiscoveryQuery,
+          PrefetchHooks Function()
+        > {
+  $$DiscoveryQueriesTableTableManager(_$AppDb db, $DiscoveryQueriesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DiscoveryQueriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DiscoveryQueriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DiscoveryQueriesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> query = const Value.absent(),
+                Value<int> lastUsed = const Value.absent(),
+                Value<int> yieldNew = const Value.absent(),
+                Value<double?> precision = const Value.absent(),
+                Value<int> dwellMs = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DiscoveryQueriesCompanion(
+                query: query,
+                lastUsed: lastUsed,
+                yieldNew: yieldNew,
+                precision: precision,
+                dwellMs: dwellMs,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String query,
+                required int lastUsed,
+                Value<int> yieldNew = const Value.absent(),
+                Value<double?> precision = const Value.absent(),
+                Value<int> dwellMs = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DiscoveryQueriesCompanion.insert(
+                query: query,
+                lastUsed: lastUsed,
+                yieldNew: yieldNew,
+                precision: precision,
+                dwellMs: dwellMs,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DiscoveryQueriesTable, DiscoveryQuery>(table),
+                  BaseReferences<
+                    _$AppDb,
+                    $DiscoveryQueriesTable,
+                    DiscoveryQuery
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DiscoveryQueriesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDb,
+      $DiscoveryQueriesTable,
+      DiscoveryQuery,
+      $$DiscoveryQueriesTableFilterComposer,
+      $$DiscoveryQueriesTableOrderingComposer,
+      $$DiscoveryQueriesTableAnnotationComposer,
+      $$DiscoveryQueriesTableCreateCompanionBuilder,
+      $$DiscoveryQueriesTableUpdateCompanionBuilder,
+      (
+        DiscoveryQuery,
+        BaseReferences<_$AppDb, $DiscoveryQueriesTable, DiscoveryQuery>,
+      ),
+      DiscoveryQuery,
+      PrefetchHooks Function()
+    >;
+typedef $$SuggestionCacheTableCreateCompanionBuilder =
+    SuggestionCacheCompanion Function({
+      required String seed,
+      required String suggestionsJson,
+      required int fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$SuggestionCacheTableUpdateCompanionBuilder =
+    SuggestionCacheCompanion Function({
+      Value<String> seed,
+      Value<String> suggestionsJson,
+      Value<int> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$SuggestionCacheTableFilterComposer
+    extends Composer<_$AppDb, $SuggestionCacheTable> {
+  $$SuggestionCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get seed => $composableBuilder(
+    column: $table.seed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get suggestionsJson => $composableBuilder(
+    column: $table.suggestionsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SuggestionCacheTableOrderingComposer
+    extends Composer<_$AppDb, $SuggestionCacheTable> {
+  $$SuggestionCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get seed => $composableBuilder(
+    column: $table.seed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get suggestionsJson => $composableBuilder(
+    column: $table.suggestionsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SuggestionCacheTableAnnotationComposer
+    extends Composer<_$AppDb, $SuggestionCacheTable> {
+  $$SuggestionCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get seed =>
+      $composableBuilder(column: $table.seed, builder: (column) => column);
+
+  GeneratedColumn<String> get suggestionsJson => $composableBuilder(
+    column: $table.suggestionsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$SuggestionCacheTableTableManager
+    extends
+        RootTableManager<
+          _$AppDb,
+          $SuggestionCacheTable,
+          SuggestionCacheData,
+          $$SuggestionCacheTableFilterComposer,
+          $$SuggestionCacheTableOrderingComposer,
+          $$SuggestionCacheTableAnnotationComposer,
+          $$SuggestionCacheTableCreateCompanionBuilder,
+          $$SuggestionCacheTableUpdateCompanionBuilder,
+          (
+            SuggestionCacheData,
+            BaseReferences<_$AppDb, $SuggestionCacheTable, SuggestionCacheData>,
+          ),
+          SuggestionCacheData,
+          PrefetchHooks Function()
+        > {
+  $$SuggestionCacheTableTableManager(_$AppDb db, $SuggestionCacheTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SuggestionCacheTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SuggestionCacheTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SuggestionCacheTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> seed = const Value.absent(),
+                Value<String> suggestionsJson = const Value.absent(),
+                Value<int> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SuggestionCacheCompanion(
+                seed: seed,
+                suggestionsJson: suggestionsJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String seed,
+                required String suggestionsJson,
+                required int fetchedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SuggestionCacheCompanion.insert(
+                seed: seed,
+                suggestionsJson: suggestionsJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SuggestionCacheTable, SuggestionCacheData>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDb,
+                    $SuggestionCacheTable,
+                    SuggestionCacheData
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SuggestionCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDb,
+      $SuggestionCacheTable,
+      SuggestionCacheData,
+      $$SuggestionCacheTableFilterComposer,
+      $$SuggestionCacheTableOrderingComposer,
+      $$SuggestionCacheTableAnnotationComposer,
+      $$SuggestionCacheTableCreateCompanionBuilder,
+      $$SuggestionCacheTableUpdateCompanionBuilder,
+      (
+        SuggestionCacheData,
+        BaseReferences<_$AppDb, $SuggestionCacheTable, SuggestionCacheData>,
+      ),
+      SuggestionCacheData,
+      PrefetchHooks Function()
+    >;
+typedef $$ChannelEvidenceTableCreateCompanionBuilder =
+    ChannelEvidenceCompanion Function({
+      required String channelId,
+      required String videoId,
+      required String language,
+      required bool matched,
+      required int lastSeen,
+      Value<int> rowid,
+    });
+typedef $$ChannelEvidenceTableUpdateCompanionBuilder =
+    ChannelEvidenceCompanion Function({
+      Value<String> channelId,
+      Value<String> videoId,
+      Value<String> language,
+      Value<bool> matched,
+      Value<int> lastSeen,
+      Value<int> rowid,
+    });
+
+class $$ChannelEvidenceTableFilterComposer
+    extends Composer<_$AppDb, $ChannelEvidenceTable> {
+  $$ChannelEvidenceTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get videoId => $composableBuilder(
+    column: $table.videoId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get matched => $composableBuilder(
+    column: $table.matched,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ChannelEvidenceTableOrderingComposer
+    extends Composer<_$AppDb, $ChannelEvidenceTable> {
+  $$ChannelEvidenceTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get videoId => $composableBuilder(
+    column: $table.videoId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get matched => $composableBuilder(
+    column: $table.matched,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastSeen => $composableBuilder(
+    column: $table.lastSeen,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ChannelEvidenceTableAnnotationComposer
+    extends Composer<_$AppDb, $ChannelEvidenceTable> {
+  $$ChannelEvidenceTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get channelId =>
+      $composableBuilder(column: $table.channelId, builder: (column) => column);
+
+  GeneratedColumn<String> get videoId =>
+      $composableBuilder(column: $table.videoId, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<bool> get matched =>
+      $composableBuilder(column: $table.matched, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSeen =>
+      $composableBuilder(column: $table.lastSeen, builder: (column) => column);
+}
+
+class $$ChannelEvidenceTableTableManager
+    extends
+        RootTableManager<
+          _$AppDb,
+          $ChannelEvidenceTable,
+          ChannelEvidenceData,
+          $$ChannelEvidenceTableFilterComposer,
+          $$ChannelEvidenceTableOrderingComposer,
+          $$ChannelEvidenceTableAnnotationComposer,
+          $$ChannelEvidenceTableCreateCompanionBuilder,
+          $$ChannelEvidenceTableUpdateCompanionBuilder,
+          (
+            ChannelEvidenceData,
+            BaseReferences<_$AppDb, $ChannelEvidenceTable, ChannelEvidenceData>,
+          ),
+          ChannelEvidenceData,
+          PrefetchHooks Function()
+        > {
+  $$ChannelEvidenceTableTableManager(_$AppDb db, $ChannelEvidenceTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ChannelEvidenceTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ChannelEvidenceTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ChannelEvidenceTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> channelId = const Value.absent(),
+                Value<String> videoId = const Value.absent(),
+                Value<String> language = const Value.absent(),
+                Value<bool> matched = const Value.absent(),
+                Value<int> lastSeen = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChannelEvidenceCompanion(
+                channelId: channelId,
+                videoId: videoId,
+                language: language,
+                matched: matched,
+                lastSeen: lastSeen,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String channelId,
+                required String videoId,
+                required String language,
+                required bool matched,
+                required int lastSeen,
+                Value<int> rowid = const Value.absent(),
+              }) => ChannelEvidenceCompanion.insert(
+                channelId: channelId,
+                videoId: videoId,
+                language: language,
+                matched: matched,
+                lastSeen: lastSeen,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ChannelEvidenceTable, ChannelEvidenceData>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDb,
+                    $ChannelEvidenceTable,
+                    ChannelEvidenceData
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ChannelEvidenceTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDb,
+      $ChannelEvidenceTable,
+      ChannelEvidenceData,
+      $$ChannelEvidenceTableFilterComposer,
+      $$ChannelEvidenceTableOrderingComposer,
+      $$ChannelEvidenceTableAnnotationComposer,
+      $$ChannelEvidenceTableCreateCompanionBuilder,
+      $$ChannelEvidenceTableUpdateCompanionBuilder,
+      (
+        ChannelEvidenceData,
+        BaseReferences<_$AppDb, $ChannelEvidenceTable, ChannelEvidenceData>,
+      ),
+      ChannelEvidenceData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDbManager {
   final _$AppDb _db;
@@ -9554,6 +12311,16 @@ class $AppDbManager {
       $$LyricsCacheTableTableManager(_db, _db.lyricsCache);
   $$SbCacheTableTableManager get sbCache =>
       $$SbCacheTableTableManager(_db, _db.sbCache);
+  $$LearnedChannelsTableTableManager get learnedChannels =>
+      $$LearnedChannelsTableTableManager(_db, _db.learnedChannels);
+  $$LearnedTermsTableTableManager get learnedTerms =>
+      $$LearnedTermsTableTableManager(_db, _db.learnedTerms);
+  $$DiscoveryQueriesTableTableManager get discoveryQueries =>
+      $$DiscoveryQueriesTableTableManager(_db, _db.discoveryQueries);
+  $$SuggestionCacheTableTableManager get suggestionCache =>
+      $$SuggestionCacheTableTableManager(_db, _db.suggestionCache);
+  $$ChannelEvidenceTableTableManager get channelEvidence =>
+      $$ChannelEvidenceTableTableManager(_db, _db.channelEvidence);
 }
 
 mixin _$SubscriptionsDaoMixin on DatabaseAccessor<AppDb> {

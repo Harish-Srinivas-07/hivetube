@@ -1,26 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/innertube/clients.dart';
 import 'package:hivetube/core/innertube/innertube_http.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/yt/yt_browse.dart';
 import 'package:hivetube/core/yt/yt_search.dart';
 
-void main() {
-  test('P2 Smoke Test: Search filters, Channel resolve + tabs, Playlists', timeout: const Timeout(Duration(minutes: 5)), () async {
-    stdout.writeln('=== P2 Smoke Test ===');
-    final clients = InnertubeClients(
-      jsonDecode(await File('assets/innertube_clients.json').readAsString()),
-    );
-    final dio = Dio();
-    final http = InnertubeHttp(dio, clients);
-    final res = await http.post('visitor_id', {});
-    http.visitorData = res['responseContext']['visitorData'];
+void main() async {
+  stdout.writeln('=== P2 Smoke Test ===');
+  final clients = InnertubeClients(
+    jsonDecode(await File('assets/innertube_clients.json').readAsString()),
+  );
+  final dio = Dio();
+  final http = InnertubeHttp(dio, clients);
+  final res = await http.post('visitor_id', {});
+  http.visitorData = res['responseContext']['visitorData'];
 
-    final search = YtSearch(http);
-    final browse = YtBrowse(http);
+  final search = YtSearch(http);
+  final browse = YtBrowse(http);
 
     // 1. Search 'tamil music' with each filter
     stdout.writeln('1. Testing Search with Filters (query: "tamil music")...');
@@ -44,8 +42,8 @@ void main() {
         stdout.writeln('   - Filter [${entry.key}] error: $e');
       }
     }
-    expect(searchCounts['All'], greaterThan(0));
-    expect(searchCounts['Videos'], greaterThan(0));
+    assert((searchCounts['All'] ?? 0) > 0);
+    assert((searchCounts['Videos'] ?? 0) > 0);
 
     // 2. Resolve 3 real @handles, print header fields and first 5 videos per tab
     stdout.writeln('2. Resolving 3 real @handles...');
@@ -54,7 +52,7 @@ void main() {
       try {
         final channelId = await browse.resolveUrl('https://www.youtube.com/$handle');
         stdout.writeln('   - Handle $handle -> ChannelId: $channelId');
-        expect(channelId, startsWith('UC'));
+        assert(channelId.startsWith('UC'));
 
         final page = await browse.channelPage(channelId);
         stdout.writeln('     Name: "${page.name}", Handle: "${page.handle}", Subs: "${page.subscribersText}", Videos: "${page.videosCountText}"');
@@ -92,7 +90,7 @@ void main() {
           final next = await browse.playlistPage(plId, continuation: plPage.continuation);
           stdout.writeln('     Next page videos: ${next.videos.length}');
         }
-        expect(plPage.videos, isNotEmpty);
+        assert(plPage.videos.isNotEmpty);
       } catch (e) {
         stdout.writeln('     Playlist $plId failed: $e');
       }
@@ -100,5 +98,4 @@ void main() {
 
     stdout.writeln('=== P2 Smoke Test Complete ===');
     dio.close();
-  });
 }

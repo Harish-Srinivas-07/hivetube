@@ -3,7 +3,7 @@ import '../db/app_db.dart';
 import 'innertube_http.dart';
 import 'json_find.dart';
 
-String visitorCacheKey(String hl, String gl) => 'visitor_data_${hl}_$gl';
+String visitorCacheKey(String gl) => 'visitor_data_$gl';
 
 class VisitorService {
   VisitorService(this.http, this.db);
@@ -14,7 +14,7 @@ class VisitorService {
       try {
         final cached =
             jsonDecode(
-                  (await db.getValue(visitorCacheKey(http.hl, http.gl))) ?? '',
+                  (await db.getValue(visitorCacheKey(http.gl))) ?? '',
                 )
                 as Map;
         if (DateTime.now().millisecondsSinceEpoch <
@@ -33,7 +33,7 @@ class VisitorService {
       throw StateError('Visitor data missing');
     }
     await db.setValue(
-      visitorCacheKey(http.hl, http.gl),
+      visitorCacheKey(http.gl),
       jsonEncode({
         'value': visitor,
         'expires': DateTime.now()

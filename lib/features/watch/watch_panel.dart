@@ -18,9 +18,10 @@ import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
-import '../../theme/app_spacing.dart';
-import '../../theme/app_radius.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
+import '../../theme/app_spacing.dart';
 import '../../widgets/player/player_controls.dart';
 import '../shorts/shorts_screen.dart';
 import '../home/home_variety.dart';
@@ -107,7 +108,7 @@ class MiniPlayerCloseButton extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
     tooltip: 'Close player',
     onPressed: onDismiss,
-    icon: const Icon(LucideIcons.x, color: Colors.white),
+    icon: const Icon(LucideIcons.x, color: AppColors.shortsForeground),
   );
 }
 
@@ -416,7 +417,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: animation.value > 0.5
             ? SystemUiOverlayStyle.light.copyWith(
-                statusBarColor: Colors.black,
+                statusBarColor: AppColors.shortsBackground,
                 systemNavigationBarColor: Theme.of(context).colorScheme.surface,
               )
             : Theme.of(context).brightness == Brightness.dark
@@ -634,7 +635,7 @@ class _MiniProgressBar extends StatelessWidget {
                     FractionallySizedBox(
                       widthFactor: buf,
                       alignment: Alignment.centerLeft,
-                      child: const ColoredBox(color: Color(0x66FFFFFF)),
+                      child: const ColoredBox(color: AppColors.shortsProgressTrack),
                     ),
                     FractionallySizedBox(
                       widthFactor: played,
@@ -758,7 +759,7 @@ class _VideoMorphCard extends StatelessWidget {
           borderRadius: AppRadius.lgBorder,
           boxShadow: const [
             BoxShadow(
-              color: Color(0x33000000),
+              color: AppColors.playerControlBorder,
               blurRadius: 16,
               offset: Offset(0, 4),
             ),
@@ -818,7 +819,7 @@ class _MiniControlsOverlay extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onExpand, // Tap on visible controls background opens the watch page
       child: ColoredBox(
-        color: Colors.black54,
+        color: AppColors.shortsScrim,
         child: Stack(
           children: [
             // Top-left: expand
@@ -828,10 +829,10 @@ class _MiniControlsOverlay extends StatelessWidget {
                 tooltip: 'Expand',
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.all(AppSpacing.xs),
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                iconSize: 18,
+                constraints: const BoxConstraints(minWidth: AppSizes.iconLg, minHeight: AppSizes.iconLg),
+                iconSize: AppSizes.iconSm,
                 onPressed: onExpand,
-                icon: const Icon(LucideIcons.maximize, color: Colors.white),
+                icon: const Icon(LucideIcons.maximize, color: AppColors.shortsForeground),
               ),
             ),
             // Top-right: close
@@ -841,10 +842,10 @@ class _MiniControlsOverlay extends StatelessWidget {
                 tooltip: 'Close player',
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.all(AppSpacing.xs),
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                iconSize: 18,
+                constraints: const BoxConstraints(minWidth: AppSizes.iconLg, minHeight: AppSizes.iconLg),
+                iconSize: AppSizes.iconSm,
                 onPressed: onDismiss,
-                icon: const Icon(LucideIcons.x, color: Colors.white),
+                icon: const Icon(LucideIcons.x, color: AppColors.shortsForeground),
               ),
             ),
             // Centre controls
@@ -855,19 +856,19 @@ class _MiniControlsOverlay extends StatelessWidget {
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(AppSpacing.xs),
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    iconSize: 20,
+                    constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
+                    iconSize: AppSizes.icon,
                     onPressed: onPrevious,
-                    icon: const Icon(LucideIcons.skipBack, color: Colors.white),
+                    icon: const Icon(LucideIcons.skipBack, color: AppColors.shortsForeground),
                   ),
                   if (buffering)
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                       child: SizedBox(
-                        width: 24,
-                        height: 24,
+                        width: AppSizes.icon,
+                        height: AppSizes.icon,
                         child: CircularProgressIndicator(
-                          color: Colors.white,
+                          color: AppColors.shortsForeground,
                           strokeWidth: 2,
                         ),
                       ),
@@ -876,18 +877,18 @@ class _MiniControlsOverlay extends StatelessWidget {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.all(AppSpacing.xs),
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      iconSize: 22,
+                      constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
+                      iconSize: AppSizes.icon,
                       onPressed: service.retry,
-                      icon: const Icon(LucideIcons.refreshCw, color: Colors.white),
+                      icon: const Icon(LucideIcons.refreshCw, color: AppColors.shortsForeground),
                       tooltip: 'Retry',
                     )
                   else
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.all(AppSpacing.xs),
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      iconSize: 26,
+                      constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
+                      iconSize: AppSizes.iconLg,
                       onPressed: () async {
                         if (ended) {
                           await service.seek(Duration.zero);
@@ -904,16 +905,16 @@ class _MiniControlsOverlay extends StatelessWidget {
                             : playing
                             ? LucideIcons.pause
                             : LucideIcons.play,
-                        color: Colors.white,
+                        color: AppColors.shortsForeground,
                       ),
                     ),
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.all(AppSpacing.xs),
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    iconSize: 20,
+                    constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
+                    iconSize: AppSizes.icon,
                     onPressed: nextId != null ? onNext : null,
-                    icon: const Icon(LucideIcons.skipForward, color: Colors.white),
+                    icon: const Icon(LucideIcons.skipForward, color: AppColors.shortsForeground),
                   ),
                 ],
               ),

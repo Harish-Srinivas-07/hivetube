@@ -16,7 +16,7 @@ class HomeCache {
       final j = jsonDecode(raw!) as Map<String, dynamic>;
       final saved = DateTime.parse(j['savedAt'] as String);
       if (now.isBefore(saved) ||
-          now.difference(saved) >= const Duration(hours: 12)) {
+          now.difference(saved) >= const Duration(minutes: 30)) {
         return null;
       }
       return HomeCache(

@@ -97,10 +97,12 @@ class VideoPage {
     this.items,
     this.continuation, {
     this.searchDateFilters = const [],
+    this.searchSortParams = const [],
   });
   final List<VideoItem> items;
   final String? continuation;
   final List<String> searchDateFilters;
+  final List<String> searchSortParams;
 }
 
 class ShortPage {
@@ -182,6 +184,11 @@ class PlaylistSearchResult extends SearchResultItem {
 class ShortsShelfSearchResult extends SearchResultItem {
   const ShortsShelfSearchResult(this.shorts);
   final List<ShortItem> shorts;
+}
+
+class ShortSearchResult extends SearchResultItem {
+  const ShortSearchResult(this.short);
+  final ShortItem short;
 }
 
 class SearchResultPage {

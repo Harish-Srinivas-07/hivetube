@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/providers.dart';
 import '../../widgets/common.dart';
@@ -35,7 +36,7 @@ class _ManageSubscriptionsScreenState
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Search subscriptions...',
-                prefixIcon: const Icon(LucideIcons.search, size: 20),
+                prefixIcon: const Icon(LucideIcons.search, size: AppSizes.iconMd),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppRadius.lg),
                 ),
@@ -78,7 +79,7 @@ class _ManageSubscriptionsScreenState
                       leading: Avatar(
                         name: sub.name,
                         url: sub.avatarUrl,
-                        size: 40,
+                        size: AppSizes.avatar,
                       ),
                       title: Text(
                         sub.name,

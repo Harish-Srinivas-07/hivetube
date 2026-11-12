@@ -1,0 +1,447 @@
+{
+  "code": "hi",
+  "englishName": "Hindi",
+  "nativeName": "हिन्दी",
+  "scriptRanges": [
+    [
+      2304,
+      2431
+    ]
+  ],
+  "seedChannels": [],
+  "topicNames": [
+    "Music",
+    "Movies",
+    "Comedy",
+    "News",
+    "Cooking",
+    "Gaming",
+    "Tech",
+    "Sports",
+    "Science",
+    "Education",
+    "Live",
+    "Podcasts"
+  ],
+  "topicTemplates": {
+    "Music": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Movies": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Comedy": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "News": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Cooking": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Gaming": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Tech": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Sports": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Science": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Education": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Live": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "Podcasts": [
+      "{language} {topic} {freshness}",
+      "hindi {topic} latest",
+      "{festival} {language} {topic} new"
+    ],
+    "All": [
+      "{language} {topic} {freshness}",
+      "{artist} {language} latest",
+      "{film} {language} trailer new",
+      "{festival} {language} songs"
+    ]
+  },
+  "freshnessWords": [
+    "latest",
+    "new",
+    "new upload",
+    "today",
+    "this week",
+    "recent"
+  ],
+  "seasonalTerms": [
+    {
+      "endMonth": 1,
+      "name": "Pongal",
+      "endDay": 18,
+      "startMonth": 1,
+      "startDay": 8,
+      "query": "Pongal"
+    },
+    {
+      "endMonth": 11,
+      "name": "Deepavali",
+      "endDay": 20,
+      "startMonth": 10,
+      "startDay": 1,
+      "query": "Deepavali"
+    },
+    {
+      "endMonth": 8,
+      "name": "Aadi",
+      "endDay": 15,
+      "startMonth": 7,
+      "startDay": 1,
+      "query": "Aadi"
+    },
+    {
+      "endMonth": 7,
+      "name": "school reopening",
+      "endDay": 15,
+      "startMonth": 5,
+      "startDay": 20,
+      "query": "school reopening"
+    },
+    {
+      "endMonth": 4,
+      "name": "exam season",
+      "endDay": 30,
+      "startMonth": 2,
+      "startDay": 1,
+      "query": "exam season"
+    },
+    {
+      "endMonth": 6,
+      "name": "IPL season",
+      "endDay": 10,
+      "startMonth": 3,
+      "startDay": 15,
+      "query": "IPL"
+    }
+  ],
+  "slotValues": {
+    "film": [],
+    "artist": []
+  },
+  "lexiconStrong": [
+    "hai",
+    "hain",
+    "kya",
+    "kaise",
+    "kyu",
+    "kyon",
+    "nahi",
+    "nahin",
+    "mera",
+    "meri",
+    "mere",
+    "tera",
+    "teri",
+    "tere",
+    "hum",
+    "hamara",
+    "hamari",
+    "hamare",
+    "tum",
+    "tumhara",
+    "tumhari",
+    "aap",
+    "aapka",
+    "aapki",
+    "aapke",
+    "bhai",
+    "bhaiya",
+    "behen",
+    "dost",
+    "yaar",
+    "dil",
+    "pyaar",
+    "pyar",
+    "ishq",
+    "mohabbat",
+    "zindagi",
+    "dard",
+    "khushi",
+    "gana",
+    "gaana",
+    "gaane",
+    "geet",
+    "sangeet",
+    "bhajan",
+    "aarti",
+    "katha",
+    "pravachan",
+    "rasoi",
+    "khana",
+    "swad",
+    "kahani",
+    "natak",
+    "serial",
+    "kissa",
+    "baat",
+    "baatein",
+    "sach",
+    "jhooth",
+    "duniya",
+    "desh",
+    "khabar",
+    "samachar",
+    "taaza",
+    "taza",
+    "naya",
+    "naye",
+    "purana",
+    "purane",
+    "chota",
+    "bada",
+    "achha",
+    "achhi",
+    "achhe",
+    "bura",
+    "mast",
+    "zabardast",
+    "dhamaka",
+    "jadoo",
+    "masti",
+    "mazedaar",
+    "maza",
+    "tamasha",
+    "hungama",
+    "pagal",
+    "deewana",
+    "deewani",
+    "aashiq",
+    "sanam",
+    "sajan",
+    "saajan",
+    "sajna",
+    "jaan",
+    "jaaneman",
+    "zindagani",
+    "rasta",
+    "manzil",
+    "safar",
+    "musafir",
+    "subah",
+    "shaam",
+    "raat",
+    "kal",
+    "aaj",
+    "abhi",
+    "hamesha",
+    "kabhi",
+    "sabhi",
+    "sabse",
+    "pehla",
+    "pehli",
+    "pehle",
+    "aakhri",
+    "antim",
+    "shuru",
+    "ant",
+    "khatam",
+    "chalo",
+    "dekho",
+    "suno",
+    "bolo",
+    "samjho",
+    "seekho",
+    "sikho",
+    "padho",
+    "likho",
+    "hasi",
+    "mazaak",
+    "majak",
+    "nautanki",
+    "dosti",
+    "yaari",
+    "rishta",
+    "naata",
+    "parivar",
+    "maa",
+    "baap",
+    "pita",
+    "mata",
+    "beta",
+    "beti",
+    "bahu",
+    "saas",
+    "sasur",
+    "pati",
+    "patni",
+    "dulha",
+    "dulhan",
+    "shadi",
+    "vivah",
+    "barat",
+    "dholak",
+    "mandir",
+    "pooja",
+    "chalisa",
+    "shlok",
+    "mantra",
+    "qawwali",
+    "ghazal",
+    "shayari",
+    "kavita",
+    "sahitya",
+    "shiksha",
+    "sarkari",
+    "yojana",
+    "naukri",
+    "rojgar",
+    "kisan",
+    "kheti",
+    "gaon",
+    "shahar",
+    "kanoon",
+    "faisla",
+    "chutkule",
+    "hasya",
+    "desi",
+    "jugaad",
+    "jugad",
+    "bhojpuri",
+    "haryanvi",
+    "superhit",
+    "filmi",
+    "bollywood",
+    "hindustani",
+    "dhamakedar",
+    "kavya",
+    "charcha"
+  ],
+  "lexiconWeak": [],
+  "negativeCollisionsByLanguage": {
+    "or": [
+      "bhajan",
+      "khabar",
+      "samachar"
+    ],
+    "pa": [
+      "mere",
+      "tere",
+      "bhaiya",
+      "gaana",
+      "geet"
+    ],
+    "ml": [
+      "charcha"
+    ],
+    "gu": [
+      "geet",
+      "rasoi",
+      "natak",
+      "khabar"
+    ],
+    "mr": [
+      "nahi",
+      "gaana",
+      "natak",
+      "mandir",
+      "pooja"
+    ],
+    "ur": [
+      "kahani",
+      "khabar",
+      "qawwali",
+      "ghazal",
+      "shayari"
+    ],
+    "kn": [
+      "hasya"
+    ],
+    "te": [
+      "charcha"
+    ]
+  },
+  "seedChannelCandidates": [
+    {
+      "name": "T-Series",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Zee Music Company",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "SET India",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Sony SAB",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Aaj Tak",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "ABP News",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Total Gaming",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    },
+    {
+      "name": "Technical Guruji",
+      "topics": [
+        "Music",
+        "Movies"
+      ]
+    }
+  ],
+  "schemaVersion": 2
+}

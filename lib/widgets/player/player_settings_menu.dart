@@ -97,11 +97,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             icon: LucideIcons.chevronLeft,
             label: page,
             onTap: () => _page(
-              page == 'Translate captions'
-                  ? 'Captions'
-                  : page == 'Sleep timer'
-                  ? 'More'
-                  : 'Settings',
+              page == 'Sleep timer' ? 'More' : 'Settings',
             ),
           ),
         if (page == 'Settings') ...[
@@ -167,40 +163,26 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             state.selectedCaption == null,
             () => unawaited(service.setCaption(null)),
           ),
-          for (var i = 0; i < state.captions.length; i++)
-            _choice(
-              '${state.captions[i]['languageCode'] ?? 'Captions'}',
-              state.selectedCaption == i,
-              () => unawaited(service.setCaption(i)),
-            ),
-          if (state.captions.any((track) => track['isTranslatable'] == true) &&
-              state.captionTranslations.isNotEmpty)
-            AppMenuRow(
-              icon: LucideIcons.languages,
-              label: 'Translate captions',
-              showChevron: true,
-              onTap: () => _page('Translate captions'),
-            ),
-        ],
-        if (page == 'Translate captions')
-          for (final language in state.captionTranslations)
-            _choice(
-              '${(language['languageName'] is Map ? (language['languageName'] as Map)['simpleText'] : null) ?? language['languageCode'] ?? ''}',
-              false,
-              () {
-                final index = state.captions.indexWhere(
-                  (track) => track['isTranslatable'] == true,
+          for (var i = 0; i < state.captions.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final track = state.captions[i];
+                final name = (track['name'] is Map ? (track['name'] as Map)['simpleText'] : null) ??
+                    track['languageCode'] ??
+                    'Captions';
+                final isAsr = track['kind'] == 'asr' || (track['vssId'] as String? ?? '').startsWith('a.');
+                final label = isAsr && !name.toString().contains('auto-generated')
+                    ? '$name (auto-generated)'
+                    : '$name';
+                return _choice(
+                  label,
+                  state.selectedCaption == i,
+                  () => unawaited(service.setCaption(i)),
                 );
-                if (index >= 0) {
-                  unawaited(
-                    service.setCaption(
-                      index,
-                      translateTo: language['languageCode'] as String?,
-                    ),
-                  );
-                }
               },
             ),
+          ],
+        ],
         if (page == 'More') ...[
           AppMenuRow(
             icon: LucideIcons.timer,

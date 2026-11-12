@@ -1,6 +1,9 @@
 import 'dart:math';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hivetube/core/db/history_entry.dart';
+import 'package:hivetube/core/content/channel_language_cache.dart';
+import 'package:hivetube/core/content/language_profile.dart';
+import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/yt/parser.dart';
 import 'package:hivetube/features/home/home_mixer.dart';
@@ -10,6 +13,14 @@ VideoItem video(String id, {bool short = false, String channel = ''}) =>
     VideoItem(id: id, title: id, isShort: short, channelId: channel);
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    await LanguageProfileRegistry.instance.ensureLoaded();
+    ChannelLanguageCache.instance = ChannelLanguageCache(
+      AppDb(NativeDatabase.memory()),
+    );
+  });
+
   test(
     'paged mixer weights, deduplicates, filters and isolates failures',
     () async {

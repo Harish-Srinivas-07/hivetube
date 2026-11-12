@@ -14,9 +14,10 @@ import '../../core/yt/models.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/glass_surface.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/ui/ui.dart';
 import 'home_controller.dart';
 
 final homeHistoryProvider = FutureProvider<List<HistoryEntry>>(
@@ -316,78 +317,31 @@ class _ChipRow extends StatelessWidget {
   final ValueChanged<String> onSelected;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      height: AppSpacing.homeChipHeight + AppSpacing.xxs + AppSpacing.xxs,
+      height: AppSizes.chipHeight + AppSpacing.sm,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
-          vertical: AppSpacing.xxs,
+          vertical: AppSpacing.xs,
         ),
         children: [
-          GlassSurface(
-            borderRadius: AppRadius.mdBorder,
-            child: Material(
-              color: AppColors.transparent,
-              child: InkWell(
-                borderRadius: AppRadius.mdBorder,
-                onTap: () {},
-                child: const SizedBox(
-                  width: AppSpacing.homeChipHeight,
-                  height: AppSpacing.homeChipHeight,
-                  child: Icon(LucideIcons.compass),
-                ),
-              ),
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: AppChip(
+              label: '',
+              leading: const Icon(LucideIcons.compass, size: AppSizes.iconSm),
+              onTap: () {},
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
           for (final item in chips)
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sm),
-              child: item == selected
-                  ? Material(
-                      color: scheme.onSurface,
-                      borderRadius: AppRadius.mdBorder,
-                      child: InkWell(
-                        borderRadius: AppRadius.mdBorder,
-                        onTap: () => onSelected(item),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.homeChipHorizontalPadding,
-                          ),
-                          child: Center(
-                            child: Text(
-                              item,
-                              style: Theme.of(context).textTheme.labelLarge
-                                  ?.copyWith(color: scheme.surface),
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                  : GlassSurface(
-                      borderRadius: AppRadius.mdBorder,
-                      child: Material(
-                        color: AppColors.transparent,
-                        child: InkWell(
-                          borderRadius: AppRadius.mdBorder,
-                          onTap: () => onSelected(item),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.homeChipHorizontalPadding,
-                            ),
-                            child: Center(
-                              child: Text(
-                                item,
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(color: scheme.onSurface),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+              child: AppChip(
+                label: item,
+                selected: item == selected,
+                onTap: () => onSelected(item),
+              ),
             ),
         ],
       ),
@@ -569,11 +523,11 @@ class _VideoCard extends ConsumerWidget {
                       updatedAt: DateTime.now().millisecondsSinceEpoch,
                     ),
                   ),
-                  iconSize: AppSpacing.homeMoreIcon,
+                  iconSize: AppSizes.icon,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: AppSpacing.topButton,
-                    minHeight: AppSpacing.topButton,
+                    minWidth: AppSizes.touchMin,
+                    minHeight: AppSizes.touchMin,
                   ),
                   icon: const Icon(LucideIcons.ellipsisVertical),
                 ),
@@ -649,59 +603,15 @@ class _Shorts extends ConsumerWidget {
   );
 }
 
-class _Block extends StatelessWidget {
-  const _Block({required this.width, required this.height});
-  final double width, height;
-  @override
-  Widget build(BuildContext context) => Container(
-    width: width,
-    height: height,
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: AppRadius.mdBorder,
-    ),
-  );
-}
-
 class _HomeSkeleton extends StatelessWidget {
   const _HomeSkeleton();
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(AppSpacing.lg),
-    children: [
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (var i = 0; i < 3; i++)
-              const Padding(
-                padding: EdgeInsets.only(right: AppSpacing.sm),
-                child: _Block(
-                  width: AppSpacing.shortWidth,
-                  height: AppSpacing.shortWidth / AppSpacing.shortRatio,
-                ),
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: AppSpacing.lg),
-      for (var i = 0; i < 2; i++)
-        const Padding(
-          padding: EdgeInsets.only(bottom: AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: AppSpacing.thumbnailRatio,
-                child: _Block(width: double.infinity, height: double.infinity),
-              ),
-              SizedBox(height: AppSpacing.sm),
-              _Block(width: AppSpacing.searchMaxWidth, height: AppSpacing.lg),
-              SizedBox(height: AppSpacing.sm),
-              _Block(width: AppSpacing.videoMaxWidth, height: AppSpacing.md),
-            ],
-          ),
-        ),
+    children: const [
+      SkeletonVideoCard(),
+      SizedBox(height: AppSpacing.lg),
+      SkeletonVideoCard(),
     ],
   );
 }

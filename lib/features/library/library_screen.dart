@@ -8,7 +8,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:drift/drift.dart' show Value;
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
@@ -49,7 +51,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       ? FileImage(File(avatarPath!)) as ImageProvider
                       : null,
                   child: avatarPath == null
-                      ? const Icon(LucideIcons.camera, size: 28)
+                      ? const Icon(LucideIcons.camera, size: AppSizes.avatarSm)
                       : null,
                 ),
               ),
@@ -324,7 +326,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           ? FileImage(File(profile.avatarPath!)) as ImageProvider
                           : null,
                       child: profile?.avatarPath == null
-                          ? const Icon(LucideIcons.user, size: 32)
+                          ? const Icon(LucideIcons.user, size: AppSizes.iconLg)
                           : null,
                     ),
                     const SizedBox(width: AppSpacing.md),
@@ -350,13 +352,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _editProfile(profile),
-                      icon: const Icon(LucideIcons.pencil, size: 16),
+                      icon: const Icon(LucideIcons.pencil, size: AppSizes.iconXs),
                       label: const Text('Edit'),
                     ),
                   ],
                 ),
-                loading: () => const SizedBox(height: 64),
-                error: (_, _) => const SizedBox(height: 64),
+                loading: () => const SizedBox(height: AppSizes.listRowHeight),
+                error: (_, _) => const SizedBox(height: AppSizes.listRowHeight),
               ),
             ),
             const Divider(),
@@ -419,7 +421,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 Stack(
                                   children: [
                                     ClipRRect(
-                                      borderRadius: BorderRadius.circular(AppRadius.md),
+                                      borderRadius: AppRadius.mdBorder,
                                       child: SizedBox(
                                         width: 150,
                                         height: 84,
@@ -443,8 +445,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                           ),
                                           child: LinearProgressIndicator(
                                             value: progress,
-                                            minHeight: 3,
-                                            backgroundColor: Colors.black45,
+                                            minHeight: AppSizes.progressBarHeight,
+                                            backgroundColor: AppColors.thumbnailBadge,
                                             valueColor: AlwaysStoppedAnimation<Color>(
                                               theme.colorScheme.primary,
                                             ),
@@ -471,8 +473,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                 );
               },
-              loading: () => const SizedBox(height: 140),
-              error: (_, _) => const SizedBox(height: 140),
+              loading: () => const SizedBox(height: AppSizes.horizontalThumbCardHeight),
+              error: (_, _) => const SizedBox(height: AppSizes.horizontalThumbCardHeight),
             ),
             const Divider(),
 
@@ -490,7 +492,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                   TextButton.icon(
                     onPressed: _createPlaylistDialog,
-                    icon: const Icon(LucideIcons.plus, size: 16),
+                    icon: const Icon(LucideIcons.plus, size: AppSizes.iconXs),
                     label: const Text('New playlist'),
                   ),
                 ],
@@ -500,11 +502,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             // Watch Later Tile
             ListTile(
               leading: const CircleAvatar(
-                child: Icon(LucideIcons.clock, size: 20),
+                child: Icon(LucideIcons.clock, size: AppSizes.avatarXs),
               ),
               title: const Text('Watch Later'),
               subtitle: const Text('Saved videos'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 18),
+              trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
               onTap: () => context.push('/playlist/watch_later'),
             ),
 
@@ -512,11 +514,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             likedVideosAsync.when(
               data: (liked) => ListTile(
                 leading: const CircleAvatar(
-                  child: Icon(LucideIcons.thumbsUp, size: 20),
+                  child: Icon(LucideIcons.thumbsUp, size: AppSizes.avatarXs),
                 ),
                 title: const Text('Liked videos'),
                 subtitle: Text('${liked.length} videos'),
-                trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
                 onTap: () => context.push('/playlist/liked'),
               ),
               loading: () => const SizedBox(),
@@ -533,10 +535,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   children: userPlaylists.map((pl) {
                     return ListTile(
                       leading: const CircleAvatar(
-                        child: Icon(LucideIcons.listMusic, size: 20),
+                        child: Icon(LucideIcons.listMusic, size: AppSizes.avatarXs),
                       ),
                       title: Text(pl.name),
-                      trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                      trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
                       onTap: () => context.push('/playlist/${pl.id}'),
                     );
                   }).toList(),
@@ -553,10 +555,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               title: const Text('Downloads'),
               subtitle: const Text('Coming in Phase 5'),
               trailing: Container(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.xxs),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  borderRadius: AppRadius.smBorder,
                 ),
                 child: Text(
                   'Soon',
@@ -574,7 +576,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ListTile(
               leading: const Icon(LucideIcons.settings),
               title: const Text('Settings'),
-              trailing: const Icon(LucideIcons.chevronRight, size: 18),
+              trailing: const Icon(LucideIcons.chevronRight, size: AppSizes.iconSm),
               onTap: () => context.push('/settings'),
             ),
             const SizedBox(height: AppSpacing.xl),

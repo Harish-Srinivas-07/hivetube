@@ -270,7 +270,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                                         onPressed: _toggleSubscribe,
                                         style: FilledButton.styleFrom(
                                           backgroundColor: isSubscribed ? theme.colorScheme.surfaceContainerHigh : theme.colorScheme.primary,
-                                          foregroundColor: isSubscribed ? theme.colorScheme.onSurface : Colors.white,
+                                          foregroundColor: isSubscribed ? theme.colorScheme.onSurface : theme.colorScheme.onPrimary,
                                           shape: const StadiumBorder(),
                                         ),
                                         child: Text(isSubscribed ? 'Subscribed' : 'Subscribe'),

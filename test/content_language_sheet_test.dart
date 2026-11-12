@@ -96,7 +96,6 @@ void main() {
     final container = _container(
       db,
       const AppSettings(
-        hl: 'ta',
         gl: 'IN',
         contentLanguages: {'ta'},
         hiddenLanguages: {'hi'},
@@ -163,7 +162,6 @@ void main() {
     final container = _container(
       db,
       const AppSettings(
-        hl: 'te',
         gl: 'US',
         contentLanguages: {'te'},
         hiddenLanguages: {'hi'},

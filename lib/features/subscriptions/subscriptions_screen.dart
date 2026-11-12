@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:drift/drift.dart' show Value;
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
@@ -188,7 +190,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
           children: [
             Icon(
               LucideIcons.bellOff,
-              size: 64,
+              size: AppSizes.avatarLg,
               color: theme.colorScheme.onSurfaceVariant.withAlpha(128),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -209,13 +211,13 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             const SizedBox(height: AppSpacing.xl),
             FilledButton.icon(
               onPressed: _importTakeout,
-              icon: const Icon(LucideIcons.uploadCloud, size: 20),
+              icon: const Icon(LucideIcons.uploadCloud, size: AppSizes.avatarXs),
               label: const Text('Import from Google Takeout'),
             ),
             const SizedBox(height: AppSpacing.md),
             OutlinedButton.icon(
               onPressed: () => context.push('/search'),
-              icon: const Icon(LucideIcons.compass, size: 20),
+              icon: const Icon(LucideIcons.compass, size: AppSizes.avatarXs),
               label: const Text('Explore channels'),
             ),
           ],
@@ -238,7 +240,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
               child: InkWell(
-                borderRadius: BorderRadius.circular(AppRadius.md),
+                borderRadius: AppRadius.mdBorder,
                 onTap: () => context.push('/subscriptions/manage'),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -249,7 +251,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       child: Icon(
                         LucideIcons.layoutGrid,
                         color: theme.colorScheme.onSurface,
-                        size: 22,
+                        size: AppSizes.icon,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
@@ -271,19 +273,19 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: AppRadius.mdBorder,
               onTap: () {
                 setState(() {
                   _selectedChannelId = isSelected ? null : sub.channelId;
                 });
               },
               child: SizedBox(
-                width: 64,
+                width: AppSizes.touchMin + AppSpacing.lg,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(2),
+                      padding: const EdgeInsets.all(AppSpacing.xxs),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: isSelected
@@ -296,7 +298,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       child: Avatar(
                         name: sub.name,
                         url: sub.avatarUrl,
-                        size: 48,
+                        size: AppSizes.touchMin,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
@@ -422,15 +424,14 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       horizontal: AppSpacing.xs,
                       vertical: AppSpacing.xxs,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(AppRadius.xs),
+                    decoration: const BoxDecoration(
+                      color: AppColors.thumbnailBadge,
+                      borderRadius: AppRadius.xsBorder,
                     ),
                     child: Text(
                       _formatDuration(item.durationSec!),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.thumbnailBadgeText,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -448,7 +449,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                   child: Avatar(
                     name: item.channelId,
                     url: '',
-                    size: 40,
+                    size: AppSizes.avatar,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -475,14 +476,14 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                   ),
                 ),
                 PopupMenuButton<String>(
-                  icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
+                  icon: const Icon(LucideIcons.ellipsisVertical, size: AppSizes.iconSm),
                   onSelected: (val) => _handleCardAction(val, item),
                   itemBuilder: (ctx) => [
                     const PopupMenuItem(
                       value: 'save_playlist',
                       child: Row(
                         children: [
-                          Icon(LucideIcons.listPlus, size: 18),
+                          Icon(LucideIcons.listPlus, size: AppSizes.iconSm),
                           SizedBox(width: AppSpacing.sm),
                           Text('Save to playlist'),
                         ],
@@ -492,7 +493,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       value: 'watch_later',
                       child: Row(
                         children: [
-                          Icon(LucideIcons.clock, size: 18),
+                          Icon(LucideIcons.clock, size: AppSizes.iconSm),
                           SizedBox(width: AppSpacing.sm),
                           Text('Save to Watch Later'),
                         ],
@@ -502,7 +503,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       value: 'unsubscribe',
                       child: Row(
                         children: [
-                          Icon(LucideIcons.bellOff, size: 18),
+                          Icon(LucideIcons.bellOff, size: AppSizes.iconSm),
                           SizedBox(width: AppSpacing.sm),
                           Text('Unsubscribe'),
                         ],

@@ -19,11 +19,43 @@ import 'yt/channel_avatars.dart';
 import 'yt/subscriptions_feed_service.dart';
 import 'yt/backup_service.dart';
 import 'yt/ryd.dart';
+import 'content/caption_probe.dart';
+import 'content/channel_language_cache.dart';
+import 'content/content_filter.dart';
+import 'content/discovery/discovery_store.dart';
+import 'content/discovery/discovery_engine.dart';
+import 'content/language_profile.dart';
 
 final dbProvider = Provider<AppDb>((ref) {
   final db = AppDb();
   ref.onDispose(db.close);
   return db;
+});
+final channelLanguageCacheProvider = Provider<ChannelLanguageCache>((ref) {
+  final db = ref.watch(dbProvider);
+  return ChannelLanguageCache(db);
+});
+final contentFilterProvider = Provider<ContentFilter>((ref) {
+  final cache = ref.watch(channelLanguageCacheProvider);
+  return ContentFilter(channelCache: cache);
+});
+final discoveryStoreProvider = Provider<DiscoveryStore>((ref) => DiscoveryStore(ref.watch(dbProvider)));
+final discoveryEngineProvider = FutureProvider<DiscoveryEngine>((ref) async {
+  final api = await ref.watch(ytApiProvider.future);
+  final probe = await ref.watch(captionProbeProvider.future);
+  return DiscoveryEngine(
+    store: ref.watch(discoveryStoreProvider),
+    search: api.search,
+    browse: api.browse,
+    rss: api.rss,
+    probe: probe,
+    registry: LanguageProfileRegistry.instance,
+  );
+});
+final captionProbeProvider = FutureProvider<CaptionProbeService>((ref) async {
+  final http = await ref.watch(innertubeProvider.future);
+  final cache = ref.watch(channelLanguageCacheProvider);
+  return CaptionProbeService(http, cache);
 });
 final channelAvatarCacheProvider = Provider<ChannelAvatarCache>((ref) {
   final db = ref.watch(dbProvider);
@@ -50,8 +82,8 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       receiveTimeout: const Duration(seconds: 20),
     ),
   );
-  final settings = ref.watch(
-    contentPrefsProvider.select((s) => (hl: s.hl, gl: s.gl)),
+  final gl = ref.watch(
+    contentPrefsProvider.select((s) => s.gl),
   );
   final network = await ref.watch(networkFamilyProvider.future);
   void resetAdapter() {
@@ -68,8 +100,8 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       dio,
       await rootBundle.loadString('assets/innertube_clients.json'),
     ),
-    hl: settings.hl,
-    gl: settings.gl,
+    hl: 'en',
+    gl: gl,
   );
 });
 final visitorDataProvider = FutureProvider<String>((ref) async {

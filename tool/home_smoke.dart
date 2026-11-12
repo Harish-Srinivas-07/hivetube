@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:hivetube/core/content/language_profile.dart';
 import 'package:hivetube/core/innertube/clients.dart';
 import 'package:hivetube/core/innertube/innertube_http.dart';
 import 'package:hivetube/core/innertube/json_find.dart';
@@ -146,7 +147,7 @@ Future<void> main() async {
         return run.shown.any((language) {
           if (language == 'en') return scriptLanguage(text) == 'en';
           return scriptLanguage(text) == language ||
-              (languageTerms[language] ?? const []).any(
+              (LanguageProfileRegistry.instance.get(language)?.boostTerms ?? const []).any(
                 text.toLowerCase().contains,
               );
         });
