@@ -28,6 +28,8 @@ import '../../widgets/video_options_menu.dart';
 import 'watch_panel.dart';
 import 'watch_rules.dart';
 import '../home/home_variety.dart';
+import '../playlist/save_to_playlist_sheet.dart';
+import '../../core/db/app_db.dart';
 
 final watchInfoProvider = FutureProvider.family<WatchInfo, String>((
   ref,
@@ -299,6 +301,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             id == info.id &&
             subscribed != ids.contains(info.channelId)) {
           setState(() => subscribed = ids.contains(info.channelId));
+        }
+      });
+      ref.read(dbProvider).reactionsDao.getReaction(id).then((val) {
+        if (mounted && id == info.id && val != null && reaction != val) {
+          setState(() => reaction = val);
         }
       });
     }
@@ -635,32 +642,43 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               const SizedBox(height: AppSpacing.lg),
               Row(
                 children: [
-                  Avatar(name: info.channelName, url: info.avatar),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    onTap: info.channelId.isNotEmpty
+                        ? () => context.push('/channel/${info.channelId}')
+                        : null,
+                    child: Avatar(name: info.channelName, url: info.avatar),
+                  ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          info.channelName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        if (info.subscribers.isNotEmpty)
+                    child: InkWell(
+                      onTap: info.channelId.isNotEmpty
+                          ? () => context.push('/channel/${info.channelId}')
+                          : null,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            info.subscribers,
+                            info.channelName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                      ],
+                          if (info.subscribers.isNotEmpty)
+                            Text(
+                              info.subscribers,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
@@ -714,8 +732,57 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       ),
                     ),
                     _action(LucideIcons.download, 'Download', _soon),
-                    _action(LucideIcons.bookmark, 'Save', _soon),
-                    _action(LucideIcons.clock, 'Watch later', _soon),
+                    _action(
+                      LucideIcons.bookmark,
+                      'Save',
+                      () => showSaveToPlaylistSheet(
+                        context,
+                        videoId: id,
+                        media: MediaCompanion.insert(
+                          videoId: id,
+                          title: info.title,
+                          channelId: info.channelId,
+                          channelName: info.channelName,
+                          thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                          updatedAt: DateTime.now().millisecondsSinceEpoch,
+                        ),
+                      ),
+                    ),
+                    _action(
+                      LucideIcons.clock,
+                      'Watch later',
+                      () async {
+                        final db = ref.read(dbProvider);
+                        final wl = await db.playlistsDao.getOrCreateWatchLater();
+                        final inWl = await db.playlistsDao.isInPlaylist(wl.id, id);
+                        if (inWl) {
+                          await db.playlistsDao.removePlaylistItem(wl.id, id);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Removed from Watch Later')),
+                            );
+                          }
+                        } else {
+                          await db.playlistsDao.addPlaylistItem(
+                            wl.id,
+                            id,
+                            mediaItem: MediaCompanion.insert(
+                              videoId: id,
+                              title: info.title,
+                              channelId: info.channelId,
+                              channelName: info.channelName,
+                              thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                              updatedAt: DateTime.now().millisecondsSinceEpoch,
+                            ),
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Saved to Watch Later')),
+                            );
+                          }
+                        }
+                      },
+                    ),
                     _action(
                       LucideIcons.listVideo,
                       'Queue',
@@ -921,10 +988,27 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               borderRadius: const BorderRadius.horizontal(
                 left: Radius.circular(AppSpacing.xxxl),
               ),
-              onTap: () => setState(() {
-                reaction = reaction == 1 ? 0 : 1;
-                reactions[id] = reaction;
-              }),
+              onTap: () async {
+                final next = reaction == 1 ? null : 1;
+                setState(() {
+                  reaction = next ?? 0;
+                  reactions[id] = reaction;
+                });
+                final db = ref.read(dbProvider);
+                await db.reactionsDao.setReaction(id, next);
+                if (next != null) {
+                  await db.into(db.media).insertOnConflictUpdate(
+                    MediaCompanion.insert(
+                      videoId: id,
+                      title: info.title,
+                      channelId: info.channelId,
+                      channelName: info.channelName,
+                      thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                      updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  );
+                }
+              },
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
@@ -960,33 +1044,41 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               borderRadius: const BorderRadius.horizontal(
                 right: Radius.circular(AppSpacing.xxxl),
               ),
-              onTap: () => setState(() {
-                reaction = reaction == -1 ? 0 : -1;
-                reactions[id] = reaction;
-              }),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.sm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.thumbsDown,
-                      size: 20,
-                      color: reaction == -1 ? colors.primary : colors.onSurface,
-                    ),
-                    if (dislikes != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        _compactNumber('$dislikes'),
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: colors.onSurface,
-                        ),
+              onTap: () async {
+                final next = reaction == -1 ? null : -1;
+                setState(() {
+                  reaction = next ?? 0;
+                  reactions[id] = reaction;
+                });
+                final db = ref.read(dbProvider);
+                await db.reactionsDao.setReaction(id, next);
+              },
+              child: Tooltip(
+                message: 'Dislikes provided by returnyoutubedislike.com',
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.thumbsDown,
+                        size: 20,
+                        color: reaction == -1 ? colors.primary : colors.onSurface,
                       ),
+                      if (dislikes != null) ...[
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          _compactNumber('$dislikes'),
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: colors.onSurface,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),

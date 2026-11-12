@@ -313,3 +313,296 @@ ShortItem? parseShortMetadata(dynamic json, String id) {
     channelAvatarUrl: avatar,
   );
 }
+
+ChannelItem? parseChannelItem(dynamic v) {
+  if (v is! Map) return null;
+  final id = v['channelId'] ?? _channelId(v);
+  if (id is! String || id.isEmpty) return null;
+  final title = _text(v['title']);
+  final handle = _text(v['subscriberCountText']).startsWith('@')
+      ? _text(v['subscriberCountText'])
+      : (_text(v['videoCountText']).startsWith('@')
+          ? _text(v['videoCountText'])
+          : '');
+  final subCount = handle.startsWith('@')
+      ? _text(v['videoCountText'])
+      : _text(v['subscriberCountText']);
+  final avatar = _channelAvatar(v).isNotEmpty
+      ? _channelAvatar(v)
+      : bestImage(v['thumbnail']);
+  return ChannelItem(
+    id: id,
+    title: title.isNotEmpty ? title : id,
+    handle: handle,
+    avatarUrl: avatar,
+    subscriberCountText: subCount,
+    description: _text(v['descriptionSnippet']),
+  );
+}
+
+PlaylistItem? parsePlaylistItem(dynamic v) {
+  if (v is! Map) return null;
+  final id = v['playlistId'] ??
+      safeNav(v, ['navigationEndpoint', 'watchEndpoint', 'playlistId']);
+  if (id is! String || id.isEmpty) return null;
+  final title = _text(v['title']).isNotEmpty
+      ? _text(v['title'])
+      : _text(safeNav(v, ['metadata', 'lockupMetadataViewModel', 'title']));
+  final channel = [
+    _text(v['longBylineText']),
+    _text(v['shortBylineText']),
+  ].firstWhere((s) => s.isNotEmpty, orElse: () => '');
+  return PlaylistItem(
+    id: id,
+    title: title.isNotEmpty ? title : 'Playlist',
+    channelName: channel,
+    channelId: _channelId(v),
+    thumbUrl: bestImage(v['thumbnail'] ?? v['thumbnails']),
+    videoCountText: _text(v['videoCount'] ?? v['videoCountShortText']),
+  );
+}
+
+List<SearchFilterChip> parseSearchFilterChips(dynamic json) {
+  final chips = <SearchFilterChip>[];
+  final seen = <String>{};
+  for (final group in findAll(json, 'searchFilterGroupRenderer')) {
+    for (final filter in findAll(group, 'searchFilterRenderer')) {
+      final label = _text(filter is Map ? filter['label'] : null).trim();
+      final params = safeNav(filter, [
+        'navigationEndpoint',
+        'searchEndpoint',
+        'params',
+      ]);
+      if (label.isEmpty || params is! String || params.isEmpty) continue;
+      if (!seen.add(params)) continue;
+
+      final lower = label.toLowerCase();
+      var type = SearchFilterType.all;
+      if (lower.contains('video')) {
+        type = SearchFilterType.videos;
+      } else if (lower.contains('short')) {
+        type = SearchFilterType.shorts;
+      } else if (lower.contains('channel')) {
+        type = SearchFilterType.channels;
+      } else if (lower.contains('playlist')) {
+        type = SearchFilterType.playlists;
+      } else if (lower.contains('live')) {
+        type = SearchFilterType.live;
+      }
+
+      chips.add(SearchFilterChip(label: label, params: params, type: type));
+    }
+  }
+  return chips;
+}
+
+SearchResultPage parseSearchResults(dynamic json) {
+  final items = <SearchResultItem>[];
+  final seenVideos = <String>{};
+  final seenChannels = <String>{};
+  final seenPlaylists = <String>{};
+
+  for (final section in findAll(json, 'itemSectionRenderer')) {
+    final contents = safeNav(section, ['contents']);
+    if (contents is! List) continue;
+    for (final node in contents) {
+      if (node is! Map) continue;
+      if (node.containsKey('channelRenderer')) {
+        final ch = parseChannelItem(node['channelRenderer']);
+        if (ch != null && seenChannels.add(ch.id)) {
+          items.add(ChannelSearchResult(ch));
+        }
+      } else if (node.containsKey('playlistRenderer')) {
+        final pl = parsePlaylistItem(node['playlistRenderer']);
+        if (pl != null && seenPlaylists.add(pl.id)) {
+          items.add(PlaylistSearchResult(pl));
+        }
+      } else if (node.containsKey('reelShelfRenderer')) {
+        final shorts = parseShorts(node['reelShelfRenderer']);
+        if (shorts.isNotEmpty) {
+          items.add(ShortsShelfSearchResult(shorts));
+        }
+      } else if (node.containsKey('videoRenderer')) {
+        final v = node['videoRenderer'];
+        final id = v['videoId'] as String?;
+        if (id != null && seenVideos.add(id)) {
+          final videoItems = parseVideos({'videoRenderer': v}).items;
+          if (videoItems.isNotEmpty) {
+            items.add(VideoSearchResult(videoItems.first));
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback if structured sections were not matched
+  if (items.isEmpty) {
+    for (final v in parseVideos(json).items) {
+      if (seenVideos.add(v.id)) {
+        items.add(VideoSearchResult(v));
+      }
+    }
+  }
+
+  final filters = parseSearchFilterChips(json);
+  final continuation = continuationToken(json);
+  return SearchResultPage(
+    items: items,
+    continuation: continuation,
+    filters: filters,
+  );
+}
+
+ChannelPageData parseChannelPage(dynamic json, String channelId) {
+  String name = '';
+  String handle = '';
+  String avatar = '';
+  String banner = '';
+  String subs = '';
+  String videosCount = '';
+  String desc = '';
+
+  for (final header in [
+    ...findAll(json, 'pageHeaderViewModel'),
+    ...findAll(json, 'c4TabbedHeaderRenderer'),
+  ]) {
+    if (header is! Map) continue;
+    if (name.isEmpty) {
+      name = _text(header['title'] ?? safeNav(header, ['pageTitle']));
+    }
+    if (handle.isEmpty) {
+      final handleText = _text(header['channelHandleText']);
+      if (handleText.isNotEmpty) {
+        handle = handleText;
+      }
+    }
+    if (avatar.isEmpty) {
+      avatar = bestImage(header['avatar'] ?? header['image']);
+    }
+    if (banner.isEmpty) {
+      banner = bestImage(header['banner']);
+    }
+    if (subs.isEmpty) {
+      subs = _text(header['subscriberCountText']);
+    }
+    if (videosCount.isEmpty) {
+      videosCount = _text(header['videosCountText']);
+    }
+  }
+
+  final tabs = <String>[];
+  for (final tab in findAll(json, 'tabRenderer')) {
+    if (tab is Map && tab['title'] != null) {
+      final title = _text(tab['title']);
+      if (title.isNotEmpty && !tabs.contains(title)) {
+        tabs.add(title);
+      }
+    }
+  }
+
+  final sortChips = <({String label, String params})>[];
+  for (final chip in findAll(json, 'chipCloudChipRenderer')) {
+    final text = _text(safeNav(chip, ['text']));
+    final params = safeNav(chip, [
+      'navigationEndpoint',
+      'continuationEndpoint',
+      'continuationCommand',
+      'token',
+    ]);
+    if (text.isNotEmpty && params is String) {
+      sortChips.add((label: text, params: params));
+    }
+  }
+
+  final videoItems = parseVideos(json).items;
+  final shortItems = parseShorts(json);
+  final currentItems = videoItems.isNotEmpty ? videoItems : shortItems;
+  final continuation = continuationToken(json);
+
+  return ChannelPageData(
+    id: channelId,
+    name: name.isNotEmpty ? name : channelId,
+    handle: handle,
+    avatarUrl: avatar,
+    bannerUrl: banner,
+    subscribersText: subs,
+    videosCountText: videosCount,
+    description: desc,
+    tabs: tabs,
+    currentTabItems: currentItems,
+    continuation: continuation,
+    sortChips: sortChips,
+  );
+}
+
+PlaylistPageData parsePlaylistPage(dynamic json, String playlistId) {
+  String title = 'Playlist';
+  String author = '';
+  String authorId = '';
+  String thumb = '';
+  String count = '';
+  String desc = '';
+
+  for (final header in [
+    ...findAll(json, 'playlistHeaderRenderer'),
+    ...findAll(json, 'pageHeaderViewModel'),
+  ]) {
+    if (header is! Map) continue;
+    if (title == 'Playlist') {
+      final t = _text(header['title']);
+      if (t.isNotEmpty) title = t;
+    }
+    if (author.isEmpty) {
+      author = _text(header['ownerText']);
+    }
+    if (authorId.isEmpty) {
+      authorId = _channelId(header);
+    }
+    if (thumb.isEmpty) {
+      thumb = bestImage(header['thumbnail'] ?? header['thumbnails']);
+    }
+    if (count.isEmpty) {
+      count = _text(header['numVideosText'] ?? header['stats']);
+    }
+    if (desc.isEmpty) {
+      desc = _text(header['descriptionText']);
+    }
+  }
+
+  final videos = <VideoItem>[];
+  final seen = <String>{};
+  for (final renderer in [
+    ...findAll(json, 'playlistVideoRenderer'),
+    ...findAll(json, 'compactVideoRenderer'),
+    ...findAll(json, 'videoRenderer'),
+  ]) {
+    if (renderer is! Map) continue;
+    final id = renderer['videoId'] as String?;
+    if (id == null || id.isEmpty || !seen.add(id)) continue;
+    final parsed = parseVideos({'videoRenderer': renderer}).items;
+    if (parsed.isNotEmpty) {
+      videos.add(parsed.first);
+    }
+  }
+
+  return PlaylistPageData(
+    id: playlistId,
+    title: title,
+    author: author,
+    authorId: authorId,
+    thumbUrl: thumb,
+    videoCountText: count,
+    description: desc,
+    videos: videos,
+    continuation: continuationToken(json),
+  );
+}
+
+String parseBrowseIdFromResolve(dynamic json) {
+  for (final endpoint in findAll(json, 'browseEndpoint')) {
+    if (endpoint is Map && endpoint['browseId'] is String) {
+      return endpoint['browseId'] as String;
+    }
+  }
+  return '';
+}

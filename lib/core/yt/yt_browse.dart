@@ -6,6 +6,45 @@ import 'parser.dart';
 class YtBrowse {
   YtBrowse(this.http);
   final InnertubeHttp http;
+  Future<String> resolveUrl(String url, {CancelToken? cancelToken}) async {
+    final json = await http.post('navigation/resolve_url', {
+      'url': url,
+    }, cancelToken: cancelToken);
+    return parseBrowseIdFromResolve(json);
+  }
+
+  Future<ChannelPageData> channelPage(
+    String channelId, {
+    String? params,
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async {
+    final json = await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': channelId, 'params': ?params}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    );
+    return parseChannelPage(json, channelId);
+  }
+
+  Future<PlaylistPageData> playlistPage(
+    String playlistId, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async {
+    final browseId = playlistId.startsWith('VL') ? playlistId : 'VL$playlistId';
+    final json = await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': browseId}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    );
+    return parsePlaylistPage(json, playlistId);
+  }
+
   Future<String> channelAvatar(
     String channelId, {
     CancelToken? cancelToken,

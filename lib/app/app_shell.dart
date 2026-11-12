@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_top_bar.dart';
 import '../widgets/home_top_bar.dart';
 import '../widgets/floating_nav.dart';
+import '../core/providers.dart';
 
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -25,6 +26,7 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasUnreadSubs = ref.watch(hasUnreadUploadsProvider).value ?? false;
     final wide =
         MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
     final home = navigationShell.currentIndex == 0;
@@ -152,7 +154,9 @@ class AppShell extends ConsumerWidget {
                                         destinations: [
                                           for (final item in _destinations)
                                             NavigationRailDestination(
-                                              icon: Icon(item.icon),
+                                              icon: item.label == 'Subscriptions' && hasUnreadSubs
+                                                  ? const Badge(smallSize: 8, child: Icon(LucideIcons.clapperboard))
+                                                  : Icon(item.icon),
                                               label: Text(item.label),
                                             ),
                                         ],
@@ -191,7 +195,11 @@ class AppShell extends ConsumerWidget {
                     key: const ValueKey('bottomNavPill'),
                     items: [
                       for (final item in _destinations)
-                        FloatingNavItem(item.label, item.icon),
+                        FloatingNavItem(
+                          item.label,
+                          item.icon,
+                          showBadge: item.label == 'Subscriptions' && hasUnreadSubs,
+                        ),
                     ],
                     currentIndex: navigationShell.currentIndex,
                     onSelected: (index) => select(index),

@@ -16,6 +16,9 @@ import 'yt/yt_rss.dart';
 import 'yt/yt_search.dart';
 import 'yt/yt_comments.dart';
 import 'yt/channel_avatars.dart';
+import 'yt/subscriptions_feed_service.dart';
+import 'yt/backup_service.dart';
+import 'yt/ryd.dart';
 
 final dbProvider = Provider<AppDb>((ref) {
   final db = AppDb();
@@ -112,3 +115,75 @@ final historyRepoProvider = Provider<HistoryRepo>(
 final subscriptionRepoProvider = Provider<SubscriptionRepo>(
   (ref) => StoredSubscriptionRepo(ref.watch(dbProvider)),
 );
+
+final subscriptionsStreamProvider = StreamProvider<List<SubscriptionRow>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.subscriptionsDao.watchSubscriptions();
+});
+
+final feedItemsStreamProvider = StreamProvider<List<FeedItemRow>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.feedItemsDao.watchFeedItems();
+});
+
+final historyStreamProvider = StreamProvider<List<HistoryItemWithMedia>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.historyDao.watchHistory();
+});
+
+final playlistsStreamProvider = StreamProvider<List<PlaylistRow>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.playlistsDao.watchPlaylists();
+});
+
+final playlistItemsStreamProvider =
+    StreamProvider.family<List<PlaylistItemWithMedia>, int>((ref, playlistId) {
+  final db = ref.watch(dbProvider);
+  return db.playlistsDao.watchPlaylistItems(playlistId);
+});
+
+final likedVideosStreamProvider = StreamProvider<List<MediaRow>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.reactionsDao.watchLikedVideos();
+});
+
+final savedRemoteStreamProvider = StreamProvider<List<SavedRemoteRow>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.savedRemoteDao.watchSavedRemote();
+});
+
+final recentSearchesStreamProvider = StreamProvider<List<String>>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.searchHistoryDao.watchRecentSearches();
+});
+
+final profileStreamProvider = StreamProvider<ProfileRow?>((ref) {
+  final db = ref.watch(dbProvider);
+  return db.profileDao.watchProfile();
+});
+
+final subscriptionsFeedServiceProvider = Provider<SubscriptionsFeedService>((ref) {
+  final db = ref.watch(dbProvider);
+  final api = ref.watch(ytApiProvider).value;
+  final dio = ref.watch(innertubeProvider).value?.dio ?? Dio();
+  return SubscriptionsFeedService(
+    db: db,
+    rss: api?.rss ?? YtRss(dio),
+    browse: api?.browse ?? YtBrowse(InnertubeHttp(dio, InnertubeClients(const {}))),
+  );
+});
+
+final backupServiceProvider = Provider<BackupService>((ref) {
+  return BackupService(ref.watch(dbProvider));
+});
+
+final rydServiceProvider = Provider<RydService>((ref) {
+  final db = ref.watch(dbProvider);
+  final dio = ref.watch(innertubeProvider).value?.dio ?? Dio();
+  return RydService(dio, db);
+});
+
+final hasUnreadUploadsProvider = FutureProvider<bool>((ref) async {
+  final service = ref.watch(subscriptionsFeedServiceProvider);
+  return service.hasUnreadUploads();
+});

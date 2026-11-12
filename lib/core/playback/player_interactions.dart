@@ -31,8 +31,11 @@ SeekStep accumulateSeek({
 double panelReleaseTarget(double progress, double velocity) =>
     velocity.abs() > 700 ? (velocity > 0 ? 1 : 0) : (progress > .5 ? 1 : 0);
 
-Duration resumePosition(HistoryEntry? entry) =>
-    entry != null &&
-        entry.position < entry.duration - const Duration(seconds: 5)
-    ? entry.position
-    : Duration.zero;
+Duration resumePosition(HistoryEntry? entry) {
+  if (entry == null || entry.duration.inMilliseconds <= 0) return Duration.zero;
+  final progress = entry.position.inMilliseconds / entry.duration.inMilliseconds;
+  if (progress >= 0.90 || entry.position >= entry.duration - const Duration(seconds: 5)) {
+    return Duration.zero;
+  }
+  return entry.position;
+}

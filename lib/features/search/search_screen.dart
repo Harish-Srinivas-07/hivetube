@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/providers.dart';
@@ -11,9 +13,11 @@ import '../../features/home/home_variety.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/variety_video_card.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.initialQuery});
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -24,7 +28,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final scroll = ScrollController();
   Timer? debounce;
   List<String> suggestions = [];
-  List<VideoItem> results = [];
+  List<SearchResultItem> results = [];
+  List<SearchFilterChip> filterChips = [];
+  String? activeFilterParam;
   String? continuation;
   String activeQuery = '';
   bool loadingSuggestions = false,
@@ -38,6 +44,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     scroll.addListener(() {
       if (scroll.position.extentAfter < 400) unawaited(loadMore());
     });
+    if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        input.text = widget.initialQuery!;
+        search(widget.initialQuery!);
+      });
+    }
   }
 
   @override
@@ -53,6 +65,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() {
       suggestions = [];
       results = [];
+      filterChips = [];
+      activeFilterParam = null;
       continuation = null;
       activeQuery = '';
       showHidden = false;
@@ -82,7 +96,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  Future<void> search(String query) async {
+  Future<void> search(String query, {String? filterParam}) async {
     final normalized = query.trim();
     if (normalized.isEmpty) return;
     FocusScope.of(context).unfocus();
@@ -90,6 +104,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() {
       input.text = normalized;
       activeQuery = normalized;
+      activeFilterParam = filterParam;
       suggestions = [];
       results = [];
       continuation = null;
@@ -98,11 +113,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
     try {
       final api = await ref.read(ytApiProvider.future);
-      final page = await api.search.videos(normalized);
+      final page = await api.search.search(normalized, params: filterParam);
       if (!mounted || activeQuery != normalized) return;
       setState(() {
         results = page.items;
         continuation = page.continuation;
+        if (page.filters.isNotEmpty) {
+          filterChips = page.filters;
+        }
       });
     } catch (_) {
       if (mounted && activeQuery == normalized) {
@@ -122,11 +140,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() => loadingMore = true);
     try {
       final api = await ref.read(ytApiProvider.future);
-      final page = await api.search.videos(query, continuation: token);
+      final page = await api.search.search(
+        query,
+        continuation: token,
+        params: activeFilterParam,
+      );
       if (!mounted || activeQuery != query || continuation != token) return;
-      final existing = results.map((item) => item.id).toSet();
       setState(() {
-        results.addAll(page.items.where((item) => existing.add(item.id)));
+        results.addAll(page.items);
         continuation = page.continuation;
       });
     } catch (_) {
@@ -136,25 +157,111 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Widget _buildChannelRow(ChannelItem item) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: theme.colorScheme.surfaceContainerHigh,
+        backgroundImage: item.avatarUrl.isNotEmpty
+            ? CachedNetworkImageProvider(item.avatarUrl)
+            : null,
+        child: item.avatarUrl.isEmpty
+            ? Text(item.title.isNotEmpty ? item.title[0] : 'C')
+            : null,
+      ),
+      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        [item.handle, item.subscriberCountText].where((s) => s.isNotEmpty).join(' • '),
+        style: const TextStyle(fontSize: 12),
+      ),
+      trailing: FilledButton.tonal(
+        onPressed: () => context.push('/channel/${item.id}'),
+        child: const Text('View'),
+      ),
+      onTap: () => context.push('/channel/${item.id}'),
+    );
+  }
+
+  Widget _buildPlaylistRow(PlaylistItem item) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: ClipRRect(
+        borderRadius: AppRadius.smBorder,
+        child: CachedNetworkImage(
+          imageUrl: item.thumbUrl,
+          width: 80,
+          height: 48,
+          fit: BoxFit.cover,
+          errorWidget: (_, _, _) => Container(color: theme.colorScheme.surfaceContainerHigh),
+        ),
+      ),
+      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        [item.channelName, item.videoCountText].where((s) => s.isNotEmpty).join(' • '),
+        style: const TextStyle(fontSize: 12),
+      ),
+      onTap: () => context.push('/playlist/${item.id}'),
+    );
+  }
+
+  Widget _buildShortsShelf(List<ShortItem> shorts) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+          child: Text('Shorts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        SizedBox(
+          height: 180,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            itemCount: shorts.length,
+            separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+            itemBuilder: (context, i) {
+              final s = shorts[i];
+              return GestureDetector(
+                onTap: () => openWatchPanel(ref, s.id),
+                child: SizedBox(
+                  width: 100,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: AppRadius.mdBorder,
+                        child: CachedNetworkImage(
+                          imageUrl: s.thumbUrl,
+                          width: 100,
+                          height: 140,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(s.title ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(contentPrefsProvider);
-    ref.listen(contentPrefsProvider, (previous, next) {
-      if (previous != null &&
-          (previous.gl != next.gl || previous.hl != next.hl) &&
-          input.text.trim().isNotEmpty &&
-          activeQuery.isEmpty) {
-        unawaited(loadSuggestions(input.text.trim()));
+
+    // Filter hidden languages
+    final filteredResults = results.where((item) {
+      if (item is VideoSearchResult) {
+        return showHidden || !hiddenLanguage(item.video, prefs.hiddenLanguages);
       }
-    });
-    final visible = results
-        .where((item) => !hiddenLanguage(item, prefs.hiddenLanguages))
-        .toList();
-    final dropped = results
-        .where((item) => hiddenLanguage(item, prefs.hiddenLanguages))
-        .toList();
-    final shownResults = showHidden ? results : visible;
-    final colors = Theme.of(context).colorScheme;
+      return true;
+    }).toList();
 
     return Scaffold(
       body: SafeArea(
@@ -170,9 +277,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Row(
                 children: [
                   IconButton(
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).backButtonTooltip,
+                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(LucideIcons.arrowLeft),
                   ),
@@ -187,17 +292,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           child: TextField(
                             key: const ValueKey('searchQueryField'),
                             controller: input,
-                            autofocus: true,
+                            autofocus: widget.initialQuery == null,
                             textInputAction: TextInputAction.search,
                             onChanged: queryChanged,
-                            onSubmitted: search,
-                            decoration: InputDecoration(
+                            onSubmitted: (q) => search(q),
+                            decoration: const InputDecoration(
                               hintText: 'Search HiveTube',
-                              prefixIcon: const Icon(LucideIcons.search),
-                              contentPadding: const EdgeInsets.symmetric(
+                              prefixIcon: Icon(LucideIcons.search),
+                              contentPadding: EdgeInsets.symmetric(
                                 horizontal: AppSpacing.md,
                               ),
-                              border: const OutlineInputBorder(
+                              border: OutlineInputBorder(
                                 borderRadius: AppRadius.pillBorder,
                                 borderSide: BorderSide.none,
                               ),
@@ -209,19 +314,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ],
               ),
+
+              // Filter Chips
+              if (activeQuery.isNotEmpty && filterChips.isNotEmpty)
+                SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                    itemCount: filterChips.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
+                    itemBuilder: (context, index) {
+                      final chip = filterChips[index];
+                      final isSelected = activeFilterParam == chip.params;
+                      return ChoiceChip(
+                        label: Text(chip.label),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          search(activeQuery, filterParam: selected ? chip.params : null);
+                        },
+                      );
+                    },
+                  ),
+                ),
+
               Expanded(
                 child: ListView(
                   controller: scroll,
                   padding: EdgeInsets.only(
-                    bottom:
-                        MediaQuery.paddingOf(context).bottom +
-                        (ref.watch(watchPanelProvider) != null
-                            ? 120
-                            : AppSpacing.lg),
+                    bottom: MediaQuery.paddingOf(context).bottom +
+                        (ref.watch(watchPanelProvider) != null ? 120 : AppSpacing.lg),
                   ),
                   children: [
                     if (loadingSuggestions)
                       const LinearProgressIndicator(minHeight: 2),
+
+                    // Suggestions
                     if (activeQuery.isEmpty)
                       for (final suggestion in suggestions)
                         ListTile(
@@ -230,35 +358,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           title: Text(suggestion),
                           onTap: () => search(suggestion),
                         ),
+
+                    // Loading
                     if (searching)
                       const Padding(
                         padding: EdgeInsets.all(AppSpacing.xl),
                         child: Center(child: CircularProgressIndicator()),
                       ),
+
+                    // Results
                     if (activeQuery.isNotEmpty && !searching)
-                      for (final item in shownResults)
-                        ListTile(
-                          key: ValueKey('searchResult_${item.id}'),
-                          title: Text(item.title),
-                          subtitle: item.channelName.isEmpty
-                              ? null
-                              : Text(item.channelName),
-                          onTap: () => openWatchPanel(ref, item.id),
-                        ),
-                    if (activeQuery.isNotEmpty && dropped.isNotEmpty)
-                      ListTile(
-                        key: const ValueKey('searchShowHidden'),
-                        leading: Icon(
-                          showHidden ? LucideIcons.eyeOff : LucideIcons.eye,
-                          color: colors.onSurfaceVariant,
-                        ),
-                        title: Text(
-                          showHidden
-                              ? 'Hide filtered results'
-                              : 'Show hidden (${dropped.length})',
-                        ),
-                        onTap: () => setState(() => showHidden = !showHidden),
+                      for (final res in filteredResults) ...[
+                        if (res is VideoSearchResult)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: VarietyVideoCard(
+                              video: res.video,
+                              onTap: () => openWatchPanel(ref, res.video.id),
+                            ),
+                          )
+                        else if (res is ChannelSearchResult)
+                          _buildChannelRow(res.channel)
+                        else if (res is PlaylistSearchResult)
+                          _buildPlaylistRow(res.playlist)
+                        else if (res is ShortsShelfSearchResult)
+                          _buildShortsShelf(res.shorts),
+                      ],
+
+                    if (activeQuery.isNotEmpty && !searching && results.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(AppSpacing.xl),
+                        child: Center(child: Text('No results found')),
                       ),
+
                     if (loadingMore)
                       const Padding(
                         padding: EdgeInsets.all(AppSpacing.md),

@@ -4,36 +4,67 @@ import '../db/app_db.dart';
 
 class RydService {
   RydService(this.dio, this.db, {DateTime Function()? clock})
-    : clock = clock ?? DateTime.now;
+      : clock = clock ?? DateTime.now;
+
   final Dio dio;
   final AppDb db;
   final DateTime Function() clock;
+
   Future<int?> dislikes(String videoId) async {
-    final key = 'ryd_$videoId';
     int? cached;
     try {
-      final data = jsonDecode(await db.getValue(key) ?? '{}') as Map;
-      cached = data['count'] as int?;
-      final saved = DateTime.tryParse('${data['at']}');
-      if (saved != null &&
-          clock().difference(saved) < const Duration(hours: 24) &&
-          !clock().isBefore(saved)) {
-        return cached;
+      final row = await db.rydDao.getRyd(videoId);
+      if (row != null) {
+        cached = row.dislikes;
+        final saved = DateTime.fromMillisecondsSinceEpoch(row.fetchedAt, isUtc: true);
+        final current = clock().toUtc();
+        if (current.difference(saved) < const Duration(hours: 24) &&
+            !current.isBefore(saved)) {
+          return cached;
+        }
+      } else {
+        final legacyRaw = await db.getValue('ryd_$videoId');
+        if (legacyRaw != null) {
+          final data = jsonDecode(legacyRaw) as Map<String, dynamic>;
+          cached = data['count'] as int?;
+          final atStr = data['at'] as String?;
+          if (atStr != null) {
+            final saved = DateTime.tryParse(atStr)?.toUtc();
+            final current = clock().toUtc();
+            if (saved != null &&
+                current.difference(saved) < const Duration(hours: 24) &&
+                !current.isBefore(saved)) {
+              return cached;
+            }
+          }
+        }
       }
     } catch (_) {}
+
     try {
       final response = await dio.get<Map<String, dynamic>>(
         'https://returnyoutubedislikeapi.com/votes',
         queryParameters: {'videoId': videoId},
       );
-      final value = response.data?['dislikes'];
-      if (value is! int) return cached;
-      await db.setValue(
-        key,
-        jsonEncode({'at': clock().toIso8601String(), 'count': value}),
+      final dislikes = response.data?['dislikes'];
+      final likes = response.data?['likes'] as int? ?? 0;
+      if (dislikes is! int) return cached;
+
+      final now = clock();
+      await db.rydDao.putRyd(
+        videoId,
+        likes,
+        dislikes,
+        fetchedAt: now.millisecondsSinceEpoch,
       );
-      return value;
+      await db.setValue(
+        'ryd_$videoId',
+        jsonEncode({'at': now.toIso8601String(), 'count': dislikes}),
+      );
+      return dislikes;
     } on DioException {
+      return cached;
+    } catch (_) {
       return cached;
     }
   }

@@ -30,6 +30,7 @@ dependencies:
   audio_service:
   share_plus: ^13.3.1
   url_launcher: ^6.3.3
+  file_picker: ^13.3.3
 dependency_overrides:
   media_kit:
     path: third_party/media_kit

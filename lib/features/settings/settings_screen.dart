@@ -234,6 +234,36 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                FutureBuilder<String?>(
+                  future: ref.watch(dbProvider).getValue('history_enabled'),
+                  builder: (ctx, snap) {
+                    final enabled = snap.data != 'false';
+                    return SwitchListTile(
+                      title: const Text('Save watch history'),
+                      subtitle: const Text('Record videos and resume playback position'),
+                      value: enabled,
+                      onChanged: (val) async {
+                        await ref.read(dbProvider).setValue('history_enabled', val.toString());
+                        (ctx as Element).markNeedsBuild();
+                      },
+                    );
+                  },
+                ),
+                FutureBuilder<String?>(
+                  future: ref.watch(dbProvider).getValue('history_paused'),
+                  builder: (ctx, snap) {
+                    final paused = snap.data == 'true';
+                    return SwitchListTile(
+                      title: const Text('Pause watch history'),
+                      subtitle: const Text('Temporarily pause adding new videos to history'),
+                      value: paused,
+                      onChanged: (val) async {
+                        await ref.read(dbProvider).setValue('history_paused', val.toString());
+                        (ctx as Element).markNeedsBuild();
+                      },
+                    );
+                  },
+                ),
                 ListTile(
                   leading: const Icon(LucideIcons.trash2),
                   title: const Text('Clear app database'),

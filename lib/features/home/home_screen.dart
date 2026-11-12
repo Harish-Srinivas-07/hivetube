@@ -395,7 +395,7 @@ class _ChipRow extends StatelessWidget {
   }
 }
 
-class _VideoCard extends StatelessWidget {
+class _VideoCard extends ConsumerWidget {
   const _VideoCard(
     this.item, {
     required this.onTap,
@@ -409,7 +409,7 @@ class _VideoCard extends StatelessWidget {
   // The preview slot stays hidden until inline playback is supported.
   static const showInlinePreviewControls = false;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final progress =
         history != null &&
@@ -514,7 +514,13 @@ class _VideoCard extends StatelessWidget {
               children: [
                 if (item.channelId.isNotEmpty ||
                     item.channelName.isNotEmpty) ...[
-                  Avatar(name: item.channelName, url: item.channelAvatarUrl),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    onTap: item.channelId.isNotEmpty
+                        ? () => context.push('/channel/${item.channelId}')
+                        : null,
+                    child: Avatar(name: item.channelName, url: item.channelAvatarUrl),
+                  ),
                   const SizedBox(width: AppSpacing.md),
                 ],
                 Expanded(
@@ -528,16 +534,21 @@ class _VideoCard extends StatelessWidget {
                         style: theme.textTheme.titleSmall,
                       ),
                       const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        [
-                          item.channelName,
-                          item.viewsText,
-                          item.publishedText,
-                        ].where((v) => v.isNotEmpty).join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      InkWell(
+                        onTap: item.channelId.isNotEmpty
+                            ? () => context.push('/channel/${item.channelId}')
+                            : null,
+                        child: Text(
+                          [
+                            item.channelName,
+                            item.viewsText,
+                            item.publishedText,
+                          ].where((v) => v.isNotEmpty).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
@@ -545,8 +556,19 @@ class _VideoCard extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: 'More options',
-                  onPressed: () =>
-                      showVideoOptionsMenu(context, videoId: item.id),
+                  onPressed: () => showVideoOptionsMenu(
+                    context,
+                    videoId: item.id,
+                    ref: ref,
+                    media: MediaCompanion.insert(
+                      videoId: item.id,
+                      title: item.title,
+                      channelId: item.channelId,
+                      channelName: item.channelName,
+                      thumbUrl: item.thumbUrl,
+                      updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  ),
                   iconSize: AppSpacing.homeMoreIcon,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(

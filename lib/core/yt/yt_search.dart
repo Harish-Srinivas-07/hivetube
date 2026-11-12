@@ -49,6 +49,22 @@ class YtSearch {
     return ShortPage(parseShorts(json), continuationToken(json));
   }
 
+  Future<SearchResultPage> search(
+    String query, {
+    String? continuation,
+    String? params,
+    CancelToken? cancelToken,
+  }) async {
+    final json = await http.post(
+      'search',
+      continuation == null
+          ? {'query': query, 'params': ?params}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    );
+    return parseSearchResults(json);
+  }
+
   Future<VideoPage> videos(
     String query, {
     String? continuation,

@@ -8,6 +8,10 @@ import '../features/subscriptions/subscriptions_screen.dart';
 import '../features/library/library_screen.dart';
 import '../features/search/search_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/channel/channel_screen.dart';
+import '../features/playlist/playlist_screen.dart';
+import '../features/history/history_screen.dart';
+import '../features/subscriptions/manage_subscriptions_screen.dart';
 import 'app_shell.dart';
 
 final appRouter = GoRouter(
@@ -56,7 +60,29 @@ final appRouter = GoRouter(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
     ),
-    GoRoute(path: '/search', builder: (context, state) => const SearchScreen()),
+    GoRoute(
+      path: '/channel/:id',
+      builder: (context, state) =>
+          ChannelScreen(channelId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/playlist/:id',
+      builder: (context, state) =>
+          PlaylistScreen(playlistId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/search',
+      builder: (context, state) =>
+          SearchScreen(initialQuery: state.uri.queryParameters['q']),
+    ),
+    GoRoute(
+      path: '/history',
+      builder: (context, state) => const HistoryScreen(),
+    ),
+    GoRoute(
+      path: '/subscriptions/manage',
+      builder: (context, state) => const ManageSubscriptionsScreen(),
+    ),
   ],
 );
 
