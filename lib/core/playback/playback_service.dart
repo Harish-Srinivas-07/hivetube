@@ -310,7 +310,8 @@ class PlaybackService extends ChangeNotifier {
     );
     _subscriptions.add(
       activePlayer.stream.duration.listen((v) {
-        if (!_switching && identical(player, activePlayer)) {
+        if (!identical(player, activePlayer)) return;
+        if (v > Duration.zero) {
           state.duration = v;
           _notify();
         }
@@ -735,6 +736,14 @@ class PlaybackService extends ChangeNotifier {
         _switching = false;
         state.recovering = false;
         state.status = PlayerStatus.ready;
+        if (player.state.duration > Duration.zero) {
+          state.duration = player.state.duration;
+        } else {
+          final fallbackSec = cache.durationSeconds(value.videoId);
+          if (fallbackSec != null && fallbackSec > 0) {
+            state.duration = Duration(seconds: fallbackSec);
+          }
+        }
         _notify();
         final caption = state.selectedCaption;
         if (caption != null) {
@@ -850,6 +859,13 @@ class PlaybackService extends ChangeNotifier {
     _notify();
     await player.pause();
     await _saveProgress();
+  }
+
+  void setFallbackDuration(Duration d) {
+    if (d > Duration.zero && state.duration == Duration.zero) {
+      state.duration = d;
+      _notify();
+    }
   }
 
   Future<void> togglePlay() async {

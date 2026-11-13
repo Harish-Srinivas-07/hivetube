@@ -238,6 +238,8 @@ class _SeekPainter extends CustomPainter {
       line(1, AppColors.shortsForeground.withValues(alpha: 0.3));
       line(buffered, AppColors.shortsForeground.withValues(alpha: 0.5));
       line(position, AppColors.primary);
+    } else {
+      line(position, AppColors.primary);
     }
     for (final chapter in chapters.where((v) => v > 0 && v < 1)) {
       canvas.drawLine(
@@ -248,8 +250,8 @@ class _SeekPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
-    if (active > 0 || seeking) {
-      final thumbRadius = active > 0 ? 6.0 : 4.0;
+    if (overlayVisible || active > 0 || seeking) {
+      final thumbRadius = active > 0 ? 6.0 : (overlayVisible ? 5.0 : 4.0);
       final center = Offset(size.width * position, y);
 
       if (seeking) {

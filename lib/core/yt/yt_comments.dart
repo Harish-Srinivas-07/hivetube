@@ -54,11 +54,15 @@ CommentPage parseComments(dynamic json) {
       thread['replies'],
       'token',
     ).whereType<String>().firstOrNull;
+    final dynamic thumbs = author['thumbnails'];
+    final dynamic avatar = author['avatarThumbnailUrl'] ??
+        (thumbs is List && thumbs.isNotEmpty ? thumbs.last['url'] : null) ??
+        '';
     comments.add(
       WatchComment(
         id: '${props['commentId'] ?? ''}',
         author: '${author['displayName'] ?? ''}',
-        avatar: '${author['avatarThumbnailUrl'] ?? ''}',
+        avatar: '$avatar',
         content: watchText(props['content']),
         age: '${props['publishedTime'] ?? ''}',
         likes: '${toolbar['likeCountNotliked'] ?? ''}',

@@ -31,6 +31,8 @@ class AppSheetHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final hasHeaderRow =
+        title != null || action != null || onBack != null || showClose;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -49,54 +51,57 @@ class AppSheetHeader extends StatelessWidget {
             ),
           ),
         ),
-        // 56-high title row with 16 gutters
-        SizedBox(
-          height: AppSizes.sheetHeaderHeight,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: Row(
-              children: [
-                if (onBack != null) ...[
-                  AppIconButton(
-                    icon: LucideIcons.arrowLeft,
-                    onPressed: onBack,
-                    tonal: false,
-                    size: AppSizes.iconSm,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                if (title != null)
-                  Expanded(
-                    child: Text(
-                      title!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+        if (hasHeaderRow) ...[
+          // 56-high title row with 16 gutters
+          SizedBox(
+            height: AppSizes.sheetHeaderHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Row(
+                children: [
+                  if (onBack != null) ...[
+                    AppIconButton(
+                      icon: LucideIcons.arrowLeft,
+                      onPressed: onBack,
+                      tonal: false,
+                      size: AppSizes.iconSm,
                     ),
-                  )
-                else
-                  const Spacer(),
-                if (action != null)
-                  action!
-                else if (showClose)
-                  AppIconButton(
-                    icon: LucideIcons.x,
-                    onPressed: () => Navigator.of(context).pop(),
-                    tonal: false,
-                    size: AppSizes.iconSm,
-                  ),
-              ],
+                    const SizedBox(width: AppSpacing.xs),
+                  ],
+                  if (title != null)
+                    Expanded(
+                      child: Text(
+                        title!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (action != null)
+                    action!
+                  else if (showClose)
+                    AppIconButton(
+                      icon: LucideIcons.x,
+                      onPressed: () => Navigator.of(context).pop(),
+                      tonal: false,
+                      size: AppSizes.iconSm,
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-        if (isScrolledUnder)
-          Divider(
-            height: AppSpacing.borderWidth,
-            thickness: AppSpacing.borderWidth,
-            color: cs.outlineVariant.withAlpha(50),
-          ),
+          if (isScrolledUnder)
+            Divider(
+              height: AppSpacing.borderWidth,
+              thickness: AppSpacing.borderWidth,
+              color: cs.outlineVariant.withAlpha(50),
+            ),
+        ] else
+          const SizedBox(height: AppSpacing.xs),
       ],
     );
   }
@@ -231,14 +236,17 @@ Future<T?> showAppSheet<T>(
       final isWide = mq.size.width >= 600 || onVideo;
       final bottomInset = math.max(mq.viewInsets.bottom, mq.padding.bottom) + callerMiniInset;
 
-      // Card borderRadius: top radius 16 (or all-around 16 on landscape floating card)
-      final borderRadius = isWide ? AppRadius.lgBorder : AppRadius.sheetTopBorder;
+      final effectiveBg = onVideo ? const Color(0xFF212121) : sheetBg;
+      // Card borderRadius: all-around 20 on video floating card, 16 on landscape, top-16 on mobile
+      final borderRadius = onVideo
+          ? BorderRadius.circular(20)
+          : (isWide ? AppRadius.lgBorder : AppRadius.sheetTopBorder);
 
       Widget content;
 
       if (fit) {
         content = Material(
-          color: sheetBg,
+          color: effectiveBg,
           borderRadius: borderRadius,
           clipBehavior: Clip.antiAlias,
           child: ConstrainedBox(
@@ -249,7 +257,7 @@ Future<T?> showAppSheet<T>(
               top: false,
               bottom: false,
               child: Padding(
-                padding: EdgeInsets.only(bottom: bottomInset),
+                padding: EdgeInsets.only(bottom: onVideo ? AppSpacing.sm : bottomInset),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -280,11 +288,11 @@ Future<T?> showAppSheet<T>(
           expand: expand,
           builder: (sheetContext, scrollController) {
             return Material(
-              color: sheetBg,
+              color: effectiveBg,
               borderRadius: borderRadius,
               clipBehavior: Clip.antiAlias,
               child: Padding(
-                padding: EdgeInsets.only(bottom: bottomInset),
+                padding: EdgeInsets.only(bottom: onVideo ? AppSpacing.sm : bottomInset),
                 child: _DraggableSheetBody(
                   title: title,
                   headerAction: headerAction,
@@ -301,9 +309,15 @@ Future<T?> showAppSheet<T>(
 
       // Constrain width to 480 max and center horizontally on tablet / landscape / video
       final framed = Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppSizes.sheetCardMaxWidth),
-          child: content,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: onVideo ? 24.0 : 0.0,
+            vertical: onVideo ? 16.0 : 0.0,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppSizes.sheetCardMaxWidth),
+            child: content,
+          ),
         ),
       );
 

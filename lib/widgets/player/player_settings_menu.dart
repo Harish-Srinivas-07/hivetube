@@ -42,6 +42,7 @@ Future<void> showPlayerSettingsMenu(
   context,
   fit: true,
   onVideo: true,
+  showClose: false,
   builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );
 

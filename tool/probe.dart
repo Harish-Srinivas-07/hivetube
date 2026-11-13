@@ -164,6 +164,9 @@ Future<void> main() async {
     final res = await next.related(knownVideoId);
     stdout.writeln('  Status: OK, items: ${res.items.length}');
     checkFilter('next:related', res.items);
+    final watchInfo = await next.watch(knownVideoId);
+    stdout.writeln('  WatchInfo title: "${watchInfo.title}", related in watchInfo: ${watchInfo.related.items.length}');
+    checkFilter('watchInfo:related', watchInfo.related.items);
   } catch (e) {
     stdout.writeln('  next.related FAILED: $e');
   }

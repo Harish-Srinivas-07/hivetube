@@ -98,6 +98,8 @@ class RelatedVideosController extends AsyncNotifier<List<VideoItem>> {
       preferred: prefs.contentLanguages,
       hidden: prefs.hiddenLanguages,
       seen: const {},
+      strictHome: false,
+      source: 'watch_related',
       random: Random(id.hashCode ^ prefs.prefsVersion),
     );
   }
@@ -186,14 +188,21 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   }
 
   void _animate(double target, [double velocity = 0]) {
-    animation.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 450, damping: 38),
-        animation.value,
-        target,
-        velocity,
-      ),
-    );
+    animation
+        .animateWith(
+          SpringSimulation(
+            const SpringDescription(mass: 1, stiffness: 450, damping: 38),
+            animation.value,
+            target,
+            velocity,
+          ),
+        )
+        .whenComplete(() {
+          if (mounted) {
+            animation.value = target;
+            _publish(target);
+          }
+        });
   }
 
   void _openExpanded(String id, {bool record = true}) {
@@ -520,7 +529,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                       return Positioned.fill(
                         child: RepaintBoundary(
                           child: IgnorePointer(
-                            ignoring: p < .95,
+                            ignoring: p < .85,
                             child: Opacity(opacity: opacity, child: child),
                           ),
                         ),

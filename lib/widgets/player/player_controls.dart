@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show FontFeature, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,7 +17,6 @@ import '../../core/settings/app_settings.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
@@ -314,31 +312,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       if (mounted) _scheduleHide();
     }
   }
-
-  Widget _glassIcon({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    double size = 22,
-  }) => ClipOval(
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: AppSpacing.sm, sigmaY: AppSpacing.sm),
-      child: Material(
-        color: AppColors.playerControlGlass,
-        shape: const CircleBorder(
-          side: BorderSide(color: AppColors.playerControlBorder),
-        ),
-        child: IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: Icon(icon, size: size),
-          color: AppColors.shortsForeground,
-          disabledColor: AppColors.shortsProgressBuffer,
-          visualDensity: VisualDensity.compact,
-        ),
-      ),
-    ),
-  );
 
   String _time(Duration value) {
     final hours = value.inHours;
@@ -1041,46 +1014,127 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const SizedBox(width: AppSpacing.sm),
-                                    _glassIcon(
-                                      icon: LucideIcons.chevronDown,
+                                    const SizedBox(width: AppSpacing.xs),
+                                    IconButton(
+                                      icon: const Icon(
+                                        LucideIcons.chevronDown,
+                                        color: AppColors.shortsForeground,
+                                      ),
                                       tooltip: 'Minimize',
                                       onPressed: widget.onMinimize,
                                     ),
                                     const Spacer(),
-                                    if (state.captions.isNotEmpty)
-                                      IconButton(
-                                        onPressed: () => unawaited(
+                                    InkWell(
+                                      onTap: () => ref
+                                          .read(contentPrefsProvider.notifier)
+                                          .setAutoplay(!autoplay),
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Tooltip(
+                                        message: autoplay
+                                            ? 'Autoplay on'
+                                            : 'Autoplay off',
+                                        child: Container(
+                                          width: 36,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: autoplay
+                                                  ? AppColors.shortsForeground
+                                                  : AppColors.shortsForeground
+                                                      .withValues(alpha: 0.5),
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                          padding: const EdgeInsets.all(2),
+                                          alignment: autoplay
+                                              ? Alignment.centerRight
+                                              : Alignment.centerLeft,
+                                          child: Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: autoplay
+                                                  ? AppColors.shortsForeground
+                                                  : AppColors.shortsForeground
+                                                      .withValues(alpha: 0.7),
+                                            ),
+                                            child: Icon(
+                                              autoplay
+                                                  ? Icons.play_arrow_rounded
+                                                  : Icons.pause_rounded,
+                                              size: 9,
+                                              color: autoplay
+                                                  ? Colors.black
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (state.captions.isNotEmpty) ...[
+                                      const SizedBox(width: AppSpacing.sm),
+                                      InkWell(
+                                        onTap: () => unawaited(
                                           service.setCaption(
                                             state.selectedCaption == null
                                                 ? 0
                                                 : null,
                                           ),
                                         ),
-                                        tooltip: 'Captions',
-                                        color: state.selectedCaption == null
-                                            ? AppColors.shortsForeground
-                                            : AppColors.primary,
-                                        icon: const Icon(LucideIcons.captions),
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                        child: Tooltip(
+                                          message: 'Captions',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: state.selectedCaption !=
+                                                        null
+                                                    ? AppColors.shortsForeground
+                                                    : AppColors.shortsForeground
+                                                        .withValues(alpha: 0.5),
+                                                width: 1.5,
+                                              ),
+                                              color: state.selectedCaption !=
+                                                      null
+                                                  ? AppColors.shortsForeground
+                                                      .withValues(alpha: 0.25)
+                                                  : Colors.transparent,
+                                            ),
+                                            child: Text(
+                                              'CC',
+                                              style: TextStyle(
+                                                color: state.selectedCaption !=
+                                                        null
+                                                    ? AppColors.shortsForeground
+                                                    : AppColors.shortsForeground
+                                                        .withValues(alpha: 0.6),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ),
+                                    ],
                                     IconButton(
-                                      onPressed: () => ref
-                                          .read(contentPrefsProvider.notifier)
-                                          .setAutoplay(!autoplay),
-                                      tooltip: autoplay
-                                          ? 'Autoplay on'
-                                          : 'Autoplay off',
-                                      color: autoplay
-                                          ? AppColors.primary
-                                          : AppColors.shortsForeground,
-                                      icon: const Icon(LucideIcons.circlePlay),
-                                    ),
-                                    _glassIcon(
-                                      icon: LucideIcons.settings,
+                                      icon: const Icon(
+                                        LucideIcons.settings,
+                                        color: AppColors.shortsForeground,
+                                      ),
                                       tooltip: 'Settings',
                                       onPressed: _settings,
                                     ),
-                                    const SizedBox(width: AppSpacing.sm),
+                                    const SizedBox(width: AppSpacing.xs),
                                   ],
                                 ),
                               ),
@@ -1089,59 +1143,56 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  _glassIcon(
-                                    icon: LucideIcons.skipBack,
-                                    tooltip: 'Previous',
-                                    onPressed: widget.onPrevious,
+                                  Opacity(
+                                    opacity: widget.onPrevious == null
+                                        ? 0.35
+                                        : 1.0,
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.black
+                                            .withValues(alpha: 0.4),
+                                      ),
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          LucideIcons.skipBack,
+                                          color: AppColors.shortsForeground,
+                                          size: 22,
+                                        ),
+                                        tooltip: 'Previous',
+                                        onPressed: widget.onPrevious,
+                                      ),
+                                    ),
                                   ),
-                                  const SizedBox(width: AppSpacing.lg),
-                                  SizedBox(
-                                    width: 56,
-                                    height: 56,
+                                  const SizedBox(width: AppSpacing.xl),
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.black
+                                          .withValues(alpha: 0.5),
+                                    ),
                                     child: state.recovering
-                                        ? Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                ),
-                                                Text(
-                                                  'Retrying...',
-                                                  maxLines: 1,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: AppColors
-                                                            .shortsForeground,
-                                                      ),
-                                                ),
-                                              ],
+                                        ? const Center(
+                                            child: SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
                                             ),
                                           )
                                         : IconButton(
                                             color: AppColors.shortsForeground,
-                                            style: IconButton.styleFrom(
-                                              backgroundColor:
-                                                  AppColors.playerControlGlass,
-                                              shape: const CircleBorder(
-                                                side: BorderSide(
-                                                  color: AppColors
-                                                      .playerControlBorder,
-                                                ),
-                                              ),
-                                            ),
+                                            iconSize: 36,
                                             onPressed: () async {
                                               await service.togglePlay();
                                               if (mounted) _scheduleHide();
                                             },
-                                            iconSize: AppSizes.avatar,
                                             icon: Icon(
                                               state.status == PlayerStatus.ended
                                                   ? LucideIcons.rotateCcw
@@ -1151,11 +1202,27 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                             ),
                                           ),
                                   ),
-                                  const SizedBox(width: AppSpacing.lg),
-                                  _glassIcon(
-                                    icon: LucideIcons.skipForward,
-                                    tooltip: 'Next',
-                                    onPressed: widget.onNext,
+                                  const SizedBox(width: AppSpacing.xl),
+                                  Opacity(
+                                    opacity: widget.onNext == null ? 0.35 : 1.0,
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.black
+                                            .withValues(alpha: 0.4),
+                                      ),
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          LucideIcons.skipForward,
+                                          color: AppColors.shortsForeground,
+                                          size: 22,
+                                        ),
+                                        tooltip: 'Next',
+                                        onPressed: widget.onNext,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1164,64 +1231,118 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               left: 0,
                               right: 0,
                               bottom: ui.isFullscreen ? 28 : 16,
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: AppSpacing.md),
-                                  DecoratedBox(
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.playerControlGlass,
-                                      borderRadius: AppRadius.pillBorder,
-                                    ),
-                                    child: Padding(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: AppSpacing.sm,
                                         vertical: AppSpacing.xs,
                                       ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.45),
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                      ),
                                       child: Text(
-                                        '${_time(displayPosition)} / ${_time(ui.duration)}',
+                                        '${_time(displayPosition)} / ${_time(ui.duration > Duration.zero ? ui.duration : service.state.duration)}',
                                         style: const TextStyle(
                                           color: AppColors.shortsForeground,
+                                          fontSize: 12,
                                           fontFeatures: [
                                             FontFeature.tabularFigures(),
                                           ],
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  if (widget.chapters.isNotEmpty)
-                                    Expanded(
-                                      child: TextButton(
-                                        onPressed: widget.onChapters,
-                                        child: Text(
-                                          widget.chapters
-                                                  .where(
-                                                    (c) =>
-                                                        c.start <=
-                                                        displayPosition,
-                                                  )
-                                                  .lastOrNull
-                                                  ?.title ??
-                                              widget.chapters.first.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: AppColors.shortsForeground,
+                                    if (widget.chapters.isNotEmpty) ...[
+                                      const SizedBox(width: AppSpacing.sm),
+                                      InkWell(
+                                        onTap: widget.onChapters,
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: AppSpacing.sm,
+                                            vertical: AppSpacing.xs,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.45),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              ConstrainedBox(
+                                                constraints:
+                                                    const BoxConstraints(
+                                                  maxWidth: 140,
+                                                ),
+                                                child: Text(
+                                                  widget.chapters
+                                                          .where(
+                                                            (c) =>
+                                                                c.start <=
+                                                                displayPosition,
+                                                          )
+                                                          .lastOrNull
+                                                          ?.title ??
+                                                      widget.chapters.first
+                                                          .title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: AppColors
+                                                        .shortsForeground,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 2),
+                                              const Icon(
+                                                LucideIcons.chevronRight,
+                                                size: 14,
+                                                color: AppColors
+                                                    .shortsForeground,
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                    )
-                                  else
+                                    ],
                                     const Spacer(),
-                                  _glassIcon(
-                                    onPressed: () =>
-                                        _fullscreen(!ui.isFullscreen),
-                                    tooltip: 'Fullscreen',
-                                    icon: ui.isFullscreen
-                                        ? LucideIcons.minimize
-                                        : LucideIcons.maximize,
-                                  ),
-                                  const SizedBox(width: AppSpacing.sm),
-                                ],
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.black
+                                            .withValues(alpha: 0.45),
+                                      ),
+                                      child: IconButton(
+                                        padding: EdgeInsets.zero,
+                                        onPressed: () => _fullscreen(
+                                          !ui.isFullscreen,
+                                        ),
+                                        tooltip: 'Fullscreen',
+                                        icon: Icon(
+                                          ui.isFullscreen
+                                              ? Icons.fullscreen_exit_rounded
+                                              : Icons.fullscreen_rounded,
+                                          color: AppColors.shortsForeground,
+                                          size: 22,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],

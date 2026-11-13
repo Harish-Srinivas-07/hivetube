@@ -46,6 +46,15 @@ class StreamCache {
         : [];
   }
 
+  int? durationSeconds(String id) {
+    final details = _cache[id]?.data['videoDetails'];
+    if (details is Map) {
+      final len = details['lengthSeconds'];
+      if (len != null) return int.tryParse(len.toString());
+    }
+    return null;
+  }
+
   void clearVerdicts() => _verdicts.clear();
   Future<_Entry> _get(String id) async {
     final verdict = _verdicts[id];
@@ -93,7 +102,8 @@ class StreamCache {
     final selected = mode == PlaybackMode.short
         ? SelectedStreams(
             allSelected.videos.where((format) {
-              final resolution = format.width > 0 && format.width < format.height
+              final resolution =
+                  format.width > 0 && format.width < format.height
                   ? format.width
                   : format.height;
               return resolution <= 720 && format.mimeType.contains('avc1');

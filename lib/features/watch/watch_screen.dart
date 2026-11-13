@@ -78,6 +78,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   final Set<String> _metadataWritten = {};
   PlaybackService? _activeService;
   String? panel;
+  String? _lastPanel;
   bool subscribed = false;
   int reaction = 0;
   final previous = <String>[];
@@ -222,6 +223,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           preferred: prefs.contentLanguages,
           hidden: prefs.hiddenLanguages,
           seen: const {},
+          strictHome: false,
+          source: 'watch_related',
           random: Random(id.hashCode ^ prefs.prefsVersion ^ page.items.length),
         );
         target.addAll(ranked.where((item) => seen.add(item.id)));
@@ -323,6 +326,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               ),
         );
       }
+      if (info.durationSec > 0) {
+        service?.setFallbackDuration(Duration(seconds: info.durationSec));
+      }
       ref.read(subscriptionRepoProvider).channelIds().then((ids) {
         if (mounted &&
             id == info.id &&
@@ -347,7 +353,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       preferred: prefs.contentLanguages,
       hidden: prefs.hiddenLanguages,
       seen: const {},
+      strictHome: false,
+      source: 'watch_related',
       random: Random(id.hashCode ^ prefs.prefsVersion),
+    );
+    debugPrint(
+      '[WatchRelated] fetched=${relatedCandidates.length}, kept=${related.length}',
     );
     final next = selectUpNext(
       queue: queue,
@@ -563,7 +574,60 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                               ),
                             ),
                           Expanded(
-                            child: details,
+                            child: Stack(
+                              children: [
+                                details,
+                                IgnorePointer(
+                                  ignoring: panel == null,
+                                  child: AnimatedOpacity(
+                                    opacity: panel != null ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 250),
+                                    child: GestureDetector(
+                                      onTap: () => setState(() => panel = null),
+                                      behavior: HitTestBehavior.opaque,
+                                      child: const ColoredBox(
+                                        color: Colors.black38,
+                                        child: SizedBox.expand(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: AnimatedSlide(
+                                    offset: panel != null
+                                        ? Offset.zero
+                                        : const Offset(0, 1),
+                                    duration:
+                                        const Duration(milliseconds: 250),
+                                    curve: Curves.easeOutCubic,
+                                    child: IgnorePointer(
+                                      ignoring: panel == null,
+                                      child: (panel != null || _lastPanel != null) &&
+                                              info != null
+                                          ? Material(
+                                              color: Theme.of(context)
+                                                  .scaffoldBackgroundColor,
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                top: Radius.circular(16),
+                                              ),
+                                              clipBehavior: Clip.antiAlias,
+                                              elevation: 8,
+                                              child: _panel(
+                                                info,
+                                                related,
+                                                heavyContentReady:
+                                                    heavyContentReady,
+                                                currentPanel:
+                                                    panel ?? _lastPanel!,
+                                              ),
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ],
@@ -611,46 +675,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     required bool heavyContentReady,
     required bool wide,
   }) {
-    if (wide) {
-      setState(() => panel = name);
-      return;
-    }
-    showAppSheet<void>(
-      context,
-      title: name,
-      headerAction: name == 'Comments'
-          ? IconButton(
-              tooltip: 'Comment guidelines',
-              icon: const Icon(LucideIcons.info),
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (dialogCtx) => AppDialog(
-                  title: 'Comments',
-                  content: const Text(
-                    'Remember to keep comments respectful by following the YouTube Community Guidelines.',
-                  ),
-                  actions: [
-                    AppButton.text(
-                      onPressed: () => Navigator.pop(dialogCtx),
-                      label: 'Close',
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : null,
-      initialFraction: 0.6,
-      minFraction: 0.3,
-      maxFraction: 0.95,
-      snapSizes: const [0.6, 0.95],
-      builder: (sheetContext, scrollController) => _panelBody(
-        name,
-        info,
-        related,
-        heavyContentReady: heavyContentReady,
-        scrollController: scrollController,
-      ),
-    );
+    setState(() {
+      panel = name;
+      _lastPanel = name;
+    });
   }
 
   Widget _details(
@@ -699,13 +727,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         children: [
                           TextSpan(
                             text: [
-                              info.handle,
-                              _compactMetric(info.views),
-                              info.date,
-                            ].where((value) => value.isNotEmpty).join(' · '),
+                              if (info.handle.isNotEmpty) info.handle,
+                              if (info.likes.isNotEmpty)
+                                '${_compactMetric(info.likes)} likes',
+                              if (info.views.isNotEmpty)
+                                '${_compactMetric(info.views)} views',
+                              if (info.date.isNotEmpty) info.date,
+                            ].join(' · '),
                           ),
                           TextSpan(
-                            text: '  more',
+                            text: ' · more',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.onSurface,
                               fontWeight: FontWeight.w700,
@@ -713,7 +744,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                           ),
                         ],
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -797,7 +828,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       minimumSize: const Size(0, AppSpacing.topButton),
                       shape: const StadiumBorder(),
                     ),
-                    child: Text(subscribed ? 'Subscribed' : 'Subscribe'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (subscribed) ...[
+                          const Icon(LucideIcons.bell, size: 16),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        Text(subscribed ? 'Subscribed' : 'Subscribe'),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -820,7 +860,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         ),
                       ),
                     ),
-                    _action(LucideIcons.download, 'Download', _soon),
                     _action(
                       LucideIcons.bookmark,
                       'Save',
@@ -957,25 +996,25 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 ],
                               ),
                               if (preview != null) ...[
-                                const SizedBox(height: AppSpacing.sm),
+                                const SizedBox(height: AppSpacing.xs),
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     ChannelAvatar(
                                       name: preview.author,
                                       url: preview.avatar,
-                                      size: AppSpacing.logoMark,
+                                      size: AppSizes.avatarSm,
                                     ),
                                     const SizedBox(width: AppSpacing.sm),
                                     Expanded(
                                       child: Text(
                                         preview.content,
-                                        maxLines: 2,
+                                        maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodySmall
-                                            ?.copyWith(height: 1.35),
+                                            ?.copyWith(height: 1.25),
                                       ),
                                     ),
                                   ],
@@ -998,6 +1037,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           height: 48,
           child: ListView(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
             children: [
               for (final label in [
                 'All',
@@ -1005,9 +1045,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 ...info.chips.keys,
               ])
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
+                  padding: const EdgeInsets.only(right: AppSpacing.sm),
                   child: AppChip(
                     label: label,
                     selected: relatedFilter == label,
@@ -1049,6 +1087,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           preferred: prefs.contentLanguages,
           hidden: prefs.hiddenLanguages,
           seen: const {},
+          strictHome: false,
+          source: 'watch_related',
           random: Random(id.hashCode ^ prefs.prefsVersion ^ page.items.length),
         );
         filteredContinuation = page.continuation;
@@ -1231,71 +1271,76 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     WatchInfo info,
     List<VideoItem> related, {
     required bool heavyContentReady,
-  }) => Column(
-    children: [
-      GestureDetector(
-        onVerticalDragEnd: (d) {
-          if ((d.primaryVelocity ?? 0) > 200) setState(() => panel = null);
-        },
-        child: Column(
-          children: [
-            const SizedBox(height: AppSpacing.sm),
-            Container(
-              width: AppSpacing.contentSheetHandleWidth,
-              height: AppSpacing.contentSheetHandleHeight,
-              decoration: BoxDecoration(
-                color: Theme.of(context).dividerColor,
-                borderRadius: AppRadius.pillBorder,
+    String? currentPanel,
+  }) {
+    final activePanel = currentPanel ?? panel ?? _lastPanel ?? 'Comments';
+    return Column(
+      children: [
+        GestureDetector(
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) > 200) setState(() => panel = null);
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            children: [
+              const SizedBox(height: AppSpacing.sm),
+              Container(
+                width: AppSpacing.contentSheetHandleWidth,
+                height: AppSpacing.contentSheetHandleHeight,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).dividerColor,
+                  borderRadius: AppRadius.pillBorder,
+                ),
               ),
-            ),
-            ListTile(
-              title: Text(
-                panel!,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (panel == 'Comments')
-                    IconButton(
-                      tooltip: 'Comment guidelines',
-                      icon: const Icon(LucideIcons.info),
-                      onPressed: () => showDialog<void>(
-                        context: context,
-                        builder: (context) => AppDialog(
-                          title: 'Comments',
-                          content: const Text(
-                            'Remember to keep comments respectful by following the YouTube Community Guidelines.',
-                          ),
-                          actions: [
-                            AppButton.text(
-                              onPressed: () => Navigator.pop(context),
-                              label: 'Close',
+              ListTile(
+                title: Text(
+                  activePanel,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (activePanel == 'Comments')
+                      IconButton(
+                        tooltip: 'Comment guidelines',
+                        icon: const Icon(LucideIcons.info),
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (context) => AppDialog(
+                            title: 'Comments',
+                            content: const Text(
+                              'Remember to keep comments respectful by following the YouTube Community Guidelines.',
                             ),
-                          ],
+                            actions: [
+                              AppButton.text(
+                                onPressed: () => Navigator.pop(context),
+                                label: 'Close',
+                              ),
+                            ],
+                          ),
                         ),
                       ),
+                    IconButton(
+                      onPressed: () => setState(() => panel = null),
+                      icon: const Icon(LucideIcons.x),
                     ),
-                  IconButton(
-                    onPressed: () => setState(() => panel = null),
-                    icon: const Icon(LucideIcons.x),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      Expanded(
-        child: _panelBody(
-          panel!,
-          info,
-          related,
-          heavyContentReady: heavyContentReady,
+        Expanded(
+          child: _panelBody(
+            activePanel,
+            info,
+            related,
+            heavyContentReady: heavyContentReady,
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   Widget _panelBody(
     String name,
