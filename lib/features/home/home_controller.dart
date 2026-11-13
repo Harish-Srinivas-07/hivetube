@@ -180,7 +180,7 @@ class HomeController extends AsyncNotifier<HomeData> {
         homeCacheKey(ref.read(contentPrefsProvider)) == homeCacheKey(initial)
         ? ref.read(initialHomeCacheProvider)
         : null;
-    if (cache != null) {
+    if (cache != null && (cache.videos.isNotEmpty || cache.shorts.isNotEmpty)) {
       Future<void>(() => _backgroundRefresh());
       return HomeData(videos: cache.videos, shorts: cache.shorts);
     }

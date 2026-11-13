@@ -22,15 +22,14 @@ class HomeCache {
           now.difference(saved) >= const Duration(minutes: 30)) {
         return null;
       }
-      return HomeCache(
-        (j['videos'] as List)
-            .map((e) => VideoItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        (j['shorts'] as List)
-            .map((e) => ShortItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        saved,
-      );
+      final videos = (j['videos'] as List)
+          .map((e) => VideoItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final shorts = (j['shorts'] as List)
+          .map((e) => ShortItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (videos.isEmpty && shorts.isEmpty) return null;
+      return HomeCache(videos, shorts, saved);
     } catch (_) {
       return null;
     }

@@ -79,7 +79,7 @@ Map<String, dynamic> buildClientContext(
     'clientVersion': client['clientVersion'],
     if (client['platform'] != null) 'platform': client['platform'],
     'hl': 'en',
-    if (gl != null && gl.isNotEmpty) 'gl': gl,
+    if (gl != null && gl.isNotEmpty && gl != 'AUTO') 'gl': gl,
     'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
     'visitorData': ?visitorData,
   },

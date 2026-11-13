@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import '../../core/yt/models.dart';
 
 List<VideoItem> mixHome(List<List<VideoItem>> sources, List<int> weights) {
@@ -45,12 +46,15 @@ class HomeSource {
         final page = await fetch(_cursor);
         final oldCursor = _cursor;
         _cursor = page.continuation;
-        _buffer.addAll(transform?.call(page.items) ?? page.items);
+        final transformed = transform?.call(page.items) ?? page.items;
+        _buffer.addAll(transformed);
+        dev.log('[HomeSource] page=$pages items=${page.items.length} kept=${transformed.length} buffer=${_buffer.length}');
         if (_cursor == null || (_started && _cursor == oldCursor)) done = true;
         _started = true;
         pages++;
       } while (_buffer.length < 20 && !done && pages <= 3);
     } catch (e) {
+      dev.log('[HomeSource] error: $e');
       error = e;
       done = true;
     }
