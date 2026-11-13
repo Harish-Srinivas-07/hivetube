@@ -24,6 +24,7 @@ class LanguageProfile {
     this.seedChannels = const [],
     this.seedChannelCandidates = const [],
     this.boostTerms = const [],
+    this.devotionalBlocklist = const [],
   });
 
   final String code;
@@ -42,6 +43,7 @@ class LanguageProfile {
   final List<SeedChannel> seedChannels;
   final List<SeedChannel> seedChannelCandidates;
   final List<String> boostTerms;
+  final List<String> devotionalBlocklist;
 
   factory LanguageProfile.fromJson(Map<String, dynamic> json) {
     return LanguageProfile(
@@ -85,6 +87,9 @@ class LanguageProfile {
           .map((e) => SeedChannel.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       boostTerms: (json['boostTerms'] as List? ?? [])
+          .map((e) => e.toString().toLowerCase())
+          .toList(),
+      devotionalBlocklist: (json['devotionalBlocklist'] as List? ?? [])
           .map((e) => e.toString().toLowerCase())
           .toList(),
     );
@@ -245,6 +250,7 @@ class LanguageProfileRegistry {
 
   bool lexiconMatches(String text, String langCode) {
     final evidence = lexiconEvidence(text, langCode);
+    if (langCode == 'hi') return evidence.strong >= 2 || evidence.weak >= 2;
     return evidence.strong >= 2 || (evidence.strong >= 1 && evidence.weak >= 2);
   }
 

@@ -649,7 +649,7 @@ search_history(query, scope, at, PK(query,scope))
 
 ### 11.2 Backup / import
 - Export/import a single JSON (`subscriptions, playlists+items, reactions, history, saved_remote, profile, prefs-safe`).
-- Import Google Takeout `subscriptions.csv` (format `Channel Id,Channel Url,Channel Title`, per NewPipe `YoutubeSubscriptionExtractor`).
+- Google Takeout import is implemented for YouTube's `subscriptions.csv` (`Channel Id,Channel Url,Channel Title`). It adds channels to HiveTube's local Subscriptions feed; it does not restore the rest of a Takeout archive. Imports merge with existing channels and preserve their local metadata.
 
 ### 11.3 YouTube home without login (local algorithm)
 1. "New from subscriptions": RSS (Y17) for subscriptions plus discovery channels, refreshed in parallel (cap 6 concurrent, at most once every 30 min), sorted by `publishedAt`.

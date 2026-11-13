@@ -40,6 +40,8 @@ class WatchInfo {
     required this.related,
     required this.chapters,
     required this.chips,
+    this.durationSec = 0,
+    this.thumbnail = '',
   });
   final String id,
       title,
@@ -56,9 +58,12 @@ class WatchInfo {
   final VideoPage related;
   final List<WatchChapter> chapters;
   final Map<String, String> chips;
+  final int durationSec;
+  final String thumbnail;
 }
 
 WatchInfo parseWatchInfo(dynamic json, String id) {
+  final videoDetails = findAll(json, 'videoDetails').firstOrNull;
   final primary = findAll(json, 'videoPrimaryInfoRenderer').firstOrNull;
   final secondary = findAll(json, 'videoSecondaryInfoRenderer').firstOrNull;
   final owner = findAll(secondary, 'videoOwnerRenderer').firstOrNull;
@@ -143,5 +148,9 @@ WatchInfo parseWatchInfo(dynamic json, String id) {
     related: related,
     chapters: chapters,
     chips: chips,
+    durationSec: videoDetails is Map
+        ? int.tryParse('${videoDetails['lengthSeconds'] ?? ''}') ?? 0
+        : 0,
+    thumbnail: videoDetails is Map ? bestImage(videoDetails['thumbnail']) : '',
   );
 }

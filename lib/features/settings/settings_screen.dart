@@ -151,135 +151,149 @@ class SettingsScreen extends ConsumerWidget {
           borderRadius: AppRadius.mdBorder,
           child: Material(
             color: AppColors.transparent,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: const Text('Location'),
-                  subtitle: Text(regions[settings.gl] ?? settings.gl),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => pick(
-                    'Location',
-                    regions,
-                    settings.gl,
-                    (value) => ref
-                        .read(contentPrefsProvider.notifier)
-                        .update(gl: value),
-                  ),
-                ),
-                SwitchListTile(
-                  title: const Text('Local content'),
-                  value: settings.localContent,
-                  onChanged: (value) => ref
-                      .read(contentPrefsProvider.notifier)
-                      .update(localContent: value),
-                ),
-                ListTile(
-                  title: const Text('Content languages'),
-                  subtitle: Text(
-                    settings.contentLanguages
-                        .map((code) => contentLanguageOptions[code] ?? code)
-                        .join(', '),
-                  ),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => pickLanguages(
-                    'Content languages',
-                    settings.contentLanguages,
-                    false,
-                  ),
-                ),
-                ListTile(
-                  title: const Text('Hide languages'),
-                  subtitle: Text(
-                    settings.hiddenLanguages
-                        .map((code) => contentLanguageOptions[code] ?? code)
-                        .join(', '),
-                  ),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => pickLanguages(
-                    'Hide languages',
-                    settings.hiddenLanguages,
-                    true,
-                  ),
-                ),
-                SwitchListTile(
-                  title: const Text('Strict Home'),
-                  subtitle: const Text('Show only videos in selected languages'),
-                  value: settings.strictHome,
-                  onChanged: (value) => ref
-                      .read(contentPrefsProvider.notifier)
-                      .update(strictHome: value),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Local-language share: ${(settings.localRatio * 100).round()}%',
-                      ),
-                      Slider(
-                        value: settings.localRatio,
-                        divisions: 10,
-                        label: '${(settings.localRatio * 100).round()}%',
-                        onChanged: (value) => ref
-                            .read(contentPrefsProvider.notifier)
-                            .update(localRatio: value),
-                      ),
-                    ],
-                  ),
-                ),
-                FutureBuilder<String?>(
-                  future: ref.watch(dbProvider).getValue('history_enabled'),
-                  builder: (ctx, snap) {
-                    final enabled = snap.data != 'false';
-                    return SwitchListTile(
-                      title: const Text('Save watch history'),
-                      subtitle: const Text('Record videos and resume playback position'),
-                      value: enabled,
-                      onChanged: (val) async {
-                        await ref.read(dbProvider).setValue('history_enabled', val.toString());
-                        (ctx as Element).markNeedsBuild();
-                      },
-                    );
-                  },
-                ),
-                FutureBuilder<String?>(
-                  future: ref.watch(dbProvider).getValue('history_paused'),
-                  builder: (ctx, snap) {
-                    final paused = snap.data == 'true';
-                    return SwitchListTile(
-                      title: const Text('Pause watch history'),
-                      subtitle: const Text('Temporarily pause adding new videos to history'),
-                      value: paused,
-                      onChanged: (val) async {
-                        await ref.read(dbProvider).setValue('history_paused', val.toString());
-                        (ctx as Element).markNeedsBuild();
-                      },
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(LucideIcons.bug),
-                  title: const Text('Content debug'),
-                  subtitle: const Text('Home trace and language filter diagnostic log'),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ContentDebugScreen(),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: const Text('Location'),
+                    subtitle: Text(regions[settings.gl] ?? settings.gl),
+                    trailing: const Icon(LucideIcons.chevronRight),
+                    onTap: () => pick(
+                      'Location',
+                      regions,
+                      settings.gl,
+                      (value) => ref
+                          .read(contentPrefsProvider.notifier)
+                          .update(gl: value),
                     ),
                   ),
-                ),
-                ListTile(
-                  leading: const Icon(LucideIcons.trash2),
-                  title: const Text('Clear app database'),
-                  subtitle: const Text('Remove saved data from this device'),
-                  onTap: clearDatabase,
-                ),
-              ],
+                  SwitchListTile(
+                    title: const Text('Local content'),
+                    value: settings.localContent,
+                    onChanged: (value) => ref
+                        .read(contentPrefsProvider.notifier)
+                        .update(localContent: value),
+                  ),
+                  ListTile(
+                    title: const Text('Content languages'),
+                    subtitle: Text(
+                      settings.contentLanguages
+                          .map((code) => contentLanguageOptions[code] ?? code)
+                          .join(', '),
+                    ),
+                    trailing: const Icon(LucideIcons.chevronRight),
+                    onTap: () => pickLanguages(
+                      'Content languages',
+                      settings.contentLanguages,
+                      false,
+                    ),
+                  ),
+                  ListTile(
+                    title: const Text('Hide languages'),
+                    subtitle: Text(
+                      settings.hiddenLanguages
+                          .map((code) => contentLanguageOptions[code] ?? code)
+                          .join(', '),
+                    ),
+                    trailing: const Icon(LucideIcons.chevronRight),
+                    onTap: () => pickLanguages(
+                      'Hide languages',
+                      settings.hiddenLanguages,
+                      true,
+                    ),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Strict Home'),
+                    subtitle: const Text(
+                      'Show only videos in selected languages',
+                    ),
+                    value: settings.strictHome,
+                    onChanged: (value) => ref
+                        .read(contentPrefsProvider.notifier)
+                        .update(strictHome: value),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Local-language share: ${(settings.localRatio * 100).round()}%',
+                        ),
+                        Slider(
+                          value: settings.localRatio,
+                          divisions: 10,
+                          label: '${(settings.localRatio * 100).round()}%',
+                          onChanged: (value) => ref
+                              .read(contentPrefsProvider.notifier)
+                              .update(localRatio: value),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FutureBuilder<String?>(
+                    future: ref.watch(dbProvider).getValue('history_enabled'),
+                    builder: (ctx, snap) {
+                      final enabled = snap.data != 'false';
+                      return SwitchListTile(
+                        title: const Text('Save watch history'),
+                        subtitle: const Text(
+                          'Record videos and resume playback position',
+                        ),
+                        value: enabled,
+                        onChanged: (val) async {
+                          await ref
+                              .read(dbProvider)
+                              .setValue('history_enabled', val.toString());
+                          (ctx as Element).markNeedsBuild();
+                        },
+                      );
+                    },
+                  ),
+                  FutureBuilder<String?>(
+                    future: ref.watch(dbProvider).getValue('history_paused'),
+                    builder: (ctx, snap) {
+                      final paused = snap.data == 'true';
+                      return SwitchListTile(
+                        title: const Text('Pause watch history'),
+                        subtitle: const Text(
+                          'Temporarily pause adding new videos to history',
+                        ),
+                        value: paused,
+                        onChanged: (val) async {
+                          await ref
+                              .read(dbProvider)
+                              .setValue('history_paused', val.toString());
+                          (ctx as Element).markNeedsBuild();
+                        },
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(LucideIcons.bug),
+                    title: const Text('Content debug'),
+                    subtitle: const Text(
+                      'Home trace and language filter diagnostic log',
+                    ),
+                    trailing: const Icon(LucideIcons.chevronRight),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ContentDebugScreen(),
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(LucideIcons.trash2),
+                    title: const Text('Clear app database'),
+                    subtitle: const Text('Remove saved data from this device'),
+                    onTap: clearDatabase,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

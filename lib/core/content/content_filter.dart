@@ -49,6 +49,27 @@ class ContentFilter {
   final ChannelLanguageCache channelCache;
   final LanguageProfileRegistry registry;
 
+  bool _looksHindiChannelName(String channelName) {
+    if (registry.detectScript(channelName) == 'hi') return true;
+    const markers = {
+      'hindi', 'hindustani', 'hindustan', 'bollywood', 'bhojpuri', 'haryanvi',
+      'desi', 'हिंदी', 'हिन्दी', 'भोजपुरी', 'हरियाणवी',
+    };
+    final tokens = channelName.toLowerCase().split(RegExp(r'[^a-z0-9\u0900-\u097f]+'));
+    return tokens.any(markers.contains);
+  }
+
+  bool _isHindiDevotional(String text) {
+    final terms = registry.get('hi')?.devotionalBlocklist ?? const <String>[];
+    final lower = text.toLowerCase();
+    return terms.any((term) {
+      final escaped = RegExp.escape(term).replaceAll(r'\ ', r'\s+');
+      return RegExp(
+        '(?:^|[^a-z0-9\\u0900-\\u097f])$escaped(?:\$|[^a-z0-9\\u0900-\\u097f])',
+      ).hasMatch(lower);
+    });
+  }
+
   ContentFilterResult evaluate({
     required String id,
     required String title,
@@ -59,6 +80,7 @@ class ContentFilter {
     bool strictHome = true,
     ContentSurface surface = ContentSurface.strict,
     String? probeLanguage,
+    bool filterHindiDevotional = false,
   }) {
     final text = '$title $channelName';
     final lower = text.toLowerCase();
@@ -75,7 +97,11 @@ class ContentFilter {
     for (final profile in registry.profiles.values) {
       if (profile.code == 'en') continue;
       final evidence = registry.lexiconEvidence(text, profile.code);
-      final s = registry.lexiconMatches(text, profile.code)
+      final matches = registry.lexiconMatches(text, profile.code) ||
+          (profile.code == 'hi' &&
+              registry.lexiconEvidence(text, 'hi').strong >= 1 &&
+              _looksHindiChannelName(channelName));
+      final s = matches
           ? evidence.strong * 2 + evidence.weak
           : 0;
       if (s > maxLexiconScore) {
@@ -116,7 +142,12 @@ class ContentFilter {
     bool kept = false;
     String reason = '';
 
-    if (isHidden) {
+    if (filterHindiDevotional &&
+        hiddenLanguages.contains('hi') &&
+        _isHindiDevotional(text)) {
+      kept = false;
+      reason = 'devotional_blocklist (hi hidden)';
+    } else if (isHidden) {
       kept = false;
       reason = 'hidden_language ($finalLang)';
     } else if (surface == ContentSurface.library || !strictHome) {
@@ -192,6 +223,7 @@ class ContentFilter {
     Set<String> seen = const {},
     Map<String, String?> probeResults = const {},
     Random? random,
+    bool filterHindiDevotional = false,
   }) {
     final rng = random ?? Random();
     final ranked = <({VideoItem item, int score, bool seen, int tie, int order})>[];
@@ -209,6 +241,7 @@ class ContentFilter {
         strictHome: strictHome,
         surface: surface,
         probeLanguage: probe,
+        filterHindiDevotional: filterHindiDevotional,
       );
 
       HomeTraceStore.instance.record(

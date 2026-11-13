@@ -59,7 +59,9 @@ abstract final class AppSpacing {
       shortsRailIcon = 28,
       shortsScrimHeight = 280,
       shortsTopIcon = 44,
-      shortsProgressTouchHeight = 28,
+      shortsProgressTouchHeight = 24,
+      shortsProgressIdleHeight = 2,
+      shortsProgressActiveHeight = 6,
       shortsAspectTolerance = 0.08,
       shortsFeedbackScale = 0.14,
       shortsWheelThreshold = 24,
@@ -68,7 +70,7 @@ abstract final class AppSpacing {
       cardInfoHeight = 112;
 
   // ── Lead items on Home feed ────────────────────────────────────────────────
-  static const int homeLeadItems = 2;
+  static const int homeLeadItems = 6;
 
   // ── Canonical animation durations (prefer AppMotion) ──────────────────────
   static const Duration shortsFeedbackDuration = Duration(milliseconds: 650),

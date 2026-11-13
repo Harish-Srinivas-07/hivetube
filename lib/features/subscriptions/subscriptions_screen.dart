@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -12,6 +13,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
+import '../../core/yt/channel_metadata.dart';
 import '../../core/yt/takeout_parser.dart';
 import '../../widgets/common.dart';
 import '../../widgets/ui/ui.dart';
@@ -23,7 +25,8 @@ class SubscriptionsScreen extends ConsumerStatefulWidget {
   const SubscriptionsScreen({super.key});
 
   @override
-  ConsumerState<SubscriptionsScreen> createState() => _SubscriptionsScreenState();
+  ConsumerState<SubscriptionsScreen> createState() =>
+      _SubscriptionsScreenState();
 }
 
 class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
@@ -36,7 +39,9 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final service = ref.read(subscriptionsFeedServiceProvider);
       service.markTabOpened();
-      service.refreshFeed(force: false);
+      service.backfillSubscriptionDetails().then((_) {
+        if (mounted) service.refreshFeed(force: false);
+      });
     });
   }
 
@@ -56,7 +61,9 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
       if (parsed.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No subscriptions found in CSV file.')),
+            const SnackBar(
+              content: Text('No subscriptions found in CSV file.'),
+            ),
           );
         }
         return;
@@ -64,24 +71,41 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
       final db = ref.read(dbProvider);
       final now = DateTime.now().millisecondsSinceEpoch;
+      var added = 0;
       await db.transaction(() async {
         for (final item in parsed) {
-          await db.into(db.subscriptions).insertOnConflictUpdate(
-            SubscriptionsCompanion.insert(
-              channelId: item.channelId,
-              name: item.title,
-              avatarUrl: '',
-              subscribedAt: now,
-              lastFeedAt: const Value(0),
-            ),
+          final existing = await db.subscriptionsDao.getSubscription(
+            item.channelId,
           );
+          if (existing == null) {
+            await db
+                .into(db.subscriptions)
+                .insert(
+                  SubscriptionsCompanion.insert(
+                    channelId: item.channelId,
+                    name: item.title,
+                    avatarUrl: '',
+                    subscribedAt: now,
+                    lastFeedAt: const Value(0),
+                  ),
+                );
+            added++;
+          } else if ((existing.name.isEmpty ||
+                  existing.name == existing.channelId) &&
+              item.title != item.channelId) {
+            await (db.update(db.subscriptions)
+                  ..where((row) => row.channelId.equals(item.channelId)))
+                .write(SubscriptionsCompanion(name: Value(item.title)));
+          }
         }
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Imported ${parsed.length} subscriptions! Refreshing feed...'),
+            content: Text(
+              'Added $added subscriptions${parsed.length > added ? ' (${parsed.length - added} already existed)' : ''}. Refreshing feed...',
+            ),
           ),
         );
       }
@@ -89,35 +113,27 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
       ref.read(subscriptionsFeedServiceProvider).refreshFeed(force: true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(tabRefreshProvider, (_, request) {
+      if (request?.index != 2) return;
+      unawaited(
+        ref.read(subscriptionsFeedServiceProvider).refreshFeed(force: true),
+      );
+      ref.invalidate(hasUnreadUploadsProvider);
+    });
     final subsAsync = ref.watch(subscriptionsStreamProvider);
     final feedAsync = ref.watch(feedItemsStreamProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Subscriptions'),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.fileSpreadsheet),
-            tooltip: 'Import from Google Takeout',
-            onPressed: _importTakeout,
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.search),
-            tooltip: 'Search',
-            onPressed: () => context.push('/search'),
-          ),
-        ],
-      ),
       body: subsAsync.when(
         data: (subs) {
           if (subs.isEmpty) {
@@ -131,17 +147,16 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             child: CustomScrollView(
               slivers: [
                 // Top channels horizontal avatar bar
-                SliverToBoxAdapter(
-                  child: _buildChannelBar(subs, theme),
-                ),
+                SliverToBoxAdapter(child: _buildChannelBar(subs, theme)),
                 // Filter chips
-                SliverToBoxAdapter(
-                  child: _buildFilterChips(theme),
-                ),
+                SliverToBoxAdapter(child: _buildFilterChips(theme)),
                 // Feed list
                 feedAsync.when(
                   data: (items) {
                     final filtered = _filterItems(items);
+                    final subscriptionsById = {
+                      for (final sub in subs) sub.channelId: sub,
+                    };
                     if (filtered.isEmpty) {
                       return SliverFillRemaining(
                         hasScrollBody: false,
@@ -158,7 +173,11 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
                     return SliverList(
                       delegate: SliverChildBuilderDelegate(
-                        (ctx, idx) => _buildFeedItemCard(filtered[idx], theme),
+                        (ctx, idx) => _buildFeedItemCard(
+                          filtered[idx],
+                          subscriptionsById[filtered[idx].channelId],
+                          theme,
+                        ),
                         childCount: filtered.length,
                       ),
                     );
@@ -212,7 +231,10 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             const SizedBox(height: AppSpacing.xl),
             FilledButton.icon(
               onPressed: _importTakeout,
-              icon: const Icon(LucideIcons.uploadCloud, size: AppSizes.avatarXs),
+              icon: const Icon(
+                LucideIcons.uploadCloud,
+                size: AppSizes.avatarXs,
+              ),
               label: const Text('Import from Google Takeout'),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -304,13 +326,16 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      sub.name,
+                      isMissingChannelName(sub.name, sub.channelId)
+                          ? 'Channel'
+                          : sub.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                         color: isSelected ? theme.colorScheme.primary : null,
                       ),
                     ),
@@ -335,17 +360,20 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
         AppChip(
           label: 'Today',
           selected: _currentFilter == SubscriptionsFilter.today,
-          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.today),
+          onTap: () =>
+              setState(() => _currentFilter = SubscriptionsFilter.today),
         ),
         AppChip(
           label: 'Videos',
           selected: _currentFilter == SubscriptionsFilter.videos,
-          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.videos),
+          onTap: () =>
+              setState(() => _currentFilter = SubscriptionsFilter.videos),
         ),
         AppChip(
           label: 'Shorts',
           selected: _currentFilter == SubscriptionsFilter.shorts,
-          onTap: () => setState(() => _currentFilter = SubscriptionsFilter.shorts),
+          onTap: () =>
+              setState(() => _currentFilter = SubscriptionsFilter.shorts),
         ),
       ],
     );
@@ -374,9 +402,17 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
     }).toList();
   }
 
-  Widget _buildFeedItemCard(FeedItemRow item, ThemeData theme) {
+  Widget _buildFeedItemCard(
+    FeedItemRow item,
+    SubscriptionRow? subscription,
+    ThemeData theme,
+  ) {
     final publishedDate = DateTime.fromMillisecondsSinceEpoch(item.publishedAt);
     final timeAgo = _formatTimeAgo(publishedDate);
+    final channelName = subscription == null ||
+            isMissingChannelName(subscription.name, item.channelId)
+        ? 'Channel'
+        : subscription.name;
 
     return InkWell(
       onTap: () => context.push('/watch/${item.videoId}'),
@@ -434,8 +470,8 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                 GestureDetector(
                   onTap: () => context.push('/channel/${item.channelId}'),
                   child: Avatar(
-                    name: item.channelId,
-                    url: '',
+                    name: channelName,
+                    url: subscription?.avatarUrl ?? '',
                     size: AppSizes.avatar,
                   ),
                 ),
@@ -454,7 +490,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        timeAgo,
+                        '$channelName · $timeAgo',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -463,7 +499,10 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                   ),
                 ),
                 PopupMenuButton<String>(
-                  icon: const Icon(LucideIcons.ellipsisVertical, size: AppSizes.iconSm),
+                  icon: const Icon(
+                    LucideIcons.ellipsisVertical,
+                    size: AppSizes.iconSm,
+                  ),
                   onSelected: (val) => _handleCardAction(val, item),
                   itemBuilder: (ctx) => [
                     const PopupMenuItem(
@@ -538,16 +577,16 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
         ),
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Added to Watch Later')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Added to Watch Later')));
       }
     } else if (action == 'unsubscribe') {
       await db.subscriptionsDao.unsubscribe(item.channelId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unsubscribed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Unsubscribed')));
       }
     }
   }

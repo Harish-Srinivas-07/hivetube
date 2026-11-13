@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
+import 'dart:math' as math;
+import 'dart:ui' show FontFeature, ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 
 import '../../core/playback/playback_service.dart';
+import '../../core/playback/audio_handler.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/settings/app_settings.dart';
@@ -59,8 +61,11 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   int seekTotal = 0;
   Duration? seekTarget;
   bool sheetOpen = false, longPress = false;
+  bool liked = false, disliked = false, saved = false;
   double? oldRate, dragStartValue;
   String? hud;
+  String subtitleText = '';
+  StreamSubscription<List<String>>? _subtitleSubscription;
   IconData? hudIcon;
   double dragX = 0, verticalDelta = 0;
   bool dragCenter = false;
@@ -85,6 +90,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     super.initState();
     widget.service.addListener(_changed);
     _settingsSession = PlayerSettingsSession(widget.service);
+    _listenToSubtitles();
     _changed();
   }
 
@@ -96,9 +102,23 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       _settingsSession.dispose();
       _settingsSession = PlayerSettingsSession(widget.service);
       widget.service.addListener(_changed);
+      _listenToSubtitles();
       lastStatus = null;
       _changed();
     }
+  }
+
+  void _listenToSubtitles() {
+    _subtitleSubscription?.cancel();
+    subtitleText = widget.service.player.state.subtitle
+        .where((line) => line.trim().isNotEmpty)
+        .join('\n');
+    _subtitleSubscription = widget.service.player.stream.subtitle.listen((lines) {
+      if (!mounted) return;
+      setState(() {
+        subtitleText = lines.where((line) => line.trim().isNotEmpty).join('\n');
+      });
+    });
   }
 
   void _scheduleHide() {
@@ -222,6 +242,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       panelDragStarted = false;
     } else if (fullscreen && dragCenter && verticalDelta > 40) {
       unawaited(_fullscreen(false));
+    } else if (fullscreen && dragCenter && verticalDelta < -40) {
+      unawaited(_moreVideos());
     } else if (!fullscreen && verticalDelta < -40) {
       unawaited(_fullscreen(true));
     }
@@ -241,6 +263,43 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         onLock: ref.read(playerUiProvider).isFullscreen
             ? () => ref.read(playerUiProvider.notifier).setLocked(true)
             : null,
+      );
+    } finally {
+      sheetOpen = false;
+      if (mounted) _scheduleHide();
+    }
+  }
+
+  Future<void> _moreVideos() async {
+    hideTimer?.cancel();
+    sheetOpen = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('More videos'),
+                subtitle: const Text('Continue to the next video'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.skip_next_rounded),
+                title: const Text('Play next'),
+                enabled: widget.onNext != null,
+                onTap: widget.onNext == null
+                    ? null
+                    : () {
+                        Navigator.pop(context);
+                        widget.onNext?.call();
+                      },
+              ),
+            ],
+          ),
+        ),
       );
     } finally {
       sheetOpen = false;
@@ -282,12 +341,519 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         : '$minutes:$seconds';
   }
 
+  Widget _roundControl({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    double size = 23,
+    double diameter = 48,
+    bool dimmed = false,
+  }) => SizedBox(
+    width: diameter,
+    height: diameter,
+    child: IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: AppColors.playerControlGlass,
+        shape: const CircleBorder(),
+        padding: EdgeInsets.zero,
+      ),
+      icon: Icon(icon, size: size),
+      color: dimmed ? Colors.white38 : Colors.white,
+      disabledColor: Colors.white38,
+    ),
+  );
+
+  Widget _actionControl({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    bool selected = false,
+  }) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    visualDensity: VisualDensity.compact,
+    icon: Icon(icon, color: selected ? AppColors.primary : Colors.white),
+  );
+
+  Future<void> _copyVideoLink() async {
+    final id = widget.service.request?.videoId;
+    if (id == null) return;
+    await Clipboard.setData(ClipboardData(text: 'https://youtu.be/$id'));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Video link copied')),
+    );
+  }
+
+  void _showActionMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Widget _fullscreenOverlay({
+    required BuildContext context,
+    required PlayerUiState ui,
+    required PlaybackSnapshot state,
+    required bool autoplay,
+    required PlayerUiController notifier,
+  }) {
+    final service = widget.service;
+    final mediaItem = ref.watch(audioHandlerProvider)?.mediaItem.valueOrNull;
+    final title = mediaItem?.title.isNotEmpty == true
+        ? mediaItem!.title
+        : (service.request?.videoId ?? 'HiveTube');
+    final channel = mediaItem?.artist ?? '';
+    final durationMs = math.max(1, ui.duration.inMilliseconds).toDouble();
+    final positionMs = ui.displayPosition.inMilliseconds
+        .clamp(0, durationMs.toInt())
+        .toDouble();
+    final bufferMs = ui.buffered.inMilliseconds
+        .clamp(positionMs.toInt(), durationMs.toInt())
+        .toDouble();
+    final thumbnailUrl = service.request == null
+        ? null
+        : 'https://i.ytimg.com/vi/${service.request!.videoId}/mqdefault.jpg';
+    final caption = subtitleText.trim();
+
+    return IgnorePointer(
+      ignoring: !ui.overlayVisible,
+      child: AnimatedOpacity(
+        key: const ValueKey('fullscreenPlayerOverlay'),
+        opacity: ui.overlayVisible ? 1 : 0,
+        duration: AppMotion.base,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0, .24, .55, 1],
+                    colors: [
+                      Color(0xB8000000),
+                      Color(0x00000000),
+                      Color(0x12000000),
+                      Color(0xC9000000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 6,
+                    left: 14,
+                    right: 14,
+                    child: Row(
+                      children: [
+                        _roundControl(
+                          icon: Icons.keyboard_arrow_down_rounded,
+                          tooltip: 'Exit fullscreen',
+                          onPressed: () => _fullscreen(false),
+                          diameter: 42,
+                          size: 29,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ShaderMask(
+                                shaderCallback: (bounds) =>
+                                    const LinearGradient(
+                                      colors: [Colors.white, Colors.white70, Colors.transparent],
+                                      stops: [0, .8, 1],
+                                    ).createShader(bounds),
+                                blendMode: BlendMode.dstIn,
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              if (channel.isNotEmpty)
+                                Text(
+                                  channel.startsWith('@') ? channel : '@$channel',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Material(
+                          color: AppColors.playerControlGlass,
+                          borderRadius: AppRadius.pillBorder,
+                          child: InkWell(
+                            borderRadius: AppRadius.pillBorder,
+                            onTap: () => ref
+                                .read(contentPrefsProvider.notifier)
+                                .setAutoplay(!autoplay),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white24,
+                                    ),
+                                    child: Icon(
+                                      autoplay
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  const Text(
+                                    'Autoplay',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        _roundControl(
+                          icon: Icons.cast_rounded,
+                          tooltip: 'Cast',
+                          onPressed: () => _showActionMessage('Cast is unavailable'),
+                          diameter: 42,
+                        ),
+                        _roundControl(
+                          icon: Icons.closed_caption_rounded,
+                          tooltip: 'Captions',
+                          onPressed: state.captions.isEmpty
+                              ? null
+                              : () => unawaited(
+                                  service.setCaption(
+                                    state.selectedCaption == null ? 0 : null,
+                                  ),
+                                ),
+                          diameter: 42,
+                        ),
+                        _roundControl(
+                          icon: Icons.settings_rounded,
+                          tooltip: 'Settings',
+                          onPressed: _settings,
+                          diameter: 42,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _roundControl(
+                          icon: Icons.skip_previous_rounded,
+                          tooltip: 'Previous',
+                          onPressed: widget.onPrevious,
+                          diameter: 58,
+                          size: 31,
+                          dimmed: widget.onPrevious == null,
+                        ),
+                        const SizedBox(width: 30),
+                        _roundControl(
+                          icon: state.status == PlayerStatus.playing
+                              ? Icons.pause_rounded
+                              : state.status == PlayerStatus.ended
+                              ? Icons.replay_rounded
+                              : Icons.play_arrow_rounded,
+                          tooltip: state.status == PlayerStatus.playing
+                              ? 'Pause'
+                              : 'Play',
+                          onPressed: () => unawaited(service.togglePlayPause()),
+                          diameter: 76,
+                          size: 43,
+                        ),
+                        const SizedBox(width: 30),
+                        _roundControl(
+                          icon: Icons.skip_next_rounded,
+                          tooltip: 'Next',
+                          onPressed: widget.onNext,
+                          diameter: 58,
+                          size: 31,
+                          dimmed: widget.onNext == null,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (caption.isNotEmpty)
+                    Positioned(
+                      left: 40,
+                      right: 40,
+                      bottom: 150,
+                      child: IgnorePointer(
+                        child: Text(
+                          caption,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w500,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black87,
+                                blurRadius: 8,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    left: 22,
+                    right: 22,
+                    bottom: 98,
+                    child: Row(
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.playerControlGlass,
+                            borderRadius: AppRadius.pillBorder,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 6,
+                            ),
+                            child: Text(
+                              '${_time(Duration(milliseconds: positionMs.round()))} / ${_time(ui.duration)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _roundControl(
+                          icon: Icons.fullscreen_exit_rounded,
+                          tooltip: 'Exit fullscreen',
+                          onPressed: () => _fullscreen(false),
+                          diameter: 42,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    bottom: 72,
+                    height: 24,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        activeTrackColor: const Color(0xFFFF1744),
+                        secondaryActiveTrackColor: Colors.white70,
+                        inactiveTrackColor: Colors.white38,
+                        thumbColor: const Color(0xFFFF1744),
+                        overlayColor: const Color(0x22FF1744),
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                      ),
+                      child: Slider(
+                        min: 0,
+                        max: durationMs,
+                        value: ui.scrubbing
+                            ? ui.scrubPosition.inMilliseconds
+                                  .clamp(0, durationMs.toInt())
+                                  .toDouble()
+                            : positionMs,
+                        secondaryTrackValue: bufferMs,
+                        onChangeStart: (value) {
+                          hideTimer?.cancel();
+                          notifier.setOverlayVisible(true);
+                          notifier.setScrubbing(true);
+                          notifier.setScrubPosition(
+                            Duration(milliseconds: value.round()),
+                          );
+                        },
+                        onChanged: (value) => notifier.setScrubPosition(
+                          Duration(milliseconds: value.round()),
+                        ),
+                        onChangeEnd: (value) {
+                          notifier.setScrubbing(false);
+                          unawaited(
+                            service.seekTo(
+                              Duration(milliseconds: value.round()),
+                            ),
+                          );
+                          _scheduleHide();
+                        },
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 8,
+                    child: Container(
+                      height: 54,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x99000000),
+                        borderRadius: AppRadius.lgBorder,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _actionControl(
+                                    icon: liked
+                                        ? Icons.thumb_up_rounded
+                                        : Icons.thumb_up_outlined,
+                                    tooltip: 'Like',
+                                    selected: liked,
+                                    onPressed: () => setState(() {
+                                      liked = !liked;
+                                      if (liked) disliked = false;
+                                    }),
+                                  ),
+                                  _actionControl(
+                                    icon: disliked
+                                        ? Icons.thumb_down_rounded
+                                        : Icons.thumb_down_outlined,
+                                    tooltip: 'Dislike',
+                                    selected: disliked,
+                                    onPressed: () => setState(() {
+                                      disliked = !disliked;
+                                      if (disliked) liked = false;
+                                    }),
+                                  ),
+                                  _actionControl(
+                                    icon: Icons.chat_bubble_outline_rounded,
+                                    tooltip: 'Comments',
+                                    onPressed: () => _showActionMessage(
+                                      'Open the watch page to view comments',
+                                    ),
+                                  ),
+                                  _actionControl(
+                                    icon: Icons.forum_outlined,
+                                    tooltip: 'Live chat',
+                                    onPressed: () => _showActionMessage(
+                                      'Live chat is unavailable for this video',
+                                    ),
+                                  ),
+                                  _actionControl(
+                                    icon: saved
+                                        ? Icons.bookmark_rounded
+                                        : Icons.bookmark_border_rounded,
+                                    tooltip: 'Save',
+                                    selected: saved,
+                                    onPressed: () => setState(
+                                      () => saved = !saved,
+                                    ),
+                                  ),
+                                  _actionControl(
+                                    icon: Icons.ios_share_rounded,
+                                    tooltip: 'Share',
+                                    onPressed: () => unawaited(_copyVideoLink()),
+                                  ),
+                                  _actionControl(
+                                    icon: Icons.auto_awesome_rounded,
+                                    tooltip: 'More options',
+                                    onPressed: () => _showActionMessage(
+                                      'More options are available on the watch page',
+                                    ),
+                                  ),
+                                  _actionControl(
+                                    icon: Icons.more_horiz_rounded,
+                                    tooltip: 'More',
+                                    onPressed: _moreVideos,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _moreVideos,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                            ),
+                            child: const Text('More videos'),
+                          ),
+                          if (thumbnailUrl != null)
+                            InkWell(
+                              onTap: _moreVideos,
+                              borderRadius: AppRadius.smBorder,
+                              child: ClipRRect(
+                                borderRadius: AppRadius.smBorder,
+                                child: Image.network(
+                                  thumbnailUrl,
+                                  width: 68,
+                                  height: 38,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const SizedBox(
+                                    width: 68,
+                                    height: 38,
+                                    child: Icon(Icons.play_arrow_rounded),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     hideTimer?.cancel();
     seekTimer?.cancel();
     _doubleTapCommitTimer?.cancel();
     hudTimer?.cancel();
+    _subtitleSubscription?.cancel();
     _settingsSession.dispose();
     widget.service.removeListener(_changed);
     super.dispose();
@@ -316,6 +882,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   controls: NoVideoControls,
                   fit: widget.short ? BoxFit.cover : BoxFit.contain,
                   subtitleViewConfiguration: SubtitleViewConfiguration(
+                    visible: !ui.isFullscreen,
                     style: AppTextStyles.body.copyWith(
                       color: AppColors.shortsForeground,
                       backgroundColor: AppColors.shortsScrim,
@@ -371,7 +938,17 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   _updateVertical(d, constraints.maxHeight, ui.isFullscreen),
               onVerticalDragEnd: (d) => _endVertical(d, ui.isFullscreen),
             ),
-            if (ui.panelProgress == 0 || ui.panelProgress > .3)
+            if (ui.isFullscreen &&
+                (ui.panelProgress == 0 || ui.panelProgress > .3))
+              _fullscreenOverlay(
+                context: context,
+                ui: ui,
+                state: state,
+                autoplay: autoplay,
+                notifier: notifier,
+              ),
+            if (!ui.isFullscreen &&
+                (ui.panelProgress == 0 || ui.panelProgress > .3))
               IgnorePointer(
                 ignoring: !ui.overlayVisible,
                 child: AnimatedOpacity(
@@ -514,18 +1091,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               ),
                                             ),
                                             onPressed: () async {
-                                              if (state.status ==
-                                                  PlayerStatus.ended) {
-                                                await service.seek(
-                                                  Duration.zero,
-                                                );
-                                                await service.resume();
-                                              } else if (state.status ==
-                                                  PlayerStatus.playing) {
-                                                await service.pause();
-                                              } else {
-                                                await service.resume();
-                                              }
+                                              await service.togglePlayPause();
                                               if (mounted) _scheduleHide();
                                             },
                                             iconSize: AppSizes.avatar,
@@ -620,6 +1186,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 ),
               ),
             if (!widget.short &&
+                !ui.isFullscreen &&
                 (ui.panelProgress == 0 || ui.panelProgress > .3))
               Positioned(
                 left: 0,

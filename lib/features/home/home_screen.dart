@@ -73,20 +73,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(tabRefreshProvider, (_, request) {
+      if (request?.index != 0) return;
+      if (controller.hasClients) controller.jumpTo(0);
+      unawaited(ref.read(homeProvider.notifier).refresh());
+    });
     final home = ref.watch(homeProvider);
     final history =
         ref.watch(homeHistoryProvider).value ?? const <HistoryEntry>[];
     final historyById = {for (final entry in history) entry.videoId: entry};
-    final width = MediaQuery.sizeOf(context).width;
-    final feedWidth = width >= AppSpacing.navigationBreakpoint
-        ? width - 72
-        : width;
-    final columns = width < AppSpacing.navigationBreakpoint
-        ? 1
-        : ((feedWidth - AppSpacing.lg * 2) / AppSpacing.videoMaxWidth)
-              .ceil()
-              .clamp(1, 100);
-    final leadCount = AppSpacing.homeLeadItems * columns;
+    final leadCount = AppSpacing.homeLeadItems;
     return Listener(
       onPointerDown: (_) => ref.read(homeProvider.notifier).interact(),
       child: Scaffold(
@@ -170,10 +166,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             },
                           ),
                         ),
-                      if (data.trending.isNotEmpty) ...[
-                        SliverToBoxAdapter(child: _Heading('Trending')),
-                        _grid(data.trending, historyById),
-                      ],
                       for (final error in data.errors)
                         SliverToBoxAdapter(
                           child: TextButton(
@@ -206,6 +198,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                       ),
+                      if (data.trending.isNotEmpty)
+                        _trendingShelf(data.trending, historyById),
                       SliverToBoxAdapter(
                         child: SizedBox(
                           height:
@@ -296,6 +290,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     },
   );
+
+  Widget _trendingShelf(
+    List<VideoItem> items,
+    Map<String, HistoryEntry> history,
+  ) {
+    final shelfItems = items.take(5).toList();
+    final cardHeight =
+        AppSpacing.videoMaxWidth / AppSpacing.thumbnailRatio +
+        AppSpacing.cardInfoHeight;
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Heading('Trending'),
+          SizedBox(
+            height: cardHeight,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              scrollDirection: Axis.horizontal,
+              itemCount: shelfItems.length,
+              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.lg),
+              itemBuilder: (context, index) {
+                final item = shelfItems[index];
+                return SizedBox(
+                  width: AppSpacing.videoMaxWidth,
+                  child: _VideoCard(
+                    item,
+                    wide: false,
+                    history: history[item.id],
+                    onTap: () {
+                      ref.read(homeProvider.notifier).interact();
+                      unawaited(
+                        ref
+                            .read(homeProvider.notifier)
+                            .rememberChannel(item.id, item.channelName),
+                      );
+                      openWatchPanel(ref, item.id);
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Heading extends StatelessWidget {

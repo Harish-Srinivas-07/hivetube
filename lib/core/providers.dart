@@ -26,6 +26,29 @@ import 'content/discovery/discovery_store.dart';
 import 'content/discovery/discovery_engine.dart';
 import 'content/language_profile.dart';
 
+class TabRefreshRequest {
+  const TabRefreshRequest(this.index, this.sequence);
+
+  final int index;
+  final int sequence;
+}
+
+final tabRefreshProvider =
+    NotifierProvider<TabRefreshController, TabRefreshRequest?>(
+      TabRefreshController.new,
+    );
+
+class TabRefreshController extends Notifier<TabRefreshRequest?> {
+  int _sequence = 0;
+
+  @override
+  TabRefreshRequest? build() => null;
+
+  void request(int index) {
+    state = TabRefreshRequest(index, ++_sequence);
+  }
+}
+
 final dbProvider = Provider<AppDb>((ref) {
   final db = AppDb();
   ref.onDispose(db.close);
@@ -33,7 +56,9 @@ final dbProvider = Provider<AppDb>((ref) {
 });
 final channelLanguageCacheProvider = Provider<ChannelLanguageCache>((ref) {
   final db = ref.watch(dbProvider);
-  return ChannelLanguageCache(db);
+  final cache = ChannelLanguageCache(db);
+  ChannelLanguageCache.instance = cache;
+  return cache;
 });
 final contentFilterProvider = Provider<ContentFilter>((ref) {
   final cache = ref.watch(channelLanguageCacheProvider);

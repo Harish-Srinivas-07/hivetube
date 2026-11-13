@@ -6,6 +6,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/providers.dart';
+import '../../core/yt/channel_metadata.dart';
 import '../../widgets/common.dart';
 
 class ManageSubscriptionsScreen extends ConsumerStatefulWidget {
@@ -75,14 +76,20 @@ class _ManageSubscriptionsScreenState
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (ctx, idx) {
                     final sub = filtered[idx];
+                    final displayName = isMissingChannelName(
+                      sub.name,
+                      sub.channelId,
+                    )
+                        ? 'Channel'
+                        : sub.name;
                     return ListTile(
                       leading: Avatar(
-                        name: sub.name,
+                        name: displayName,
                         url: sub.avatarUrl,
                         size: AppSizes.avatar,
                       ),
                       title: Text(
-                        sub.name,
+                        displayName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleSmall?.copyWith(
@@ -104,7 +111,7 @@ class _ManageSubscriptionsScreenState
                             builder: (dCtx) => AlertDialog(
                               title: const Text('Unsubscribe'),
                               content: Text(
-                                'Unsubscribe from ${sub.name}?',
+                                'Unsubscribe from $displayName?',
                               ),
                               actions: [
                                 TextButton(

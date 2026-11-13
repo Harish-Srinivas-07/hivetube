@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -25,6 +26,35 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  final Set<String> _historyMetadataBackfills = {};
+
+  Future<void> _backfillHistoryMetadata(String videoId) async {
+    if (!_historyMetadataBackfills.add(videoId)) return;
+    final db = ref.read(dbProvider);
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final info = await api.next.watch(videoId);
+      await db.historyDao.updateMediaMetadata(
+        videoId: videoId,
+        title: info.title,
+        channelId: info.channelId,
+        channelName: info.channelName,
+        thumbUrl: info.thumbnail.isNotEmpty
+            ? info.thumbnail
+            : 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+        durationSec: info.durationSec,
+      );
+    } catch (_) {
+      await db.historyDao.updateMediaMetadata(
+        videoId: videoId,
+        title: 'Untitled video',
+        channelId: '',
+        channelName: '',
+        thumbUrl: '',
+      );
+    }
+  }
+
   Future<void> _editProfile(ProfileRow? current) async {
     final controller = TextEditingController(text: current?.name ?? 'HiveUser');
     String? avatarPath = current?.avatarPath;
@@ -224,25 +254,42 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
       final db = ref.read(dbProvider);
       final now = DateTime.now().millisecondsSinceEpoch;
+      var added = 0;
       await db.transaction(() async {
         for (final item in parsed) {
-          await db
-              .into(db.subscriptions)
-              .insertOnConflictUpdate(
-                SubscriptionsCompanion.insert(
-                  channelId: item.channelId,
-                  name: item.title,
-                  avatarUrl: '',
-                  subscribedAt: now,
-                  lastFeedAt: const Value(0),
-                ),
-              );
+          final existing = await db.subscriptionsDao.getSubscription(
+            item.channelId,
+          );
+          if (existing == null) {
+            await db
+                .into(db.subscriptions)
+                .insert(
+                  SubscriptionsCompanion.insert(
+                    channelId: item.channelId,
+                    name: item.title,
+                    avatarUrl: '',
+                    subscribedAt: now,
+                    lastFeedAt: const Value(0),
+                  ),
+                );
+            added++;
+          } else if ((existing.name.isEmpty ||
+                  existing.name == existing.channelId) &&
+              item.title != item.channelId) {
+            await (db.update(db.subscriptions)
+                  ..where((row) => row.channelId.equals(item.channelId)))
+                .write(SubscriptionsCompanion(name: Value(item.title)));
+          }
         }
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Imported ${parsed.length} subscriptions!')),
+          SnackBar(
+            content: Text(
+              'Added $added subscriptions${parsed.length > added ? ' (${parsed.length - added} already existed)' : ''}.',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -288,6 +335,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(tabRefreshProvider, (_, request) {
+      if (request?.index != 3) return;
+      ref.invalidate(profileStreamProvider);
+      ref.invalidate(historyStreamProvider);
+      ref.invalidate(playlistsStreamProvider);
+      ref.invalidate(likedVideosStreamProvider);
+    });
     final profileAsync = ref.watch(profileStreamProvider);
     final historyAsync = ref.watch(historyStreamProvider);
     final playlistsAsync = ref.watch(playlistsStreamProvider);
@@ -405,7 +459,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   );
                 }
                 return SizedBox(
-                  height: 140,
+                  height: 164,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(
@@ -414,6 +468,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     itemCount: items.take(15).length,
                     itemBuilder: (ctx, idx) {
                       final item = items[idx];
+                      if (item.media == null ||
+                          item.media!.title.isEmpty ||
+                          item.media!.title == item.history.videoId) {
+                        unawaited(
+                          _backfillHistoryMetadata(item.history.videoId),
+                        );
+                      }
                       final thumbUrl =
                           item.media?.thumbUrl ??
                           'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
@@ -451,7 +512,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                         ),
                                       ),
                                     ),
-                                    if (progress > 0)
+                                    if (dur > 0)
                                       Positioned(
                                         bottom: 0,
                                         left: 0,
@@ -471,7 +532,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                                 AppColors.thumbnailBadge,
                                             valueColor:
                                                 AlwaysStoppedAnimation<Color>(
-                                                  theme.colorScheme.primary,
+                                                  Colors.red,
                                                 ),
                                           ),
                                         ),
@@ -480,11 +541,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
                                 Text(
-                                  item.media?.title ?? item.history.videoId,
+                                  item.media?.title.isNotEmpty == true &&
+                                          item.media?.title !=
+                                              item.history.videoId
+                                      ? item.media!.title
+                                      : 'Untitled video',
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.labelMedium?.copyWith(
                                     fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  item.media?.channelName.isNotEmpty == true
+                                      ? item.media!.channelName
+                                      : 'Unknown channel',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],

@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
-import '../../core/content/content_filter.dart';
 import '../../core/content/language_profile.dart';
 import '../../core/db/history_entry.dart';
 import '../../core/settings/app_settings.dart';
@@ -340,12 +339,16 @@ class HomeController extends AsyncNotifier<HomeData> {
     final historyFuture = ref.read(historyRepoProvider).recent();
     final dislikedFuture = ref.read(historyRepoProvider).dislikedChannels();
     final channelsFuture = ref.read(subscriptionRepoProvider).channelIds();
+    final db = ref.read(dbProvider);
+    final historyMediaFuture = db.historyDao.getHistory();
+    final likedMediaFuture = db.reactionsDao.getLikedVideos();
     final history = await historyFuture;
     final disliked = await dislikedFuture;
     final channels = await channelsFuture;
+    final historyMedia = await historyMediaFuture;
+    final likedMedia = (await likedMediaFuture).take(100).toList();
     final errors = <String>[];
     final watched = history.map((h) => h.videoId).toSet();
-    final db = ref.read(dbProvider);
     final now = DateTime.now();
     final seen = SeenVideos.decode(
       await db.getValue('home_seen_videos_v1'),
@@ -375,6 +378,7 @@ class HomeController extends AsyncNotifier<HomeData> {
               seen: seen.ids,
               random: random,
               source: source,
+              filterHindiDevotional: true,
             ).items.where((item) => !refreshExcluded.contains(item.id)).toList();
     final uploadFuture = _subscriptions(
       api,
@@ -382,7 +386,61 @@ class HomeController extends AsyncNotifier<HomeData> {
       token,
       errors,
     ).then((items) => items.where((v) => !watched.contains(v.id)).toList());
-    final personal = history.isNotEmpty || channels.isNotEmpty;
+    final historyMediaById = {
+      for (final row in historyMedia) row.history.videoId: row.media,
+    };
+    final seedVideos = <VideoItem>[];
+    final seedIds = <String>{};
+    for (final entry in history.where((item) => !item.isShort)) {
+      if (seedVideos.length >= 6) break;
+      final media = historyMediaById[entry.videoId];
+      final item = VideoItem(
+        id: entry.videoId,
+        title: media?.title ?? '',
+        channelId: media?.channelId ?? '',
+        channelName: entry.channelName.isNotEmpty
+            ? entry.channelName
+            : media?.channelName ?? '',
+        channelAvatarUrl: '',
+        thumbUrl: media?.thumbUrl ?? '',
+      );
+      if (filter.evaluate(
+            id: item.id,
+            title: item.title,
+            channelId: item.channelId,
+            channelName: item.channelName,
+            shownLanguages: preferred,
+            hiddenLanguages: hidden,
+            strictHome: strictHome,
+          ).kept &&
+          seedIds.add(item.id)) {
+        seedVideos.add(item);
+      }
+    }
+    for (final media in likedMedia) {
+      if (seedVideos.length >= 6) break;
+      final item = VideoItem(
+        id: media.videoId,
+        title: media.title,
+        channelId: media.channelId,
+        channelName: media.channelName,
+        channelAvatarUrl: '',
+        thumbUrl: media.thumbUrl,
+      );
+      if (filter.evaluate(
+            id: item.id,
+            title: item.title,
+            channelId: item.channelId,
+            channelName: item.channelName,
+            shownLanguages: preferred,
+            hiddenLanguages: hidden,
+            strictHome: strictHome,
+          ).kept &&
+          seedIds.add(item.id)) {
+        seedVideos.add(item);
+      }
+    }
+    final personal = seedVideos.isNotEmpty || channels.isNotEmpty;
     final sources = <HomeSource>[];
     void searchSource(String query, {required int weight, bool live = false}) {
       String? activeParams;
@@ -456,30 +514,13 @@ class HomeController extends AsyncNotifier<HomeData> {
     }
 
     if (chip == 'All') {
-      final validSeeds = history
-          .where((h) => !h.isShort)
-          .where((h) {
-            final eval = filter.evaluate(
-              id: h.videoId,
-              title: '',
-              channelId: '',
-              channelName: h.channelName,
-              shownLanguages: preferred,
-              hiddenLanguages: hidden,
-              strictHome: strictHome,
-              surface: ContentSurface.strict,
-            );
-            return eval.kept;
-          })
-          .take(6);
-
-      for (final entry in validSeeds) {
+      for (final entry in seedVideos) {
         sources.add(
           HomeSource(
             weight: 2,
-            transform: rankFor('related:${entry.videoId}'),
+            transform: rankFor('related:${entry.id}'),
             fetch: (cursor) => api.next.related(
-              entry.videoId,
+              entry.id,
               continuation: cursor,
               cancelToken: token,
             ),
@@ -505,7 +546,26 @@ class HomeController extends AsyncNotifier<HomeData> {
               shownLanguages: settings.contentLanguages,
               random: random,
             );
+      final personalQueries = personalSearchQueries(
+        history: [
+          for (final row in historyMedia)
+            (
+              title: row.media?.title ?? '',
+              channelName: row.media?.channelName ?? '',
+            ),
+        ],
+        likes: [
+          for (final row in likedMedia)
+            (title: row.title, channelName: row.channelName),
+        ],
+      );
+      final addedQueries = <String>{};
+      for (final query in personalQueries.take(3)) {
+        addedQueries.add(query);
+        searchSource(query, weight: personal ? 1 : 2);
+      }
       for (final query in homeQueries) {
+        if (!addedQueries.add(query)) continue;
         searchSource(
           query,
           weight: personal ? 1 : 2,
@@ -558,19 +618,23 @@ class HomeController extends AsyncNotifier<HomeData> {
       sources.add(
         HomeSource(
           weight: 1,
-          transform: rankFor('charts:trending'),
+          transform: (items) => items
+              .where((item) => !refreshExcluded.contains(item.id))
+              .toList(),
           fetch: (_) async {
             final page = await api.charts.trending(settings.gl, cancelToken: token);
-            var items = filter.filterVideos(
+            var candidates = filter.filterVideos(
               page,
               shownLanguages: preferred,
               hiddenLanguages: hidden,
               strictHome: strictHome,
-              seen: seen.ids,
+              seen: const {},
               random: random,
               source: 'charts:trending',
+              filterHindiDevotional: true,
             ).items;
-            if (items.length < 15) {
+            var items = trendingWithSeenFallback(candidates, seen);
+            if (items.length < 3) {
               final topUpQueries = discoveryPlan?.queries.isNotEmpty == true ? discoveryPlan!.queries : chooseHomeQueries(
                 chip: 'Trending',
                 hasHistory: personal,
@@ -578,8 +642,8 @@ class HomeController extends AsyncNotifier<HomeData> {
                 shownLanguages: preferred,
                 random: random,
               );
-              for (final q in topUpQueries) {
-                if (items.length >= 15) break;
+              for (final q in topUpQueries.take(3)) {
+                if (items.length >= 3) break;
                 try {
                   final res = await api.search.videos(q, cancelToken: token);
                   final topped = filter.filterVideos(
@@ -587,15 +651,17 @@ class HomeController extends AsyncNotifier<HomeData> {
                     shownLanguages: preferred,
                     hiddenLanguages: hidden,
                     strictHome: strictHome,
-                    seen: seen.ids,
+                    seen: const {},
                     random: random,
                     source: 'topup:$q',
+                    filterHindiDevotional: true,
                   ).items;
-                  items = [...items, ...topped];
+                  candidates = [...candidates, ...topped];
+                  items = trendingWithSeenFallback(candidates, seen);
                 } catch (_) {}
               }
             }
-            return VideoPage(items, null);
+            return VideoPage(items.take(5).toList(), null);
           },
         ),
       );
@@ -626,6 +692,7 @@ class HomeController extends AsyncNotifier<HomeData> {
               seen: seen.ids,
               random: random,
               source: 'kiosk:$chip',
+              filterHindiDevotional: true,
             ).items;
             if (items.length < 15) {
               final topic = chip.replaceAll(' kiosk', '');
@@ -648,6 +715,7 @@ class HomeController extends AsyncNotifier<HomeData> {
                     seen: seen.ids,
                     random: random,
                     source: 'topup:$q',
+                    filterHindiDevotional: true,
                   ).items;
                   items = [...items, ...topped];
                 } catch (_) {}
@@ -766,6 +834,7 @@ class HomeController extends AsyncNotifier<HomeData> {
         probeResults: asrResults,
         random: random,
         source: 'probe_refine',
+        filterHindiDevotional: true,
       ).items;
     }
     var refillTries = 0;
@@ -850,8 +919,19 @@ class HomeController extends AsyncNotifier<HomeData> {
       preferred: preferred,
       hidden: hidden,
       seen: seen.ids,
+      filterHindiDevotional: true,
     );
-    final trending = rankFor('charts:trending')(await chartsFuture);
+    final rankedTrending = filter.filterVideos(
+      await chartsFuture,
+      shownLanguages: preferred,
+      hiddenLanguages: hidden,
+      strictHome: strictHome,
+      seen: const {},
+      random: random,
+      source: 'charts:trending',
+      filterHindiDevotional: true,
+    ).items.where((item) => !refreshExcluded.contains(item.id));
+    final trending = trendingWithSeenFallback(rankedTrending, seen);
     if (token.isCancelled) throw StateError('Home request cancelled');
     for (final source in sources) {
       if (source.error != null) errors.add('Feed');

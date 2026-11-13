@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import '../db/app_db.dart';
 import 'channel_avatars.dart';
+import 'channel_metadata.dart';
 import 'models.dart';
 import 'yt_browse.dart';
 import 'yt_rss.dart';
@@ -43,6 +44,41 @@ class SubscriptionsFeedService {
       return true;
     }
     return false;
+  }
+
+  Future<void> backfillSubscriptionDetails() async {
+    final subs = await db.subscriptionsDao.getSubscriptions();
+    final missing = subs
+        .where(
+          (sub) =>
+              isMissingChannelName(sub.name, sub.channelId) ||
+              sub.avatarUrl.isEmpty ||
+              sub.handle.isEmpty,
+        )
+        .toList();
+    const concurrency = 3;
+    for (var start = 0; start < missing.length; start += concurrency) {
+      final end = start + concurrency < missing.length
+          ? start + concurrency
+          : missing.length;
+      await Future.wait(
+        missing.sublist(start, end).map((sub) async {
+          try {
+            final channel = await browse.channelPage(sub.channelId);
+            final avatar = normalizeChannelAvatarUrl(channel.avatarUrl);
+            await db.subscriptionsDao.updateDetails(
+              channelId: sub.channelId,
+              name: channel.name,
+              avatarUrl: avatar,
+              handle: channel.handle,
+            );
+            if (avatar.isNotEmpty) {
+              await ChannelAvatarCache.instance.put(sub.channelId, avatar);
+            }
+          } catch (_) {}
+        }),
+      );
+    }
   }
 
   Future<void> refreshFeed({bool force = false}) async {
@@ -123,7 +159,10 @@ class SubscriptionsFeedService {
       // Cache avatars & media records
       for (final item in items) {
         if (item.channelAvatarUrl.isNotEmpty) {
-          ChannelAvatarCache.instance.put(sub.channelId, item.channelAvatarUrl);
+          ChannelAvatarCache.instance.put(
+            sub.channelId,
+            normalizeChannelAvatarUrl(item.channelAvatarUrl),
+          );
         }
         final durSec = _parseDuration(item.durationText);
         await db.into(db.media).insertOnConflictUpdate(
@@ -131,7 +170,7 @@ class SubscriptionsFeedService {
             videoId: item.id,
             title: item.title,
             channelId: sub.channelId,
-            channelName: item.channelName.isNotEmpty ? item.channelName : sub.name,
+            channelName: sub.name,
             durationSec: Value(durSec),
             thumbUrl: item.thumbUrl,
             updatedAt: fetchTimestamp,

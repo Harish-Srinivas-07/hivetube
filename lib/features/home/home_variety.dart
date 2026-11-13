@@ -139,6 +139,107 @@ List<VideoItem> mixByPublishedAge(List<VideoItem> items, {required Random random
   return output;
 }
 
+List<VideoItem> trendingWithSeenFallback(
+  Iterable<VideoItem> items,
+  SeenVideos seen, {
+  int limit = 5,
+  int minimumUnseen = 3,
+}) {
+  final unique = <String, VideoItem>{};
+  for (final item in items) {
+    unique.putIfAbsent(item.id, () => item);
+  }
+  final candidates = unique.values.toList();
+  final fresh = candidates
+      .where((item) => !seen.entries.containsKey(item.id))
+      .take(limit)
+      .toList();
+  if (fresh.length >= minimumUnseen || fresh.length >= limit) {
+    return fresh;
+  }
+  final fallback = candidates
+      .where((item) => seen.entries.containsKey(item.id))
+      .toList()
+    ..sort((a, b) => seen.entries[a.id]!.compareTo(seen.entries[b.id]!));
+  final ids = fresh.map((item) => item.id).toSet();
+  for (final item in fallback) {
+    if (fresh.length >= limit) break;
+    if (ids.add(item.id)) fresh.add(item);
+  }
+  return fresh;
+}
+
+List<String> personalSearchQueries({
+  required Iterable<({String title, String channelName})> history,
+  required Iterable<({String title, String channelName})> likes,
+  int limit = 3,
+}) {
+  final scores = <String, int>{};
+  final genres = <String, int>{};
+  const genreTerms = {
+    'acoustic', 'classical', 'carnatic', 'hindustani', 'folk', 'ghazal',
+    'qawwali', 'indie', 'pop', 'rock', 'jazz', 'rap', 'hip hop', 'country',
+    'edm', 'electronic', 'lofi', 'lo-fi', 'soundtrack', 'instrumental',
+  };
+  const titleNoise = {
+    'official', 'video', 'audio', 'lyrics', 'lyric', 'song', 'songs',
+    'full', 'hd', '4k', 'remaster', 'remastered', 'visualizer',
+  };
+  void add(Map<String, int> target, String value, int weight) {
+    final normalized = value
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\s\-–—|:•]+|[\s\-–—|:•]+$'), '')
+        .trim();
+    final words = normalized.split(' ').where((word) => word.isNotEmpty).toList();
+    if ((words.length == 1 && words.single.length < 4) ||
+        words.length > 6 ||
+        words.any(titleNoise.contains)) {
+      return;
+    }
+    target[normalized] = (target[normalized] ?? 0) + weight;
+  }
+
+  void collect(Iterable<({String title, String channelName})> entries) {
+    var index = 0;
+    for (final entry in entries) {
+      final weight = 40 - index.clamp(0, 20).toInt();
+      add(scores, entry.channelName, weight + 10);
+      final title = entry.title.toLowerCase();
+      for (final genre in genreTerms) {
+        if (RegExp(
+          '(?:^|[^a-z0-9])${RegExp.escape(genre)}(?:\$|[^a-z0-9])',
+        ).hasMatch(title)) {
+          genres[genre] = (genres[genre] ?? 0) + weight;
+        }
+      }
+      final parts = entry.title.split(RegExp(r'\s+(?:[-–—|:•])\s+'));
+      if (parts.length > 1) {
+        for (final part in parts.take(2)) {
+          add(scores, part, weight);
+        }
+      }
+      index++;
+    }
+  }
+
+  collect(history);
+  collect(likes);
+  final ranked = <({String value, int score, bool genre})>[
+    for (final entry in scores.entries)
+      (value: entry.key, score: entry.value, genre: false),
+    for (final entry in genres.entries)
+      (value: '${entry.key} music', score: entry.value, genre: true),
+  ]..sort((a, b) => b.score.compareTo(a.score));
+  final queries = <String>[];
+  for (final candidate in ranked) {
+    final query = candidate.genre ? candidate.value : '${candidate.value} music';
+    if (!queries.contains(query)) queries.add(query);
+    if (queries.length >= limit) break;
+  }
+  return queries;
+}
+
 List<VideoItem> rankHomeItems(
   Iterable<VideoItem> items, {
   required Set<String> preferred,
@@ -149,6 +250,7 @@ List<VideoItem> rankHomeItems(
   String source = 'home',
   Map<String, String?> probeResults = const {},
   ChannelLanguageCache? channelCache,
+  bool filterHindiDevotional = false,
 }) {
   final filter = ContentFilter(
     channelCache: channelCache ?? ChannelLanguageCache.instance,
@@ -163,6 +265,7 @@ List<VideoItem> rankHomeItems(
     random: random,
     source: source,
     probeResults: probeResults,
+    filterHindiDevotional: filterHindiDevotional,
   ).items;
 }
 

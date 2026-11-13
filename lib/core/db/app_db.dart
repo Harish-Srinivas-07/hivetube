@@ -5,6 +5,7 @@ import 'app_db_executor_vm.dart'
 
 import 'history_entry.dart';
 import 'tables.dart';
+import '../yt/channel_metadata.dart';
 
 export 'history_entry.dart';
 export 'tables.dart' hide Media;
@@ -52,12 +53,15 @@ class AppDb extends _$AppDb {
   AppDb([QueryExecutor? executor]) : super(executor ?? defaultAppDbExecutor());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+      await customStatement(
+        'CREATE UNIQUE INDEX history_video_scope_unique ON history(video_id, scope)',
+      );
       final now = DateTime.now().millisecondsSinceEpoch;
       await into(playlists).insert(
         PlaylistsCompanion.insert(
@@ -96,6 +100,25 @@ class AppDb extends _$AppDb {
         await m.createTable(suggestionCache);
         await m.createTable(channelEvidence);
       }
+      if (from >= 2 && from < 4) {
+        await m.addColumn(subscriptions, subscriptions.handle);
+      }
+      await customStatement('''
+        DELETE FROM history
+        WHERE id NOT IN (
+          SELECT latest.id FROM history AS latest
+          WHERE latest.id = (
+            SELECT candidate.id FROM history AS candidate
+            WHERE candidate.video_id = latest.video_id
+              AND candidate.scope = latest.scope
+            ORDER BY candidate.at DESC, candidate.id DESC
+            LIMIT 1
+          )
+        )
+      ''');
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS history_video_scope_unique ON history(video_id, scope)',
+      );
     },
   );
 
@@ -220,7 +243,13 @@ abstract interface class HistoryRepo {
 
 abstract interface class SubscriptionRepo {
   Future<List<String>> channelIds();
-  Future<void> setSubscribed(String channelId, bool subscribed);
+  Future<void> setSubscribed(
+    String channelId,
+    bool subscribed, {
+    String name,
+    String avatarUrl,
+    String handle,
+  });
 }
 
 class EmptyHistoryRepo implements HistoryRepo {
@@ -250,6 +279,9 @@ class DriftHistoryRepo implements HistoryRepo {
         Duration(milliseconds: r.history.positionMs),
         Duration(milliseconds: r.history.durationMs),
         channelName: r.media?.channelName ?? '',
+        title: r.media?.title ?? 'Untitled video',
+        channelId: r.media?.channelId ?? '',
+        thumbUrl: r.media?.thumbUrl ?? '',
       );
     }).toList();
   }
@@ -278,10 +310,11 @@ class DriftHistoryRepo implements HistoryRepo {
     }
     await db.historyDao.recordWatch(
       videoId: entry.videoId,
-      title: entry.videoId,
-      channelId: '',
+      title: entry.title,
+      channelId: entry.channelId,
       channelName: entry.channelName,
       durationSec: entry.duration.inSeconds,
+      thumbUrl: entry.thumbUrl,
       positionMs: entry.position.inMilliseconds,
       durationMs: entry.duration.inMilliseconds,
     );
@@ -302,9 +335,20 @@ class DriftSubscriptionRepo implements SubscriptionRepo {
   }
 
   @override
-  Future<void> setSubscribed(String channelId, bool subscribed) async {
+  Future<void> setSubscribed(
+    String channelId,
+    bool subscribed, {
+    String name = '',
+    String avatarUrl = '',
+    String handle = '',
+  }) async {
     if (subscribed) {
-      await db.subscriptionsDao.subscribe(channelId);
+      await db.subscriptionsDao.subscribe(
+        channelId,
+        name: name,
+        avatarUrl: avatarUrl,
+        handle: handle,
+      );
     } else {
       await db.subscriptionsDao.unsubscribe(channelId);
     }
@@ -316,7 +360,13 @@ typedef StoredSubscriptionRepo = DriftSubscriptionRepo;
 
 class EmptySubscriptionRepo implements SubscriptionRepo {
   @override
-  Future<void> setSubscribed(String channelId, bool subscribed) async {}
+  Future<void> setSubscribed(
+    String channelId,
+    bool subscribed, {
+    String name = '',
+    String avatarUrl = '',
+    String handle = '',
+  }) async {}
   @override
   Future<List<String>> channelIds() async => [];
 }

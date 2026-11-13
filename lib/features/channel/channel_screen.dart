@@ -168,7 +168,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
     final next = !isSubscribed;
     setState(() => isSubscribed = next);
     try {
-      await ref.read(subscriptionRepoProvider).setSubscribed(data!.id, next);
+      await ref.read(subscriptionRepoProvider).setSubscribed(
+        data!.id,
+        next,
+        name: data!.name,
+        avatarUrl: data!.avatarUrl,
+        handle: data!.handle,
+      );
     } catch (_) {
       if (mounted) setState(() => isSubscribed = !next);
     }

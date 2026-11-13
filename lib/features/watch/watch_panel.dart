@@ -889,16 +889,7 @@ class _MiniControlsOverlay extends StatelessWidget {
                       padding: const EdgeInsets.all(AppSpacing.xs),
                       constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
                       iconSize: AppSizes.iconLg,
-                      onPressed: () async {
-                        if (ended) {
-                          await service.seek(Duration.zero);
-                          await service.resume();
-                        } else if (playing) {
-                          await service.pause();
-                        } else {
-                          await service.resume();
-                        }
-                      },
+                      onPressed: service.togglePlayPause,
                       icon: Icon(
                         ended
                             ? LucideIcons.rotateCcw

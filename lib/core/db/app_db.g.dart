@@ -541,6 +541,16 @@ class $SubscriptionsTable extends Subscriptions
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _handleMeta = const VerificationMeta('handle');
+  @override
+  late final GeneratedColumn<String> handle = GeneratedColumn<String>(
+    'handle',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _subscribedAtMeta = const VerificationMeta(
     'subscribedAt',
   );
@@ -569,6 +579,7 @@ class $SubscriptionsTable extends Subscriptions
     channelId,
     name,
     avatarUrl,
+    handle,
     subscribedAt,
     lastFeedAt,
   ];
@@ -607,6 +618,12 @@ class $SubscriptionsTable extends Subscriptions
       );
     } else if (isInserting) {
       context.missing(_avatarUrlMeta);
+    }
+    if (data.containsKey('handle')) {
+      context.handle(
+        _handleMeta,
+        handle.isAcceptableOrUnknown(data['handle']!, _handleMeta),
+      );
     }
     if (data.containsKey('subscribed_at')) {
       context.handle(
@@ -649,6 +666,10 @@ class $SubscriptionsTable extends Subscriptions
         DriftSqlType.string,
         data['${effectivePrefix}avatar_url'],
       )!,
+      handle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}handle'],
+      )!,
       subscribedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}subscribed_at'],
@@ -670,12 +691,14 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
   final String channelId;
   final String name;
   final String avatarUrl;
+  final String handle;
   final int subscribedAt;
   final int lastFeedAt;
   const SubscriptionRow({
     required this.channelId,
     required this.name,
     required this.avatarUrl,
+    required this.handle,
     required this.subscribedAt,
     required this.lastFeedAt,
   });
@@ -685,6 +708,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
     map['channel_id'] = Variable<String>(channelId);
     map['name'] = Variable<String>(name);
     map['avatar_url'] = Variable<String>(avatarUrl);
+    map['handle'] = Variable<String>(handle);
     map['subscribed_at'] = Variable<int>(subscribedAt);
     map['last_feed_at'] = Variable<int>(lastFeedAt);
     return map;
@@ -695,6 +719,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
       channelId: Value(channelId),
       name: Value(name),
       avatarUrl: Value(avatarUrl),
+      handle: Value(handle),
       subscribedAt: Value(subscribedAt),
       lastFeedAt: Value(lastFeedAt),
     );
@@ -709,6 +734,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
       channelId: serializer.fromJson<String>(json['channelId']),
       name: serializer.fromJson<String>(json['name']),
       avatarUrl: serializer.fromJson<String>(json['avatarUrl']),
+      handle: serializer.fromJson<String>(json['handle']),
       subscribedAt: serializer.fromJson<int>(json['subscribedAt']),
       lastFeedAt: serializer.fromJson<int>(json['lastFeedAt']),
     );
@@ -720,6 +746,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
       'channelId': serializer.toJson<String>(channelId),
       'name': serializer.toJson<String>(name),
       'avatarUrl': serializer.toJson<String>(avatarUrl),
+      'handle': serializer.toJson<String>(handle),
       'subscribedAt': serializer.toJson<int>(subscribedAt),
       'lastFeedAt': serializer.toJson<int>(lastFeedAt),
     };
@@ -729,12 +756,14 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
     String? channelId,
     String? name,
     String? avatarUrl,
+    String? handle,
     int? subscribedAt,
     int? lastFeedAt,
   }) => SubscriptionRow(
     channelId: channelId ?? this.channelId,
     name: name ?? this.name,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    handle: handle ?? this.handle,
     subscribedAt: subscribedAt ?? this.subscribedAt,
     lastFeedAt: lastFeedAt ?? this.lastFeedAt,
   );
@@ -743,6 +772,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
       channelId: data.channelId.present ? data.channelId.value : this.channelId,
       name: data.name.present ? data.name.value : this.name,
       avatarUrl: data.avatarUrl.present ? data.avatarUrl.value : this.avatarUrl,
+      handle: data.handle.present ? data.handle.value : this.handle,
       subscribedAt: data.subscribedAt.present
           ? data.subscribedAt.value
           : this.subscribedAt,
@@ -758,6 +788,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
           ..write('channelId: $channelId, ')
           ..write('name: $name, ')
           ..write('avatarUrl: $avatarUrl, ')
+          ..write('handle: $handle, ')
           ..write('subscribedAt: $subscribedAt, ')
           ..write('lastFeedAt: $lastFeedAt')
           ..write(')'))
@@ -766,7 +797,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
 
   @override
   int get hashCode =>
-      Object.hash(channelId, name, avatarUrl, subscribedAt, lastFeedAt);
+      Object.hash(channelId, name, avatarUrl, handle, subscribedAt, lastFeedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -774,6 +805,7 @@ class SubscriptionRow extends DataClass implements Insertable<SubscriptionRow> {
           other.channelId == this.channelId &&
           other.name == this.name &&
           other.avatarUrl == this.avatarUrl &&
+          other.handle == this.handle &&
           other.subscribedAt == this.subscribedAt &&
           other.lastFeedAt == this.lastFeedAt);
 }
@@ -782,6 +814,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
   final Value<String> channelId;
   final Value<String> name;
   final Value<String> avatarUrl;
+  final Value<String> handle;
   final Value<int> subscribedAt;
   final Value<int> lastFeedAt;
   final Value<int> rowid;
@@ -789,6 +822,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
     this.channelId = const Value.absent(),
     this.name = const Value.absent(),
     this.avatarUrl = const Value.absent(),
+    this.handle = const Value.absent(),
     this.subscribedAt = const Value.absent(),
     this.lastFeedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -797,6 +831,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
     required String channelId,
     required String name,
     required String avatarUrl,
+    this.handle = const Value.absent(),
     required int subscribedAt,
     this.lastFeedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -808,6 +843,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
     Expression<String>? channelId,
     Expression<String>? name,
     Expression<String>? avatarUrl,
+    Expression<String>? handle,
     Expression<int>? subscribedAt,
     Expression<int>? lastFeedAt,
     Expression<int>? rowid,
@@ -816,6 +852,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
       if (channelId != null) 'channel_id': channelId,
       if (name != null) 'name': name,
       if (avatarUrl != null) 'avatar_url': avatarUrl,
+      if (handle != null) 'handle': handle,
       if (subscribedAt != null) 'subscribed_at': subscribedAt,
       if (lastFeedAt != null) 'last_feed_at': lastFeedAt,
       if (rowid != null) 'rowid': rowid,
@@ -826,6 +863,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
     Value<String>? channelId,
     Value<String>? name,
     Value<String>? avatarUrl,
+    Value<String>? handle,
     Value<int>? subscribedAt,
     Value<int>? lastFeedAt,
     Value<int>? rowid,
@@ -834,6 +872,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
       channelId: channelId ?? this.channelId,
       name: name ?? this.name,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      handle: handle ?? this.handle,
       subscribedAt: subscribedAt ?? this.subscribedAt,
       lastFeedAt: lastFeedAt ?? this.lastFeedAt,
       rowid: rowid ?? this.rowid,
@@ -851,6 +890,9 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
     }
     if (avatarUrl.present) {
       map['avatar_url'] = Variable<String>(avatarUrl.value);
+    }
+    if (handle.present) {
+      map['handle'] = Variable<String>(handle.value);
     }
     if (subscribedAt.present) {
       map['subscribed_at'] = Variable<int>(subscribedAt.value);
@@ -870,6 +912,7 @@ class SubscriptionsCompanion extends UpdateCompanion<SubscriptionRow> {
           ..write('channelId: $channelId, ')
           ..write('name: $name, ')
           ..write('avatarUrl: $avatarUrl, ')
+          ..write('handle: $handle, ')
           ..write('subscribedAt: $subscribedAt, ')
           ..write('lastFeedAt: $lastFeedAt, ')
           ..write('rowid: $rowid')
@@ -8194,6 +8237,7 @@ typedef $$SubscriptionsTableCreateCompanionBuilder =
       required String channelId,
       required String name,
       required String avatarUrl,
+      Value<String> handle,
       required int subscribedAt,
       Value<int> lastFeedAt,
       Value<int> rowid,
@@ -8203,6 +8247,7 @@ typedef $$SubscriptionsTableUpdateCompanionBuilder =
       Value<String> channelId,
       Value<String> name,
       Value<String> avatarUrl,
+      Value<String> handle,
       Value<int> subscribedAt,
       Value<int> lastFeedAt,
       Value<int> rowid,
@@ -8229,6 +8274,11 @@ class $$SubscriptionsTableFilterComposer
 
   ColumnFilters<String> get avatarUrl => $composableBuilder(
     column: $table.avatarUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get handle => $composableBuilder(
+    column: $table.handle,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8267,6 +8317,11 @@ class $$SubscriptionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get handle => $composableBuilder(
+    column: $table.handle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get subscribedAt => $composableBuilder(
     column: $table.subscribedAt,
     builder: (column) => ColumnOrderings(column),
@@ -8295,6 +8350,9 @@ class $$SubscriptionsTableAnnotationComposer
 
   GeneratedColumn<String> get avatarUrl =>
       $composableBuilder(column: $table.avatarUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get handle =>
+      $composableBuilder(column: $table.handle, builder: (column) => column);
 
   GeneratedColumn<int> get subscribedAt => $composableBuilder(
     column: $table.subscribedAt,
@@ -8341,6 +8399,7 @@ class $$SubscriptionsTableTableManager
                 Value<String> channelId = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> avatarUrl = const Value.absent(),
+                Value<String> handle = const Value.absent(),
                 Value<int> subscribedAt = const Value.absent(),
                 Value<int> lastFeedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8348,6 +8407,7 @@ class $$SubscriptionsTableTableManager
                 channelId: channelId,
                 name: name,
                 avatarUrl: avatarUrl,
+                handle: handle,
                 subscribedAt: subscribedAt,
                 lastFeedAt: lastFeedAt,
                 rowid: rowid,
@@ -8357,6 +8417,7 @@ class $$SubscriptionsTableTableManager
                 required String channelId,
                 required String name,
                 required String avatarUrl,
+                Value<String> handle = const Value.absent(),
                 required int subscribedAt,
                 Value<int> lastFeedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -8364,6 +8425,7 @@ class $$SubscriptionsTableTableManager
                 channelId: channelId,
                 name: name,
                 avatarUrl: avatarUrl,
+                handle: handle,
                 subscribedAt: subscribedAt,
                 lastFeedAt: lastFeedAt,
                 rowid: rowid,

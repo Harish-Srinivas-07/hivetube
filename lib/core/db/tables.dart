@@ -22,6 +22,7 @@ class Subscriptions extends Table {
   TextColumn get channelId => text()();
   TextColumn get name => text()();
   TextColumn get avatarUrl => text()();
+  TextColumn get handle => text().withDefault(const Constant(''))();
   IntColumn get subscribedAt => integer()();
   IntColumn get lastFeedAt => integer().withDefault(const Constant(0))();
   @override
@@ -223,5 +224,3 @@ class ChannelEvidence extends Table {
   @override
   Set<Column> get primaryKey => {channelId, videoId};
 }
-
-

@@ -89,7 +89,18 @@ class StreamCache {
     int? quality,
   }) async {
     final entry = await _get(id);
-    final selected = selectStreams(entry.data, mode);
+    final allSelected = selectStreams(entry.data, mode);
+    final selected = mode == PlaybackMode.short
+        ? SelectedStreams(
+            allSelected.videos.where((format) {
+              final resolution = format.width > 0 && format.width < format.height
+                  ? format.width
+                  : format.height;
+              return resolution <= 720 && format.mimeType.contains('avc1');
+            }).toList(),
+            allSelected.audio,
+          )
+        : allSelected;
     if (selected.audio == null) {
       const error = StreamException(StreamError.noStreams);
       _verdicts[id] = _Verdict(error, _clock());

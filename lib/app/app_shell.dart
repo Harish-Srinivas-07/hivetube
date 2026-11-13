@@ -10,7 +10,6 @@ import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
-import '../widgets/app_top_bar.dart';
 import '../widgets/home_top_bar.dart';
 import '../widgets/floating_nav.dart';
 import '../core/providers.dart';
@@ -43,6 +42,10 @@ class AppShell extends ConsumerWidget {
     }
 
     Future<void> select(int index) async {
+      if (navigationShell.currentIndex == index) {
+        ref.read(tabRefreshProvider.notifier).request(index);
+        return;
+      }
       if (index == 1 && navigationShell.currentIndex != 1) {
         // Navigating TO Shorts: stop mini player
         ref.read(watchPanelProvider.notifier).close();
@@ -136,7 +139,7 @@ class AppShell extends ConsumerWidget {
                   bottom: false,
                   child: Column(
                     children: [
-                      if (home) const HomeTopBar() else const AppTopBar(),
+                      const HomeTopBar(),
                       Expanded(
                         child: Row(
                           children: [

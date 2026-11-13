@@ -42,15 +42,19 @@ class ChannelVoteEntry {
 class ChannelLanguageCache extends ChangeNotifier {
   static ChannelLanguageCache? _instance;
   static ChannelLanguageCache get instance =>
-      _instance ??= ChannelLanguageCache(AppDb());
+      _instance ??= ChannelLanguageCache._memory();
   static set instance(ChannelLanguageCache inst) => _instance = inst;
 
-  ChannelLanguageCache(this.db) {
+  ChannelLanguageCache(AppDb db) : this._(db);
+
+  ChannelLanguageCache._memory() : this._(null);
+
+  ChannelLanguageCache._(this.db) {
     _initSeedChannels();
     _loadFromDb();
   }
 
-  final AppDb db;
+  final AppDb? db;
   final Map<String, ChannelVoteEntry> _cache = {};
 
   void _initSeedChannels() {
@@ -69,8 +73,10 @@ class ChannelLanguageCache extends ChangeNotifier {
   }
 
   Future<void> _loadFromDb() async {
+    final database = db;
+    if (database == null) return;
     try {
-      final raw = await db.getValue('channel_language_cache_v1');
+      final raw = await database.getValue('channel_language_cache_v1');
       if (raw != null) {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
         final now = DateTime.now();
@@ -88,9 +94,11 @@ class ChannelLanguageCache extends ChangeNotifier {
   }
 
   Future<void> _saveToDb() async {
+    final database = db;
+    if (database == null) return;
     try {
       final encoded = jsonEncode(_cache.map((k, v) => MapEntry(k, v.toJson())));
-      await db.setValue('channel_language_cache_v1', encoded);
+      await database.setValue('channel_language_cache_v1', encoded);
     } catch (_) {}
   }
 

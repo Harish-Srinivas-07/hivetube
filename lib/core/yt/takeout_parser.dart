@@ -14,70 +14,86 @@ class TakeoutSubscription {
   int get hashCode => channelId.hashCode;
 }
 
+/// Parses the `subscriptions.csv` file in a YouTube Google Takeout archive.
+///
+/// Takeout's standard header is `Channel Id,Channel Url,Channel Title`. The
+/// parser also accepts headerless CSVs, UTF-8 BOMs, quoted commas, escaped
+/// quotes, and quoted values containing line breaks.
 List<TakeoutSubscription> parseTakeoutCsv(String csvContent) {
-  final lines = csvContent.split(RegExp(r'\r?\n'));
-  final results = <TakeoutSubscription>[];
+  final rows = _parseCsv(csvContent.replaceFirst('\uFEFF', ''));
+  if (rows.isEmpty) return const [];
 
-  if (lines.isEmpty) return results;
+  var channelIdIdx = -1;
+  var titleIdx = -1;
+  final result = <TakeoutSubscription>[];
+  final seen = <String>{};
 
-  int channelIdIdx = -1;
-  int titleIdx = -1;
+  for (final columns in rows) {
+    if (columns.every((column) => column.trim().isEmpty)) continue;
 
-  for (var i = 0; i < lines.length; i++) {
-    final line = lines[i].trim();
-    if (line.isEmpty) continue;
-
-    final columns = _parseCsvLine(line);
     if (channelIdIdx == -1 || titleIdx == -1) {
       for (var col = 0; col < columns.length; col++) {
-        final lower = columns[col].trim().toLowerCase();
-        if (lower == 'channel id' || lower == 'channelid') {
+        final header = columns[col].trim().toLowerCase();
+        if (header == 'channel id' || header == 'channelid') {
           channelIdIdx = col;
-        } else if (lower == 'channel title' || lower == 'channeltitle' || lower == 'title') {
+        } else if (header == 'channel title' ||
+            header == 'channeltitle' ||
+            header == 'title') {
           titleIdx = col;
         }
       }
       if (channelIdIdx != -1 && titleIdx != -1) continue;
     }
 
-    // Process data rows
-    final idIdx = channelIdIdx != -1 ? channelIdIdx : 0;
-    final tIdx = titleIdx != -1 ? titleIdx : (columns.length > 2 ? 2 : 1);
+    final idIdx = channelIdIdx == -1 ? 0 : channelIdIdx;
+    final nameIdx = titleIdx == -1 ? (columns.length > 2 ? 2 : 1) : titleIdx;
+    if (idIdx >= columns.length) continue;
 
-    if (idIdx < columns.length) {
-      final id = columns[idIdx].trim();
-      final title = tIdx < columns.length ? columns[tIdx].trim() : id;
-      if (id.startsWith('UC') && id.length >= 20) {
-        results.add(TakeoutSubscription(channelId: id, title: title));
-      }
+    final id = columns[idIdx].trim();
+    final title = nameIdx < columns.length ? columns[nameIdx].trim() : '';
+    if (!RegExp(r'^UC[A-Za-z0-9_-]{20,}$').hasMatch(id) || !seen.add(id)) {
+      continue;
     }
+    result.add(
+      TakeoutSubscription(channelId: id, title: title.isEmpty ? id : title),
+    );
   }
 
-  return results;
+  return result;
 }
 
-List<String> _parseCsvLine(String line) {
-  final result = <String>[];
+List<List<String>> _parseCsv(String input) {
+  final rows = <List<String>>[];
+  var row = <String>[];
+  final field = StringBuffer();
   var inQuotes = false;
-  final current = StringBuffer();
 
-  for (var i = 0; i < line.length; i++) {
-    final char = line[i];
+  for (var i = 0; i < input.length; i++) {
+    final char = input[i];
     if (char == '"') {
-      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-        current.write('"');
+      if (inQuotes && i + 1 < input.length && input[i + 1] == '"') {
+        field.write('"');
         i++;
       } else {
         inQuotes = !inQuotes;
       }
     } else if (char == ',' && !inQuotes) {
-      result.add(current.toString());
-      current.clear();
+      row.add(field.toString());
+      field.clear();
+    } else if ((char == '\n' || char == '\r') && !inQuotes) {
+      if (char == '\r' && i + 1 < input.length && input[i + 1] == '\n') i++;
+      row.add(field.toString());
+      field.clear();
+      rows.add(row);
+      row = <String>[];
     } else {
-      current.write(char);
+      field.write(char);
     }
   }
-  result.add(current.toString());
-  return result;
-}
 
+  if (field.isNotEmpty || row.isNotEmpty) {
+    row.add(field.toString());
+    rows.add(row);
+  }
+  return rows;
+}

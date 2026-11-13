@@ -32,16 +32,50 @@ class SubscriptionsDao extends DatabaseAccessor<AppDb> with _$SubscriptionsDaoMi
     String channelId, {
     String name = '',
     String avatarUrl = '',
-  }) =>
-      into(subscriptions).insertOnConflictUpdate(
-        SubscriptionsCompanion.insert(
-          channelId: channelId,
-          name: name.isNotEmpty ? name : channelId,
-          avatarUrl: avatarUrl,
-          subscribedAt: DateTime.now().millisecondsSinceEpoch,
-          lastFeedAt: const Value(0),
-        ),
-      );
+    String handle = '',
+  }) async {
+    final existing = await getSubscription(channelId);
+    final normalizedAvatar = normalizeChannelAvatarUrl(avatarUrl);
+    await into(subscriptions).insertOnConflictUpdate(
+      SubscriptionsCompanion.insert(
+        channelId: channelId,
+        name: isMissingChannelName(name, channelId)
+            ? (existing?.name ?? channelId)
+            : name.trim(),
+        avatarUrl: normalizedAvatar.isNotEmpty
+            ? normalizedAvatar
+            : (existing?.avatarUrl ?? ''),
+        handle: Value(handle.isNotEmpty ? handle : (existing?.handle ?? '')),
+        subscribedAt: existing?.subscribedAt ??
+            DateTime.now().millisecondsSinceEpoch,
+        lastFeedAt: Value(existing?.lastFeedAt ?? 0),
+      ),
+    );
+  }
+
+  Future<void> updateDetails({
+    required String channelId,
+    required String name,
+    required String avatarUrl,
+    required String handle,
+  }) async {
+    final existing = await getSubscription(channelId);
+    if (existing == null) return;
+    await (update(subscriptions)..where((t) => t.channelId.equals(channelId)))
+        .write(
+          SubscriptionsCompanion(
+            name: isMissingChannelName(name, channelId)
+                ? Value(existing.name)
+                : Value(name.trim()),
+            avatarUrl: Value(
+              normalizeChannelAvatarUrl(avatarUrl).isNotEmpty
+                  ? normalizeChannelAvatarUrl(avatarUrl)
+                  : existing.avatarUrl,
+            ),
+            handle: Value(handle.isNotEmpty ? handle : existing.handle),
+          ),
+        );
+  }
 
   Future<void> unsubscribe(String channelId) =>
       (delete(subscriptions)..where((t) => t.channelId.equals(channelId))).go();
@@ -138,28 +172,117 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
     String scope = 'yt',
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
+    await transaction(() async {
+      final oldMedia = await (select(media)
+            ..where((t) => t.videoId.equals(videoId)))
+          .getSingleOrNull();
+      final safeTitle = !isMissingVideoTitle(title, videoId)
+          ? title.trim()
+          : oldMedia != null && !isMissingVideoTitle(oldMedia.title, videoId)
+          ? oldMedia.title
+          : 'Untitled video';
+      final safeChannelId = channelId.isNotEmpty
+          ? channelId
+          : oldMedia?.channelId ?? '';
+      final safeChannelName = channelName.isNotEmpty
+          ? channelName
+          : oldMedia?.channelName ?? '';
+      final safeThumb = thumbUrl?.isNotEmpty == true
+          ? thumbUrl!
+          : (oldMedia?.thumbUrl.isNotEmpty == true
+                ? oldMedia!.thumbUrl
+                : 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg');
+      final safeDurationSec = durationSec != null && durationSec > 0
+          ? durationSec
+          : oldMedia?.durationSec;
+
+      await into(media).insertOnConflictUpdate(
+        MediaCompanion.insert(
+          videoId: videoId,
+          title: safeTitle,
+          channelId: safeChannelId,
+          channelName: safeChannelName,
+          durationSec: Value(safeDurationSec),
+          thumbUrl: safeThumb,
+          isMusic: Value(isMusic || (oldMedia?.isMusic ?? false)),
+          updatedAt: now,
+        ),
+      );
+
+      final rows = await (select(history)
+            ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.at),
+              (t) => OrderingTerm.desc(t.id),
+            ]))
+          .get();
+      if (rows.isEmpty) {
+        await into(history).insert(
+          HistoryCompanion.insert(
+            videoId: videoId,
+            positionMs: positionMs,
+            durationMs: durationMs,
+            at: now,
+            scope: Value(scope),
+          ),
+        );
+      } else {
+        final latest = rows.first;
+        if (rows.length > 1) {
+          await (delete(history)
+                ..where(
+                  (t) =>
+                      t.videoId.equals(videoId) &
+                      t.scope.equals(scope) &
+                      t.id.isNotIn(rows.map((row) => row.id)),
+                ))
+              .go();
+        }
+        await (update(history)..where((t) => t.id.equals(latest.id))).write(
+          HistoryCompanion(
+            positionMs: Value(positionMs),
+            durationMs: Value(durationMs),
+            at: Value(now),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> updateMediaMetadata({
+    required String videoId,
+    required String title,
+    required String channelId,
+    required String channelName,
+    required String thumbUrl,
+    int? durationSec,
+  }) async {
+    final existing = await (select(media)
+          ..where((t) => t.videoId.equals(videoId)))
+        .getSingleOrNull();
+    final safeTitle = !isMissingVideoTitle(title, videoId)
+        ? title
+        : existing != null && !isMissingVideoTitle(existing.title, videoId)
+        ? existing.title
+        : 'Untitled video';
     await into(media).insertOnConflictUpdate(
       MediaCompanion.insert(
         videoId: videoId,
-        title: title,
-        channelId: channelId,
-        channelName: channelName,
-        durationSec: Value(durationSec),
-        thumbUrl: thumbUrl ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
-        isMusic: Value(isMusic),
-        updatedAt: now,
-      ),
-    );
-    await (delete(history)
-          ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope)))
-        .go();
-    await into(history).insert(
-      HistoryCompanion.insert(
-        videoId: videoId,
-        positionMs: positionMs,
-        durationMs: durationMs,
-        at: now,
-        scope: Value(scope),
+        title: safeTitle,
+        channelId: channelId.isNotEmpty ? channelId : existing?.channelId ?? '',
+        channelName: channelName.isNotEmpty
+            ? channelName
+            : existing?.channelName ?? '',
+        durationSec: Value(
+          durationSec != null && durationSec > 0
+              ? durationSec
+              : existing?.durationSec,
+        ),
+        thumbUrl: thumbUrl.isNotEmpty
+            ? thumbUrl
+            : existing?.thumbUrl ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+        isMusic: Value(existing?.isMusic ?? false),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
   }

@@ -74,6 +74,7 @@ class WatchScreen extends ConsumerStatefulWidget {
 class _WatchScreenState extends ConsumerState<WatchScreen> {
   late String id;
   String? started;
+  final Set<String> _metadataWritten = {};
   PlaybackService? _activeService;
   String? panel;
   bool subscribed = false;
@@ -298,6 +299,23 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       continuation = info.related.continuation;
     }
     if (info != null) {
+      if (_metadataWritten.add(info.id)) {
+        unawaited(
+          ref
+              .read(dbProvider)
+              .historyDao
+              .updateMediaMetadata(
+                videoId: info.id,
+                title: info.title,
+                channelId: info.channelId,
+                channelName: info.channelName,
+                thumbUrl: info.thumbnail.isNotEmpty
+                    ? info.thumbnail
+                    : 'https://i.ytimg.com/vi/${info.id}/hqdefault.jpg',
+                durationSec: info.durationSec,
+              ),
+        );
+      }
       ref.read(subscriptionRepoProvider).channelIds().then((ids) {
         if (mounted &&
             id == info.id &&
@@ -408,11 +426,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         }
         if (ui.locked || service == null) return KeyEventResult.ignored;
         if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.keyK) {
-          unawaited(
-            service.state.status == PlayerStatus.playing
-                ? service.pause()
-                : service.resume(),
-          );
+          unawaited(service.togglePlayPause());
         } else if (key == LogicalKeyboardKey.keyJ ||
             key == LogicalKeyboardKey.arrowLeft) {
           final seek = service.state.position - const Duration(seconds: 10);
@@ -691,7 +705,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                             final value = !subscribed;
                             await ref
                                 .read(subscriptionRepoProvider)
-                                .setSubscribed(info.channelId, value);
+                                .setSubscribed(
+                                  info.channelId,
+                                  value,
+                                  name: info.channelName,
+                                  avatarUrl: info.avatar,
+                                  handle: info.handle,
+                                );
                             if (mounted) setState(() => subscribed = value);
                           },
                     style: FilledButton.styleFrom(
@@ -750,41 +770,45 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         ),
                       ),
                     ),
-                    _action(
-                      LucideIcons.clock,
-                      'Watch later',
-                      () async {
-                        final db = ref.read(dbProvider);
-                        final wl = await db.playlistsDao.getOrCreateWatchLater();
-                        final inWl = await db.playlistsDao.isInPlaylist(wl.id, id);
-                        if (inWl) {
-                          await db.playlistsDao.removePlaylistItem(wl.id, id);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Removed from Watch Later')),
-                            );
-                          }
-                        } else {
-                          await db.playlistsDao.addPlaylistItem(
-                            wl.id,
-                            id,
-                            mediaItem: MediaCompanion.insert(
-                              videoId: id,
-                              title: info.title,
-                              channelId: info.channelId,
-                              channelName: info.channelName,
-                              thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-                              updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    _action(LucideIcons.clock, 'Watch later', () async {
+                      final db = ref.read(dbProvider);
+                      final wl = await db.playlistsDao.getOrCreateWatchLater();
+                      final inWl = await db.playlistsDao.isInPlaylist(
+                        wl.id,
+                        id,
+                      );
+                      if (inWl) {
+                        await db.playlistsDao.removePlaylistItem(wl.id, id);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Removed from Watch Later'),
                             ),
                           );
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Saved to Watch Later')),
-                            );
-                          }
                         }
-                      },
-                    ),
+                      } else {
+                        await db.playlistsDao.addPlaylistItem(
+                          wl.id,
+                          id,
+                          mediaItem: MediaCompanion.insert(
+                            videoId: id,
+                            title: info.title,
+                            channelId: info.channelId,
+                            channelName: info.channelName,
+                            thumbUrl:
+                                'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                            updatedAt: DateTime.now().millisecondsSinceEpoch,
+                          ),
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Saved to Watch Later'),
+                            ),
+                          );
+                        }
+                      }
+                    }),
                     _action(
                       LucideIcons.listVideo,
                       'Queue',
@@ -991,16 +1015,18 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         final db = ref.read(dbProvider);
         await db.reactionsDao.setReaction(id, next);
         if (next != null) {
-          await db.into(db.media).insertOnConflictUpdate(
-            MediaCompanion.insert(
-              videoId: id,
-              title: info.title,
-              channelId: info.channelId,
-              channelName: info.channelName,
-              thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
+          await db
+              .into(db.media)
+              .insertOnConflictUpdate(
+                MediaCompanion.insert(
+                  videoId: id,
+                  title: info.title,
+                  channelId: info.channelId,
+                  channelName: info.channelName,
+                  thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                  updatedAt: DateTime.now().millisecondsSinceEpoch,
+                ),
+              );
         }
       },
       onDislike: () async {
@@ -1023,6 +1049,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       onPressed: action,
     );
   }
+
   void _soon() => ScaffoldMessenger.of(
     context,
   ).showSnackBar(const SnackBar(content: Text('Coming soon')));
@@ -1043,7 +1070,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   child: CachedNetworkImage(
                     imageUrl: item.thumbUrl,
                     fit: BoxFit.cover,
-                    errorWidget: (_, _, _) => const ColoredBox(color: AppColors.shortsBackground),
+                    errorWidget: (_, _, _) =>
+                        const ColoredBox(color: AppColors.shortsBackground),
                   ),
                 ),
               ),
@@ -1055,7 +1083,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               style: Theme.of(context).textTheme.titleSmall,
             ),
             subtitle: Text(
-              [item.channelName, item.viewsText].where((s) => s.isNotEmpty).join(' · '),
+              [
+                item.channelName,
+                item.viewsText,
+              ].where((s) => s.isNotEmpty).join(' · '),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -1074,7 +1105,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     child: CachedNetworkImage(
                       imageUrl: item.thumbUrl,
                       fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => const ColoredBox(color: AppColors.shortsBackground),
+                      errorWidget: (_, _, _) =>
+                          const ColoredBox(color: AppColors.shortsBackground),
                     ),
                   ),
                 ),

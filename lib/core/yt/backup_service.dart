@@ -101,6 +101,7 @@ class BackupService {
               'channelId': s.channelId,
               'name': s.name,
               'avatarUrl': s.avatarUrl,
+              'handle': s.handle,
               'subscribedAt': s.subscribedAt,
               'lastFeedAt': s.lastFeedAt,
             },
@@ -183,6 +184,7 @@ class BackupService {
                   channelId: s['channelId'] as String,
                   name: (s['name'] as String?) ?? '',
                   avatarUrl: (s['avatarUrl'] as String?) ?? '',
+                  handle: Value((s['handle'] as String?) ?? ''),
                   subscribedAt:
                       (s['subscribedAt'] as int?) ??
                       DateTime.now().millisecondsSinceEpoch,
@@ -282,17 +284,34 @@ class BackupService {
                   ),
                 );
           }
-          await db
-              .into(db.history)
-              .insert(
-                HistoryCompanion.insert(
-                  videoId: vId,
-                  positionMs: (h['positionMs'] as int?) ?? 0,
-                  durationMs: (h['durationMs'] as int?) ?? 0,
-                  at: (h['at'] as int?) ?? now,
-                  scope: Value((h['scope'] as String?) ?? 'yt'),
-                ),
-              );
+          final scope = (h['scope'] as String?) ?? 'yt';
+          final at = (h['at'] as int?) ?? now;
+          final existing = await (db.select(db.history)
+                ..where(
+                  (row) => row.videoId.equals(vId) & row.scope.equals(scope),
+                ))
+              .getSingleOrNull();
+          if (existing == null) {
+            await db.into(db.history).insert(
+              HistoryCompanion.insert(
+                videoId: vId,
+                positionMs: (h['positionMs'] as int?) ?? 0,
+                durationMs: (h['durationMs'] as int?) ?? 0,
+                at: at,
+                scope: Value(scope),
+              ),
+            );
+          } else if (at > existing.at) {
+            await (db.update(db.history)
+                  ..where((row) => row.id.equals(existing.id)))
+                .write(
+                  HistoryCompanion(
+                    positionMs: Value((h['positionMs'] as int?) ?? 0),
+                    durationMs: Value((h['durationMs'] as int?) ?? 0),
+                    at: Value(at),
+                  ),
+                );
+          }
         }
       }
 

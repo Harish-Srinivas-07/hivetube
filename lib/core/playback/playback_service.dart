@@ -52,6 +52,22 @@ class PlayRequest {
   final bool play;
 }
 
+class _PreparedShort {
+  const _PreparedShort({
+    required this.videoId,
+    required this.player,
+    required this.controller,
+    required this.streams,
+    required this.audioUri,
+  });
+
+  final String videoId;
+  final Player player;
+  final VideoController controller;
+  final SelectedStreams streams;
+  final Uri audioUri;
+}
+
 class PlaybackSnapshot {
   PlayerStatus status = PlayerStatus.idle;
   SeekState seekState = SeekState.idle;
@@ -76,67 +92,9 @@ class PlaybackSnapshot {
 
 class PlaybackService extends ChangeNotifier {
   PlaybackService(this.cache, this.relay, this.history) {
-    _seekController = SeekController(
-      player: player,
-      getDuration: () => state.duration,
-      getPosition: () => state.position,
-      getStatus: () => state.status,
-      isUserPaused: () => _userPaused,
-      onSeekStateChanged: (s, target) {
-        state.seekState = s;
-        state.seekTarget = target;
-        _notify();
-      },
-      onRecovery: _recover,
-      onAudioSyncCheck: () async {
-        if (_currentAudioUri != null) {
-          final platform = player.platform;
-          if (platform is NativePlayer) {
-            final coreIdle = await platform.getProperty('core-idle');
-            if (coreIdle == 'yes' && player.state.playing) {
-              _debugLog('audio core-idle detected after seek; re-attaching audio track');
-              await player.setAudioTrack(AudioTrack.uri(_currentAudioUri.toString()));
-            }
-          }
-        }
-      },
-      onPlaybackResume: () async {
-        state.status = PlayerStatus.playing;
-        if (!_userPaused && _visible && await _activateAudioFocus()) {
-          await player.play();
-        }
-        _notify();
-      },
-    );
-    final platform = player.platform;
-    if (platform is NativePlayer) {
-      unawaited(platform.setProperty('demuxer-max-bytes', '268435456'));
-      unawaited(platform.setProperty('cache-secs', '300'));
-      unawaited(platform.setProperty('keep-open', 'yes'));
-      unawaited(
-        platform.observeProperty('seeking', (val) async {
-          _mpvSeeking = val == 'yes';
-          _seekController.updateMpvProperties(seeking: _mpvSeeking);
-          _debugLog('mpv property seeking = $val');
-        }),
-      );
-      unawaited(
-        platform.observeProperty('paused-for-cache', (val) async {
-          _seekController.updateMpvProperties(pausedForCache: val == 'yes');
-          _debugLog('mpv property paused-for-cache = $val');
-        }),
-      );
-      for (final prop in [
-        'core-idle',
-        'demuxer-cache-time',
-      ]) {
-        unawaited(
-          platform.observeProperty(prop, (val) async {
-            _debugLog('mpv property $prop = $val');
-          }),
-        );
-      }
-    }
+    _seekController = _createSeekController();
+    _configurePlayer(player, shortBuffer: false);
+    _observeActivePlayer(player);
     _listen();
     _audioFocus.setMethodCallHandler(_onAudioFocus);
   }
@@ -144,23 +102,98 @@ class PlaybackService extends ChangeNotifier {
   void _debugLog(String msg) {
     stdout.writeln('[PlaybackService] $msg');
   }
+
+  SeekController _createSeekController() => SeekController(
+    player: player,
+    getDuration: () => state.duration,
+    getPosition: () => state.position,
+    getStatus: () => state.status,
+    isUserPaused: () => _userPaused,
+    onSeekStateChanged: (s, target) {
+      state.seekState = s;
+      state.seekTarget = target;
+      _notify();
+    },
+    onRecovery: _recover,
+    onAudioSyncCheck: () async {
+      if (_currentAudioUri != null) {
+        final platform = player.platform;
+        if (platform is NativePlayer) {
+          final coreIdle = await platform.getProperty('core-idle');
+          if (coreIdle == 'yes' && player.state.playing) {
+            _debugLog('audio core-idle detected after seek; re-attaching audio track');
+            await player.setAudioTrack(AudioTrack.uri(_currentAudioUri.toString()));
+          }
+        }
+      }
+    },
+    onPlaybackResume: () async {
+      state.status = PlayerStatus.playing;
+      if (!_userPaused && _visible && await _activateAudioFocus()) {
+        await player.play();
+      }
+      _notify();
+    },
+  );
+
+  void _configurePlayer(Player target, {required bool shortBuffer}) {
+    final platform = target.platform;
+    if (platform is! NativePlayer) return;
+    unawaited(
+      platform.setProperty(
+        'demuxer-max-bytes',
+        shortBuffer ? '33554432' : '268435456',
+      ),
+    );
+    unawaited(platform.setProperty('cache-secs', shortBuffer ? '30' : '300'));
+    unawaited(platform.setProperty('keep-open', 'yes'));
+  }
+
+  void _observeActivePlayer(Player target) {
+    if (!_observedPlayers.add(target)) return;
+    final platform = target.platform;
+    if (platform is! NativePlayer) return;
+    unawaited(
+      platform.observeProperty('seeking', (value) async {
+        if (!identical(_player, target)) return;
+        _mpvSeeking = value == 'yes';
+        _seekController.updateMpvProperties(seeking: _mpvSeeking);
+      }),
+    );
+    unawaited(
+      platform.observeProperty('paused-for-cache', (value) async {
+        if (!identical(_player, target)) return;
+        _seekController.updateMpvProperties(pausedForCache: value == 'yes');
+      }),
+    );
+  }
+
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
-  final Player player = Player();
-  late final VideoController controller = VideoController(player);
+  Player _player = Player();
+  late VideoController _controller = VideoController(_player);
+  Player get player => _player;
+  VideoController get controller => _controller;
+  Player? _nextPlayer;
+  VideoController? _nextController;
+  _PreparedShort? _preparedShort;
+  Future<void> _shortPreloadTail = Future.value();
+  int _shortPreloadGeneration = 0;
+  final Set<Player> _observedPlayers = {};
   final PlaybackSnapshot state = PlaybackSnapshot();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   PlayRequest? request;
   final _loadGuard = LoadGuard();
   final _budget = RecoveryBudget();
   final _failureMonitor = PlaybackFailureMonitor();
-  late final SeekController _seekController;
+  late SeekController _seekController;
   bool _switching = false, _disposed = false, _userPaused = false;
   bool _visible = true, _resumeAfterVisibility = false;
   bool _resumeAfterFocus = false;
   bool _mpvSeeking = false;
   Uri? _currentAudioUri;
+  String? _activeFrameVideoId;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
 
   Future<void> _onAudioFocus(MethodCall call) async {
@@ -202,10 +235,15 @@ class PlaybackService extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  bool isFrameReadyFor(String videoId) => _activeFrameVideoId == videoId;
+
   void _listen() {
     _subscriptions.add(
       player.stream.position.listen((value) {
         if (_switching) return;
+        if (request?.mode == PlaybackMode.short && value > Duration.zero) {
+          _activeFrameVideoId = request?.videoId;
+        }
         final gap = (value - state.position).abs();
         if (gap > const Duration(seconds: 2)) {
           _debugLog(
@@ -333,6 +371,9 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> play(PlayRequest value) async {
+    if (value.mode != PlaybackMode.short) {
+      cancelShortPreloads(disposePlayer: true);
+    }
     await _saveProgress();
     _failureMonitor.cancel();
     _userPaused = false;
@@ -342,11 +383,198 @@ class PlaybackService extends ChangeNotifier {
     await _load(value, newRequest: true);
   }
 
+  int beginShortPreloadCycle() {
+    final generation = ++_shortPreloadGeneration;
+    _preparedShort = null;
+    final standby = _nextPlayer;
+    if (standby != null) {
+      final stopped = standby.stop();
+      _shortPreloadTail = _shortPreloadTail
+          .then((_) => stopped)
+          .catchError((Object _) {});
+    }
+    return generation;
+  }
+
+  void cancelShortPreloads({bool disposePlayer = false}) {
+    _shortPreloadGeneration++;
+    _preparedShort = null;
+    if (!disposePlayer) return;
+    final standby = _nextPlayer;
+    _nextPlayer = null;
+    _nextController = null;
+    if (standby != null) unawaited(_retirePlayer(standby));
+  }
+
+  Future<void> _retirePlayer(Player target) async {
+    _observedPlayers.remove(target);
+    try {
+      await target.pause();
+      await target.stop();
+    } catch (_) {}
+    try {
+      await target.dispose();
+    } catch (_) {}
+  }
+
+  Future<void> preResolve(
+    String id,
+    PlaybackMode mode, {
+    int? generation,
+  }) async {
+    if (generation != null && generation != _shortPreloadGeneration) return;
+    try {
+      await cache.resolve(id, mode, quality: mode == PlaybackMode.short ? 720 : null);
+    } catch (_) {}
+  }
+
+  Future<void> preloadShort(
+    String id, {
+    required int generation,
+  }) {
+    final task = _shortPreloadTail.then((_) => _preloadShortNow(id, generation));
+    _shortPreloadTail = task.catchError((Object _) {});
+    return task;
+  }
+
+  Future<void> _preloadShortNow(String id, int generation) async {
+    if (_disposed || generation != _shortPreloadGeneration) return;
+    if (_preparedShort?.videoId == id) return;
+    try {
+      final streams = await cache.resolve(
+        id,
+        PlaybackMode.short,
+        quality: 720,
+      );
+      if (_disposed || generation != _shortPreloadGeneration) return;
+      final videoFormat = streams.videos.firstOrNull;
+      final audioFormat = streams.audio;
+      if (videoFormat == null || audioFormat == null) return;
+      final videoUri = await relay.register(videoFormat);
+      final audioUri = await relay.register(audioFormat);
+      if (_disposed || generation != _shortPreloadGeneration) return;
+
+      final standby = _nextPlayer ??= Player();
+      final controller = _nextController ??= VideoController(standby);
+      _configurePlayer(standby, shortBuffer: true);
+      await standby.setVolume(0);
+      await standby.setPlaylistMode(PlaylistMode.single);
+      if (standby.platform is NativePlayer) {
+        unawaited(
+          (standby.platform as NativePlayer).setProperty('loop-file', 'inf'),
+        );
+      }
+      await standby.open(Media(videoUri.toString()), play: false);
+      await standby.setAudioTrack(AudioTrack.uri(audioUri.toString()));
+      await standby.pause();
+      await controller.waitUntilFirstFrameRendered.timeout(
+        const Duration(seconds: 15),
+      );
+      if (_disposed || generation != _shortPreloadGeneration) {
+        if (identical(_nextPlayer, standby)) _preparedShort = null;
+        return;
+      }
+      _preparedShort = _PreparedShort(
+        videoId: id,
+        player: standby,
+        controller: controller,
+        streams: streams,
+        audioUri: audioUri,
+      );
+    } catch (_) {
+      if (generation == _shortPreloadGeneration) _preparedShort = null;
+    }
+  }
+
+  Future<bool> playShort(String id) async {
+    if (!_visible || _disposed) return false;
+    final prepared = _preparedShort;
+    final now = DateTime.now();
+    final selectedVideo = prepared?.streams.videos.firstOrNull;
+    final selectedAudio = prepared?.streams.audio;
+    final stillFresh = (selectedVideo?.expires == null ||
+            selectedVideo!.expires!.isAfter(now.add(const Duration(seconds: 30)))) &&
+        (selectedAudio?.expires == null ||
+            selectedAudio!.expires!.isAfter(now.add(const Duration(seconds: 30))));
+    if (prepared != null &&
+        prepared.videoId == id &&
+        stillFresh &&
+        _visible &&
+        !_disposed) {
+      _shortPreloadGeneration++;
+      _preparedShort = null;
+      _failureMonitor.cancel();
+      unawaited(_saveProgress());
+      _switching = true;
+      final previousPlayer = player;
+      final previousController = controller;
+      await previousPlayer.pause();
+      for (final subscription in _subscriptions) {
+        await subscription.cancel();
+      }
+      _subscriptions.clear();
+      _player = prepared.player;
+      _controller = prepared.controller;
+      _nextPlayer = previousPlayer;
+      _nextController = previousController;
+      _seekController.dispose();
+      _seekController = _createSeekController();
+      _configurePlayer(player, shortBuffer: true);
+      _observeActivePlayer(player);
+      _listen();
+      request = PlayRequest(videoId: id, mode: PlaybackMode.short);
+      _userPaused = false;
+      _resumeAfterVisibility = false;
+      _budget.reset();
+      _currentAudioUri = prepared.audioUri;
+      state.frozenFrame = null;
+      state.position = Duration.zero;
+      state.duration = player.state.duration;
+      state.buffered = player.state.buffer;
+      state.videoWidth = player.state.width;
+      state.videoHeight = player.state.height;
+      state.heights = prepared.streams.videos.map((stream) => stream.height).toList();
+      state.captions = cache.captionTracks(id);
+      state.selectedCaption = null;
+      state.captionError = false;
+      state.error = null;
+      state.recovering = false;
+      state.status = PlayerStatus.ready;
+      _activeFrameVideoId = id;
+      await player.setVolume(state.muted ? 0 : state.volume);
+      await player.seek(Duration.zero);
+      if (!_visible || _disposed) {
+        _switching = false;
+        return false;
+      }
+      final focus = await _activateAudioFocus();
+      _switching = false;
+      _notify();
+      if (focus && _visible && !_userPaused) {
+        await player.play();
+        state.status = PlayerStatus.playing;
+        _notify();
+      }
+      return true;
+    }
+
+    cancelShortPreloads();
+    final standby = _nextPlayer;
+    if (standby != null) {
+      try {
+        await standby.stop();
+      } catch (_) {}
+    }
+    await play(PlayRequest(videoId: id, mode: PlaybackMode.short));
+    return false;
+  }
+
   Future<void> _load(
     PlayRequest value, {
     bool newRequest = false,
     bool recovery = false,
   }) async {
+    _configurePlayer(player, shortBuffer: value.mode == PlaybackMode.short);
     final generation = _loadGuard.next();
     _switching = true;
     if (!newRequest && state.position > Duration.zero) {
@@ -364,6 +592,7 @@ class PlaybackService extends ChangeNotifier {
     state.recovering = recovery;
     state.error = null;
     if (newRequest) {
+      if (value.mode == PlaybackMode.short) _activeFrameVideoId = null;
       state.frozenFrame = null;
       state.position = value.startAt;
       state.videoWidth = null;
@@ -548,16 +777,11 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
-  Future<void> preResolve(String id, PlaybackMode mode) async {
-    try {
-      await cache.resolve(id, mode);
-    } catch (_) {}
-  }
-
   Future<void> setVisible(bool visible) async {
     if (_visible == visible) return;
     _visible = visible;
     if (!visible) {
+      cancelShortPreloads(disposePlayer: true);
       _resumeAfterVisibility = request != null && !_userPaused;
       _failureMonitor.cancel();
       await player.pause();
@@ -582,8 +806,21 @@ class PlaybackService extends ChangeNotifier {
     await _saveProgress();
   }
 
+  Future<void> togglePlayPause() async {
+    if (state.status == PlayerStatus.ended) {
+      await seek(Duration.zero);
+      await resume();
+    } else if (player.state.playing ||
+        state.status == PlayerStatus.playing) {
+      await pause();
+    } else {
+      await resume();
+    }
+  }
+
   Future<void> resume() async {
     _userPaused = false;
+    _resumeAfterFocus = false;
     if (!_visible) {
       _resumeAfterVisibility = true;
       return;
@@ -591,9 +828,12 @@ class PlaybackService extends ChangeNotifier {
     if (state.status == PlayerStatus.error) {
       await retry();
     } else {
-      state.status = PlayerStatus.playing;
-      _notify();
-      if (await _activateAudioFocus()) await player.play();
+      if (!await _activateAudioFocus()) {
+        state.status = PlayerStatus.paused;
+        _notify();
+        return;
+      }
+      await player.play();
     }
   }
 
@@ -751,6 +991,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    cancelShortPreloads(disposePlayer: true);
     _failureMonitor.cancel();
     final generation = _loadGuard.next();
     _switching = false;
@@ -774,6 +1015,8 @@ class PlaybackService extends ChangeNotifier {
       );
     }
     _disposed = true;
+    _shortPreloadGeneration++;
+    _preparedShort = null;
     _seekController.dispose();
     _failureMonitor.cancel();
     _qualityTimer?.cancel();
@@ -781,6 +1024,10 @@ class PlaybackService extends ChangeNotifier {
       unawaited(s.cancel());
     }
     unawaited(player.dispose());
+    final standby = _nextPlayer;
+    _nextPlayer = null;
+    _nextController = null;
+    if (standby != null) unawaited(standby.dispose());
     unawaited(relay.close());
     super.dispose();
   }

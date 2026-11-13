@@ -60,6 +60,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       appActive = true,
       muted = false;
   int generation = 0, currentIndex = 0;
+  int playbackGeneration = 0;
   Brightness shellBrightness = Brightness.light;
   PageController controller = PageController();
   late final ProviderSubscription<ShortsSelection> selectionSubscription;
@@ -132,6 +133,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
 
   void _selected(ShortsSelection selection) {
     generation++;
+    playbackGeneration++;
+    active?.cancelShortPreloads(disposePlayer: true);
     unawaited(active?.pause());
     setState(() {
       items = List.of(selection.items);
@@ -153,6 +156,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
 
   Future<void> _refresh() async {
     generation++;
+    playbackGeneration++;
+    active?.cancelShortPreloads(disposePlayer: true);
     unawaited(active?.pause());
     setState(() {
       items = [];
@@ -255,7 +260,6 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       });
       if (visible) {
         _playCurrent(ref.read(playbackProvider));
-        _prefetchNext();
       }
     } catch (_) {
       if (mounted && current == generation) setState(() => failed = true);
@@ -264,12 +268,31 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     }
   }
 
-  void _prefetchNext() {
-    if (active == null || currentIndex + 1 >= items.length) return;
-    final id = items[currentIndex + 1].id;
-    if (id == prefetchedId) return;
-    prefetchedId = id;
-    unawaited(active!.preResolve(id, PlaybackMode.short));
+  void _prefetchNext(PlaybackService service, int pageGeneration) {
+    if (!mounted ||
+        !visible ||
+        pageGeneration != playbackGeneration ||
+        currentIndex + 1 >= items.length) {
+      return;
+    }
+    final preloadGeneration = service.beginShortPreloadCycle();
+    final nextId = items[currentIndex + 1].id;
+    prefetchedId = nextId;
+    for (var offset = 1; offset <= 2; offset++) {
+      final index = currentIndex + offset;
+      if (index < items.length) {
+        unawaited(
+          service.preResolve(
+            items[index].id,
+            PlaybackMode.short,
+            generation: preloadGeneration,
+          ),
+        );
+      }
+    }
+    unawaited(
+      service.preloadShort(nextId, generation: preloadGeneration),
+    );
   }
 
   void _playCurrent(PlaybackService? service) {
@@ -281,18 +304,52 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     }
     final id = items[currentIndex].id;
     active = service;
+    final pageGeneration = ++playbackGeneration;
     if (activeId == id && service.request?.videoId == id) {
-      unawaited(service.setVisible(true));
-      _prefetchNext();
+      unawaited(_resumeShort(service, id, pageGeneration));
       return;
     }
     activeId = id;
     prefetchedId = null;
     muted = service.state.muted;
-    unawaited(service.setVisible(true));
-    unawaited(service.setLoop(true));
-    unawaited(service.play(PlayRequest(videoId: id, mode: PlaybackMode.short)));
-    _prefetchNext();
+    unawaited(_startShort(service, id, pageGeneration));
+  }
+
+  Future<void> _resumeShort(
+    PlaybackService service,
+    String id,
+    int pageGeneration,
+  ) async {
+    await service.setVisible(true);
+    if (_isCurrentPlayback(id, pageGeneration)) {
+      _prefetchNext(service, pageGeneration);
+    }
+  }
+
+  Future<void> _startShort(
+    PlaybackService service,
+    String id,
+    int pageGeneration,
+  ) async {
+    await service.setVisible(true);
+    if (!_isCurrentPlayback(id, pageGeneration)) return;
+    await service.setLoop(true);
+    await service.playShort(id);
+    if (_isCurrentPlayback(id, pageGeneration)) {
+      _prefetchNext(service, pageGeneration);
+    }
+  }
+
+  bool _isCurrentPlayback(String id, int pageGeneration) =>
+      mounted &&
+      visible &&
+      pageGeneration == playbackGeneration &&
+      currentIndex < items.length &&
+      items[currentIndex].id == id;
+
+  void _cancelShortPreloads() {
+    playbackGeneration++;
+    active?.cancelShortPreloads(disposePlayer: true);
   }
 
   void _movePage(int direction) {
@@ -312,6 +369,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     WidgetsBinding.instance.removeObserver(this);
     if (visible) _restoreSystemUi();
     selectionSubscription.close();
+    playbackGeneration++;
+    active?.cancelShortPreloads(disposePlayer: true);
     unawaited(active?.setVisible(false));
     controller.dispose();
     super.dispose();
@@ -319,6 +378,9 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(tabRefreshProvider, (_, request) {
+      if (request?.index == 1) unawaited(_refresh());
+    });
     ref.listen(contentPrefsProvider, (previous, next) {
       if (previous != null && previous.prefsVersion != next.prefsVersion) {
         ref.read(shortsSelectionProvider.notifier).clear();
@@ -395,6 +457,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                               if (index < items.length) {
                                 _playCurrent(service);
                               } else {
+                                _cancelShortPreloads();
                                 unawaited(service?.setVisible(false));
                               }
                               if (index >= items.length - 3 && cursor != null) {
@@ -470,7 +533,10 @@ class _ShortPage extends StatefulWidget {
 class _ShortPageState extends State<_ShortPage> {
   bool firstFrame = false;
   bool _scrubbing = false;
+  bool _wasPlayingBeforeScrub = false;
   double _scrubFraction = 0.0;
+  PlaybackService? _watchedService;
+  VideoController? _waitingController;
   IconData? feedback;
   PlayerSettingsSession? _settingsSession;
   @override
@@ -479,7 +545,7 @@ class _ShortPageState extends State<_ShortPage> {
     if (widget.service != null) {
       _settingsSession = PlayerSettingsSession(widget.service!);
     }
-    _waitForFrame(widget.service);
+    _attachService(widget.service);
   }
 
   @override
@@ -491,19 +557,64 @@ class _ShortPageState extends State<_ShortPage> {
           ? null
           : PlayerSettingsSession(widget.service!);
       firstFrame = false;
-      _waitForFrame(widget.service);
+      _attachService(widget.service);
     }
   }
 
-  void _waitForFrame(PlaybackService? service) {
-    if (service == null) return;
-    service.controller.waitUntilFirstFrameRendered
+  void _attachService(PlaybackService? service) {
+    if (_watchedService != service) {
+      _watchedService?.removeListener(_serviceChanged);
+      _watchedService = service;
+      service?.addListener(_serviceChanged);
+    }
+    final controller = service?.controller;
+    if (identical(controller, _waitingController)) return;
+    _waitingController = controller;
+    _waitForFrame(service, controller);
+  }
+
+  void _serviceChanged() {
+    final service = widget.service;
+    if (service == null || identical(service.controller, _waitingController)) {
+      return;
+    }
+    setState(() => firstFrame = false);
+    _attachService(service);
+  }
+
+  void _waitForFrame(
+    PlaybackService? service,
+    VideoController? controller,
+  ) {
+    if (service == null || controller == null) return;
+    controller.waitUntilFirstFrameRendered
         .then((_) {
-          if (mounted && widget.service == service) {
+          if (mounted &&
+              widget.service == service &&
+              identical(service.controller, controller)) {
             setState(() => firstFrame = true);
           }
         })
         .catchError((Object _) {});
+  }
+
+  Future<void> _finishScrub(PlaybackService service, Duration target) async {
+    try {
+      await service.seekTo(target);
+      if (_wasPlayingBeforeScrub) await service.resume();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _scrubbing = false;
+          _wasPlayingBeforeScrub = false;
+        });
+      }
+    }
+  }
+
+  String _formatTime(Duration value) {
+    final seconds = value.inSeconds;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
 
   Timer? feedbackTimer;
@@ -518,6 +629,7 @@ class _ShortPageState extends State<_ShortPage> {
   @override
   void dispose() {
     feedbackTimer?.cancel();
+    _watchedService?.removeListener(_serviceChanged);
     _settingsSession?.dispose();
     super.dispose();
   }
@@ -553,7 +665,7 @@ class _ShortPageState extends State<_ShortPage> {
     final frameReady =
         firstFrame &&
         state != null &&
-        state.position > Duration.zero &&
+        service?.isFrameReadyFor(widget.item.id) == true &&
         state.status != PlayerStatus.loading;
     final textTheme = Theme.of(context).textTheme;
     return Stack(
@@ -620,7 +732,9 @@ class _ShortPageState extends State<_ShortPage> {
           ),
         ),
         if (feedback != null)
-          Center(
+          Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: Center(
             child: TweenAnimationBuilder<double>(
               key: ValueKey(feedbackTimer),
               tween: Tween(begin: 0, end: 1),
@@ -642,11 +756,14 @@ class _ShortPageState extends State<_ShortPage> {
                     : AppColors.shortsForeground,
               ),
             ),
+            ),
           ),
         Positioned(
           top: safe.top + AppSpacing.sm,
           right: AppSpacing.sm,
-          child: IconButton(
+          child: Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: IconButton(
             key: const ValueKey('shortsMute'),
             tooltip: widget.muted ? 'Unmute' : 'Mute',
             onPressed: widget.onMute,
@@ -654,12 +771,15 @@ class _ShortPageState extends State<_ShortPage> {
             icon: Icon(
               widget.muted ? LucideIcons.volumeX : LucideIcons.volume2,
             ),
+            ),
           ),
         ),
         Positioned(
           right: AppSpacing.sm,
           bottom: bottom + AppSpacing.xxxl,
-          child: Column(
+          child: Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: Column(
             key: const ValueKey('shortsActionRail'),
             children: [
               _ShortAction(
@@ -714,13 +834,16 @@ class _ShortPageState extends State<_ShortPage> {
                 },
               ),
             ],
+            ),
           ),
         ),
         Positioned(
           left: AppSpacing.lg,
           right: AppSpacing.shortsRailWidth + AppSpacing.lg,
           bottom: bottom + AppSpacing.xxl,
-          child: Column(
+          child: Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -767,87 +890,119 @@ class _ShortPageState extends State<_ShortPage> {
                   ),
                 ),
             ],
+            ),
           ),
         ),
+        if (_scrubbing && state != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Center(
+                child: Text(
+                  '${_formatTime(Duration(milliseconds: (_scrubFraction * duration).round()))} / ${_formatTime(state.duration)}',
+                  style: textTheme.headlineMedium?.copyWith(
+                    color: Colors.white,
+                    shadows: const [
+                      Shadow(color: Colors.black87, blurRadius: 10),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         Positioned(
           left: 0,
           right: 0,
-          bottom: bottom,
+          bottom: 0,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final currentPlayed = _scrubbing ? _scrubFraction : played;
+              final barHeight = _scrubbing
+                  ? AppSpacing.shortsProgressActiveHeight
+                  : AppSpacing.shortsProgressIdleHeight;
+              double fraction(Offset offset) =>
+                  (offset.dx / constraints.maxWidth).clamp(0.0, 1.0);
+              Duration targetAt(double value) => Duration(
+                milliseconds: (value * duration).round(),
+              );
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
+                onTapUp: service == null || duration <= 0
+                    ? null
+                    : (details) {
+                        unawaited(service.seekTo(targetAt(fraction(details.localPosition))));
+                      },
                 onHorizontalDragStart: service == null || duration <= 0
                     ? null
                     : (details) {
+                        _wasPlayingBeforeScrub =
+                            service.state.status == PlayerStatus.playing;
                         setState(() {
                           _scrubbing = true;
-                          _scrubFraction = (details.localPosition.dx /
-                                  constraints.maxWidth)
-                              .clamp(0.0, 1.0);
+                          _scrubFraction = fraction(details.localPosition);
                         });
-                        unawaited(service.pause());
+                        if (_wasPlayingBeforeScrub) unawaited(service.pause());
                       },
                 onHorizontalDragUpdate: service == null || duration <= 0
                     ? null
                     : (details) {
                         setState(() {
-                          _scrubFraction = (details.localPosition.dx /
-                                  constraints.maxWidth)
-                              .clamp(0.0, 1.0);
+                          _scrubFraction = fraction(details.localPosition);
                         });
                       },
                 onHorizontalDragEnd: service == null || duration <= 0
                     ? null
-                    : (_) {
-                        final target = Duration(
-                          milliseconds: (_scrubFraction * duration).round(),
-                        );
-                        setState(() => _scrubbing = false);
-                        unawaited(service.seekTo(target));
-                        unawaited(service.resume());
-                      },
+                    : (_) => unawaited(
+                        _finishScrub(service, targetAt(_scrubFraction)),
+                      ),
                 onHorizontalDragCancel: () {
-                  if (_scrubbing) {
-                    setState(() => _scrubbing = false);
-                    unawaited(service?.resume());
-                  }
+                  if (!_scrubbing) return;
+                  final shouldResume = _wasPlayingBeforeScrub;
+                  setState(() {
+                    _scrubbing = false;
+                    _wasPlayingBeforeScrub = false;
+                  });
+                  if (shouldResume) unawaited(service?.resume());
                 },
                 child: SizedBox(
-                  height: max(24.0, AppSpacing.shortsProgressTouchHeight),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      LinearProgressIndicator(
-                        value: buffered,
-                        minHeight: _scrubbing ? 4.0 : AppSpacing.progressHeight,
-                        color: AppColors.shortsProgressBuffer,
-                        backgroundColor: AppColors.shortsProgressTrack,
-                      ),
-                      FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: currentPlayed,
-                        child: Container(
-                          height:
-                              _scrubbing ? 4.0 : AppSpacing.progressHeight,
-                          color: AppColors.shortsProgressPlayed,
-                        ),
-                      ),
-                      if (_scrubbing)
-                        Positioned(
-                          left: (constraints.maxWidth * currentPlayed - 6)
-                              .clamp(0.0, constraints.maxWidth - 12),
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: const BoxDecoration(
+                  height: AppSpacing.shortsProgressTouchHeight,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizedBox(
+                      height: barHeight,
+                      width: double.infinity,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          LinearProgressIndicator(
+                            value: buffered,
+                            minHeight: barHeight,
+                            color: AppColors.shortsProgressBuffer,
+                            backgroundColor: AppColors.shortsProgressTrack,
+                          ),
+                          FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: currentPlayed,
+                            child: Container(
+                              height: barHeight,
                               color: AppColors.shortsProgressPlayed,
-                              shape: BoxShape.circle,
                             ),
                           ),
-                        ),
-                    ],
+                          if (_scrubbing)
+                            Positioned(
+                              left: (constraints.maxWidth * currentPlayed - 6)
+                                  .clamp(0.0, constraints.maxWidth - 12),
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.shortsProgressPlayed,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );

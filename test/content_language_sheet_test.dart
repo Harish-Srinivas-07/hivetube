@@ -6,7 +6,6 @@ import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/theme/app_theme.dart';
-import 'package:hivetube/widgets/app_top_bar.dart';
 import 'package:hivetube/widgets/content_language_button.dart';
 import 'package:hivetube/widgets/home_top_bar.dart';
 
@@ -60,7 +59,7 @@ void main() {
       findsNothing,
     );
 
-    await _showBar(tester, container, const AppTopBar());
+    await _showBar(tester, container, const HomeTopBar());
     expect(find.byType(ContentLanguageButton), findsOneWidget);
   });
 
@@ -170,7 +169,7 @@ void main() {
     );
     addTearDown(container.dispose);
     addTearDown(db.close);
-    await _showBar(tester, container, const AppTopBar());
+    await _showBar(tester, container, const HomeTopBar());
     expect(
       find.byKey(const ValueKey('contentLanguageChangedDot')),
       findsOneWidget,

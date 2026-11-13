@@ -36,9 +36,9 @@ class AppColors {
   static const playerControlBorder = Color(0x33FFFFFF);
   static const shortsNavGlassFill = Color(0x33FFFFFF);
   static const shortsNavGlassBorder = Color(0x66FFFFFF);
-  static const shortsProgressTrack = Color(0x66FFFFFF);
-  static const shortsProgressBuffer = Color(0x99FFFFFF);
-  static const shortsProgressPlayed = Color(0xFFFFFFFF);
+  static const shortsProgressTrack = Color(0x33FFFFFF);
+  static const shortsProgressBuffer = Color(0x4DFFFFFF);
+  static const shortsProgressPlayed = Color(0xFFFF0000);
   static const shortsSelected = Color(0xFFFF0033);
   static const error = Color(0xFFFF4E45);
 

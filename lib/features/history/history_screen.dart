@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +21,34 @@ class HistoryScreen extends ConsumerStatefulWidget {
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   String _query = '';
   bool _historyPaused = false;
+  final Set<String> _metadataBackfills = {};
+
+  Future<void> _backfillMetadata(String videoId) async {
+    if (!_metadataBackfills.add(videoId)) return;
+    final db = ref.read(dbProvider);
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final info = await api.next.watch(videoId);
+      await db.historyDao.updateMediaMetadata(
+        videoId: videoId,
+        title: info.title,
+        channelId: info.channelId,
+        channelName: info.channelName,
+        thumbUrl: info.thumbnail.isNotEmpty
+            ? info.thumbnail
+            : 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+        durationSec: info.durationSec,
+      );
+    } catch (_) {
+      await db.historyDao.updateMediaMetadata(
+        videoId: videoId,
+        title: 'Untitled video',
+        channelId: '',
+        channelName: '',
+        thumbUrl: '',
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -149,31 +178,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 }
 
                 final groups = _groupByDay(filtered);
+                final entries = <({
+                  String? group,
+                  HistoryItemWithMedia? item,
+                })>[];
+                for (final group in groups) {
+                  entries.add((group: group.title, item: null));
+                  for (final item in group.items) {
+                    entries.add((group: null, item: item));
+                  }
+                }
 
                 return ListView.builder(
-                  itemCount: groups.length,
-                  itemBuilder: (ctx, gIdx) {
-                    final group = groups[gIdx];
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.md,
-                            AppSpacing.md,
-                            AppSpacing.md,
-                            AppSpacing.xs,
-                          ),
-                          child: Text(
-                            group.title,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
+                  itemCount: entries.length,
+                  itemBuilder: (ctx, index) {
+                    final entry = entries[index];
+                    if (entry.item != null) {
+                      return _buildHistoryRow(entry.item!, theme);
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.xs,
+                      ),
+                      child: Text(
+                        entry.group!,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
                         ),
-                        ...group.items.map((item) => _buildHistoryRow(item, theme)),
-                      ],
+                      ),
                     );
                   },
                 );
@@ -189,8 +225,18 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   Widget _buildHistoryRow(HistoryItemWithMedia item, ThemeData theme) {
     final media = item.media;
-    final title = media?.title ?? item.history.videoId;
-    final channel = media?.channelName ?? '';
+    if (media == null ||
+        media.title.isEmpty ||
+        media.title == item.history.videoId) {
+      unawaited(_backfillMetadata(item.history.videoId));
+    }
+    final title = media?.title.isNotEmpty == true &&
+            media?.title != item.history.videoId
+        ? media!.title
+        : 'Untitled video';
+    final channel = media?.channelName.isNotEmpty == true
+        ? media!.channelName
+        : 'Unknown channel';
     final thumbUrl = media?.thumbUrl ??
         'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
 
@@ -238,7 +284,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       ),
                     ),
                   ),
-                  if (progress > 0)
+                  if (durMs > 0)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -251,8 +297,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                           value: progress,
                           minHeight: AppSizes.progressBarHeight,
                           backgroundColor: AppColors.thumbnailBadge,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            theme.colorScheme.primary,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Colors.red,
                           ),
                         ),
                       ),
