@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:hivetube/core/yt/yt_rss.dart';
 import 'package:hivetube/features/home/home_guards.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/innertube/json_find.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/home/home_cache.dart';
@@ -23,29 +22,24 @@ void main() {
     expect(safeNav(data, ['x', 1, 'nested', 'id']), 'b');
     expect(safeNav(data, ['x', 5, 'id']), isNull);
   });
-  test('mixer weights sources, deduplicates and filters', () {
-    const a = VideoItem(id: 'a', title: 'a');
-    const b = VideoItem(id: 'b', title: 'b');
-    const c = VideoItem(id: 'c', title: 'c');
-    const d = VideoItem(id: 'd', title: 'd', channelId: 'blocked');
-    const watched = VideoItem(id: 'seen', title: 'seen');
-    final result = mixHome(
-      [
-        [a, b, watched],
-        [c, a, d],
-      ],
-      [2, 1],
-      history: [
-        const HistoryEntry(
-          'seen',
-          Duration(seconds: 90),
-          Duration(seconds: 100),
-        ),
-      ],
-      disliked: {'blocked'},
-    );
-    expect(result.map((v) => v.id), ['a', 'b', 'c']);
-  });
+  test(
+    'mixer weights sources and deduplicates without watch or dislike filters',
+    () {
+      const a = VideoItem(id: 'a', title: 'a');
+      const b = VideoItem(id: 'b', title: 'b');
+      const c = VideoItem(id: 'c', title: 'c');
+      const d = VideoItem(id: 'd', title: 'd', channelId: 'blocked');
+      const watched = VideoItem(id: 'seen', title: 'seen');
+      final result = mixHome(
+        [
+          [a, b, watched],
+          [c, a, d],
+        ],
+        [2, 1],
+      );
+      expect(result.map((v) => v.id), ['a', 'b', 'c', 'seen', 'd']);
+    },
+  );
   test('launch cache expires at thirty minutes and ignores malformed data', () {
     final now = DateTime.utc(2026);
     final cache = HomeCache(const [], const [], now);
@@ -58,6 +52,18 @@ void main() {
       isNull,
     );
     expect(HomeCache.decode(jsonEncode({'savedAt': 'bad'}), now), isNull);
+    expect(
+      HomeCache.decode(
+        jsonEncode({
+          'classifierVersion': 1,
+          'savedAt': now.toIso8601String(),
+          'videos': [],
+          'shorts': [],
+        }),
+        now,
+      ),
+      isNull,
+    );
   });
   test('RSS entries participate in the weighted mixer', () {
     final uploads = parseRss(File('test/fixtures/feed.xml').readAsStringSync());

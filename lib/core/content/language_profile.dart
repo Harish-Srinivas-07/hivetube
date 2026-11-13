@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'asset_loader_vm.dart'
-    if (dart.library.ui) 'asset_loader_flutter.dart';
+import 'asset_loader_vm.dart' if (dart.library.ui) 'asset_loader_flutter.dart';
+
+// ignore: constant_identifier_names
+const int CLASSIFIER_VERSION = 2;
 
 class LanguageProfile {
   const LanguageProfile({
@@ -24,7 +26,6 @@ class LanguageProfile {
     this.seedChannels = const [],
     this.seedChannelCandidates = const [],
     this.boostTerms = const [],
-    this.devotionalBlocklist = const [],
   });
 
   final String code;
@@ -43,7 +44,6 @@ class LanguageProfile {
   final List<SeedChannel> seedChannels;
   final List<SeedChannel> seedChannelCandidates;
   final List<String> boostTerms;
-  final List<String> devotionalBlocklist;
 
   factory LanguageProfile.fromJson(Map<String, dynamic> json) {
     return LanguageProfile(
@@ -53,43 +53,65 @@ class LanguageProfile {
       scriptRanges: (json['scriptRanges'] as List)
           .map((r) => (r as List).map((n) => (n as num).toInt()).toList())
           .toList(),
-      topicQueries: ((json['topicQueries'] as Map<String, dynamic>?) ?? const {}).map(
-        (k, v) => MapEntry(k, (v as List).map((e) => e.toString()).toList()),
-      ),
-      topicNames: (json['topicNames'] as List? ?? const []).map((e) => e.toString()).toList(),
-      topicTemplates: ((json['topicTemplates'] as Map<String, dynamic>?) ?? const {}).map(
-        (k, v) => MapEntry(k, (v as List).map((e) => e.toString()).toList()),
-      ),
-      freshnessWords: (json['freshnessWords'] as List? ?? const []).map((e) => e.toString()).toList(),
+      topicQueries:
+          ((json['topicQueries'] as Map<String, dynamic>?) ?? const {}).map(
+            (k, v) =>
+                MapEntry(k, (v as List).map((e) => e.toString()).toList()),
+          ),
+      topicNames: (json['topicNames'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      topicTemplates:
+          ((json['topicTemplates'] as Map<String, dynamic>?) ?? const {}).map(
+            (k, v) =>
+                MapEntry(k, (v as List).map((e) => e.toString()).toList()),
+          ),
+      freshnessWords: (json['freshnessWords'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
       seasonalTerms: (json['seasonalTerms'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => SeasonalTerm.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
-      slotValues: ((json['slotValues'] as Map<String, dynamic>?) ?? const {}).map(
-        (k, v) => MapEntry(k, (v as List).map((e) => e.toString()).toList()),
-      ),
-      lexicon: (json['lexicon'] as List? ?? const []).map((e) => e.toString().toLowerCase()).toSet(),
-      lexiconStrong: (json['lexiconStrong'] as List? ?? json['lexicon'] as List? ?? const [])
-          .map((e) => e.toString().toLowerCase()).toSet(),
-      lexiconWeak: (json['lexiconWeak'] as List? ?? const []).map((e) => e.toString().toLowerCase()).toSet(),
+      slotValues: ((json['slotValues'] as Map<String, dynamic>?) ?? const {})
+          .map(
+            (k, v) =>
+                MapEntry(k, (v as List).map((e) => e.toString()).toList()),
+          ),
+      lexicon: (json['lexicon'] as List? ?? const [])
+          .map((e) => e.toString().toLowerCase())
+          .toSet(),
+      lexiconStrong:
+          (json['lexiconStrong'] as List? ??
+                  json['lexicon'] as List? ??
+                  const [])
+              .map((e) => e.toString().toLowerCase())
+              .toSet(),
+      lexiconWeak: (json['lexiconWeak'] as List? ?? const [])
+          .map((e) => e.toString().toLowerCase())
+          .toSet(),
       negativeCollisions: (json['negativeCollisions'] as List? ?? [])
           .map((e) => e.toString().toLowerCase())
           .toSet(),
-      negativeCollisionsByLanguage: ((json['negativeCollisionsByLanguage'] as Map<String, dynamic>?) ?? const {}).map(
-        (k, v) => MapEntry(k, (v as List).map((e) => e.toString().toLowerCase()).toSet()),
-      ),
+      negativeCollisionsByLanguage:
+          ((json['negativeCollisionsByLanguage'] as Map<String, dynamic>?) ??
+                  const {})
+              .map(
+                (k, v) => MapEntry(
+                  k,
+                  (v as List).map((e) => e.toString().toLowerCase()).toSet(),
+                ),
+              ),
       seedChannels: (json['seedChannels'] as List? ?? const []).map((e) {
         if (e is Map) return SeedChannel.fromJson(Map<String, dynamic>.from(e));
         return SeedChannel(name: e.toString(), channelId: '', topics: const []);
       }).toList(),
-      seedChannelCandidates: (json['seedChannelCandidates'] as List? ?? const [])
-          .whereType<Map>()
-          .map((e) => SeedChannel.fromJson(Map<String, dynamic>.from(e)))
-          .toList(),
+      seedChannelCandidates:
+          (json['seedChannelCandidates'] as List? ?? const [])
+              .whereType<Map>()
+              .map((e) => SeedChannel.fromJson(Map<String, dynamic>.from(e)))
+              .toList(),
       boostTerms: (json['boostTerms'] as List? ?? [])
-          .map((e) => e.toString().toLowerCase())
-          .toList(),
-      devotionalBlocklist: (json['devotionalBlocklist'] as List? ?? [])
           .map((e) => e.toString().toLowerCase())
           .toList(),
     );
@@ -104,31 +126,50 @@ class LanguageProfile {
 }
 
 class SeedChannel {
-  const SeedChannel({required this.name, required this.channelId, required this.topics, this.verifiedAt});
+  const SeedChannel({
+    required this.name,
+    required this.channelId,
+    required this.topics,
+    this.verifiedAt,
+  });
   final String name, channelId;
   final List<String> topics;
   final String? verifiedAt;
   factory SeedChannel.fromJson(Map<String, dynamic> json) => SeedChannel(
     name: json['name'] as String? ?? '',
     channelId: json['channelId'] as String? ?? '',
-    topics: (json['topics'] as List? ?? const []).map((e) => e.toString()).toList(),
+    topics: (json['topics'] as List? ?? const [])
+        .map((e) => e.toString())
+        .toList(),
     verifiedAt: json['verifiedAt'] as String?,
   );
 }
 
 class SeasonalTerm {
-  const SeasonalTerm({required this.name, required this.query, required this.startMonth, required this.startDay, required this.endMonth, required this.endDay});
+  const SeasonalTerm({
+    required this.name,
+    required this.query,
+    required this.startMonth,
+    required this.startDay,
+    required this.endMonth,
+    required this.endDay,
+  });
   final String name, query;
   final int startMonth, startDay, endMonth, endDay;
   factory SeasonalTerm.fromJson(Map<String, dynamic> json) => SeasonalTerm(
-    name: json['name'] as String? ?? '', query: json['query'] as String? ?? json['name'] as String? ?? '',
-    startMonth: json['startMonth'] as int? ?? 1, startDay: json['startDay'] as int? ?? 1,
-    endMonth: json['endMonth'] as int? ?? 12, endDay: json['endDay'] as int? ?? 31,
+    name: json['name'] as String? ?? '',
+    query: json['query'] as String? ?? json['name'] as String? ?? '',
+    startMonth: json['startMonth'] as int? ?? 1,
+    startDay: json['startDay'] as int? ?? 1,
+    endMonth: json['endMonth'] as int? ?? 12,
+    endDay: json['endDay'] as int? ?? 31,
   );
   bool contains(DateTime date) {
     final day = date.month * 100 + date.day;
     final start = startMonth * 100 + startDay, end = endMonth * 100 + endDay;
-    return start <= end ? day >= start && day <= end : day >= start || day <= end;
+    return start <= end
+        ? day >= start && day <= end
+        : day >= start || day <= end;
   }
 }
 
@@ -148,7 +189,9 @@ class LanguageProfileRegistry {
       final assets = await loadLanguageAssets();
       if (assets.isNotEmpty) {
         for (final content in assets.values) {
-          final profile = LanguageProfile.fromJson(jsonDecode(content) as Map<String, dynamic>);
+          final profile = LanguageProfile.fromJson(
+            jsonDecode(content) as Map<String, dynamic>,
+          );
           _profiles[profile.code] = profile;
         }
       } else {
@@ -167,7 +210,9 @@ class LanguageProfileRegistry {
         if (file.path.endsWith('.json')) {
           try {
             final content = file.readAsStringSync();
-            final profile = LanguageProfile.fromJson(jsonDecode(content) as Map<String, dynamic>);
+            final profile = LanguageProfile.fromJson(
+              jsonDecode(content) as Map<String, dynamic>,
+            );
             _profiles[profile.code] = profile;
           } catch (_) {}
         }
@@ -189,7 +234,11 @@ class LanguageProfileRegistry {
         continue;
       }
       for (final profile in _profiles.values) {
-        if (profile.code == 'hi' || profile.code == 'mr' || profile.code == 'en') continue;
+        if (profile.code == 'hi' ||
+            profile.code == 'mr' ||
+            profile.code == 'en') {
+          continue;
+        }
         if (profile.matchesScript(rune)) {
           counts.update(profile.code, (c) => c + 1, ifAbsent: () => 1);
           break;
@@ -236,7 +285,10 @@ class LanguageProfileRegistry {
     final profile = _profiles[langCode];
     if (profile == null) return const LexiconEvidence(0, 0, []);
     final lower = text.toLowerCase();
-    final tokens = lower.split(RegExp(r'[^a-zA-Z0-9]+')).where((t) => t.isNotEmpty).toSet();
+    final tokens = lower
+        .split(RegExp(r'[^a-zA-Z0-9]+'))
+        .where((t) => t.isNotEmpty)
+        .toSet();
     final blocked = <String>{
       ...profile.negativeCollisions,
       ...profile.negativeCollisionsByLanguage.values.expand((words) => words),
@@ -250,8 +302,22 @@ class LanguageProfileRegistry {
 
   bool lexiconMatches(String text, String langCode) {
     final evidence = lexiconEvidence(text, langCode);
-    if (langCode == 'hi') return evidence.strong >= 2 || evidence.weak >= 2;
+    if (langCode == 'hi') return evidence.strong >= 2;
     return evidence.strong >= 2 || (evidence.strong >= 1 && evidence.weak >= 2);
+  }
+
+  double englishWordRatio(String text) {
+    if (!_loaded) _loadFromFilesystem();
+    final tokens = text
+        .toLowerCase()
+        .split(RegExp(r'[^a-zA-Z0-9]+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (tokens.isEmpty) return 0;
+    final profile = _profiles['en'];
+    if (profile == null) return 0;
+    final words = profile.lexiconStrong.union(profile.lexiconWeak);
+    return tokens.where(words.contains).length / tokens.length;
   }
 
   /// Returns the matched lexicon words and phrases for diagnostic inspection.
@@ -270,7 +336,7 @@ class LanguageProfileRegistry {
     return matched;
   }
 
-  /// Classifies text into a language code, returning null if unresolved / neutral.
+  /// Classifies text into a language code, returning `unknown` when unresolved.
   String? classify(String text, {Set<String>? preferredLanguages}) {
     if (!_loaded) _loadFromFilesystem();
 
@@ -284,9 +350,7 @@ class LanguageProfileRegistry {
       if (code == 'en') continue;
       final score = scoreLexicon(text, code);
       if (score > 0 && lexiconMatches(text, code)) {
-        // Bias towards preferred languages if any
-        final multiplier = (preferredLanguages != null && preferredLanguages.contains(code)) ? 2 : 1;
-        scores[code] = score * multiplier;
+        scores[code] = score;
       }
     }
 
@@ -295,7 +359,9 @@ class LanguageProfileRegistry {
       if (lexiconMatches(text, best.key)) return best.key;
     }
 
-    return null; // Unresolved / English / unknown Latin
+    if (englishWordRatio(text) >= 0.2) return 'en';
+
+    return 'unknown';
   }
 
   /// Generates profile-driven topic queries for the given shown languages and chip.
@@ -310,74 +376,88 @@ class LanguageProfileRegistry {
   }) {
     if (!_loaded) _loadFromFilesystem();
 
-    final queries = <String>[];
-    final nonEnglish = shownLanguages.where((l) => l != 'en').toList()..sort();
-    final hasEnglish = shownLanguages.contains('en');
-
-    if (nonEnglish.isEmpty) {
-      // Only English shown
-      final enProfile = _profiles['en'];
-      final pool = enProfile?.topicQueries[chip] ?? enProfile?.topicQueries['Music'] ?? ['new music', 'top hits'];
-      final shuffled = List<String>.of(pool)..shuffle(random);
-      return shuffled.take(6).toList();
-    }
-
-    // Build queries for each local language
-    for (final lang in nonEnglish) {
+    final languages = shownLanguages.toList()..sort();
+    final perLanguage = <String, List<String>>{};
+    for (final lang in languages) {
       final profile = _profiles[lang];
       if (profile != null) {
-        final templateList = profile.topicTemplates[chip] ??
+        final languageQueries = <String>[];
+        final templateList =
+            profile.topicTemplates[chip] ??
             profile.topicTemplates.values.expand((e) => e).toList();
         if (templateList.isNotEmpty) {
           final shuffled = List<String>.of(templateList)..shuffle(random);
-          final freshness = profile.freshnessWords.isEmpty ? ['latest', 'new'] : profile.freshnessWords;
-          final topics = profile.topicTemplates.keys.where((e) => e != 'All').toList();
-          final currentSeason = profile.seasonalTerms.where((e) => e.contains(date ?? DateTime.now())).toList();
+          final freshness = profile.freshnessWords.isEmpty
+              ? ['latest', 'new']
+              : profile.freshnessWords;
+          final topics = profile.topicTemplates.keys
+              .where((e) => e != 'All')
+              .toList();
+          final currentSeason = profile.seasonalTerms
+              .where((e) => e.contains(date ?? DateTime.now()))
+              .toList();
           final slots = <String, List<String>>{
             'language': [profile.englishName, profile.nativeName],
             'topic': topics.isEmpty ? [chip] : topics,
             'freshness': freshness,
-            'artist': [...(profile.slotValues['artist'] ?? const []), ...suggestionSeeds],
-            'film': [...(profile.slotValues['film'] ?? const []), ...suggestionSeeds],
+            'artist': [
+              ...(profile.slotValues['artist'] ?? const []),
+              ...suggestionSeeds,
+            ],
+            'film': [
+              ...(profile.slotValues['film'] ?? const []),
+              ...suggestionSeeds,
+            ],
             'festival': currentSeason.map((e) => e.query).toList(),
           };
           for (final template in shuffled) {
             var expanded = template;
-            for (final slot in ['language', 'topic', 'freshness', 'artist', 'film', 'festival']) {
+            for (final slot in [
+              'language',
+              'topic',
+              'freshness',
+              'artist',
+              'film',
+              'festival',
+            ]) {
               final marker = '{$slot}';
               if (!expanded.contains(marker)) continue;
               final values = slots[slot] ?? const <String>[];
-              if (values.isEmpty) { expanded = ''; break; }
-              expanded = expanded.replaceAll(marker, values[random.nextInt(values.length)]);
+              if (values.isEmpty) {
+                expanded = '';
+                break;
+              }
+              expanded = expanded.replaceAll(
+                marker,
+                values[random.nextInt(values.length)],
+              );
             }
             final trimmed = expanded.replaceAll(RegExp(r'\s+'), ' ').trim();
-            if (trimmed.isNotEmpty && !excluded.contains(trimmed)) queries.add(trimmed);
+            if (trimmed.isNotEmpty && !excluded.contains(trimmed)) {
+              languageQueries.add(trimmed);
+            }
           }
         } else if (profile.topicQueries.isNotEmpty) {
-          final topicList = profile.topicQueries[chip] ?? profile.topicQueries.values.expand((e) => e).toList();
+          final topicList =
+              profile.topicQueries[chip] ??
+              profile.topicQueries.values.expand((e) => e).toList();
           final shuffled = List<String>.of(topicList)..shuffle(random);
-          queries.addAll(shuffled.take(3));
+          languageQueries.addAll(shuffled.take(3));
         } else {
-          // Thin profile fallback
-          queries.add('${profile.nativeName} $chip');
-          queries.add('${profile.englishName} $chip');
+          languageQueries.add('${profile.nativeName} $chip');
+          languageQueries.add('${profile.englishName} $chip');
         }
+        perLanguage[lang] = languageQueries.toSet().toList();
       }
     }
-
-    // Only include English queries if English is explicitly shown AND localRatio permits
-    if (hasEnglish) {
-      final enProfile = _profiles['en'];
-      if (enProfile != null) {
-        final enList = enProfile.topicQueries[chip] ?? ['news', 'popular music'];
-        final enShuffled = List<String>.of(enList)..shuffle(random);
-        final enCount = (queries.length * (1.0 - localRatio)).clamp(1, 3).round();
-        queries.addAll(enShuffled.take(enCount));
-      }
+    if (perLanguage.isEmpty) return const [];
+    final count = perLanguage.values.map((items) => items.length).reduce(min);
+    final queries = <String>[];
+    for (final lang in languages) {
+      queries.addAll(perLanguage[lang]!.take(count));
     }
-
     queries.shuffle(random);
-    return queries.toSet().toList();
+    return queries;
   }
 }
 
@@ -386,4 +466,3 @@ class LexiconEvidence {
   final int strong, weak;
   final List<String> words;
 }
-

@@ -51,3 +51,8 @@ android/local.properties
 ref/
 **/Pods/
 .env*
+
+# codex temp tests
+.codex-test-tmp
+.tmp_flutter
+.codex_test_temp

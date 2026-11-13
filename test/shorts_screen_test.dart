@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:hivetube/app/router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
@@ -71,7 +72,7 @@ void main() {
         find.descendant(of: sheet, matching: find.text('Copy link')),
         findsOneWidget,
       );
-      await tester.tapAt(const Offset(20, 100));
+      await tester.tap(find.byIcon(LucideIcons.x));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('shortsMute')));
       await tester.pump();

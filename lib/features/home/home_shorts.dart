@@ -2,21 +2,6 @@ import 'dart:math';
 import '../../core/yt/models.dart';
 import 'home_variety.dart';
 
-const homeTopics = <String, String>{
-  'Music': 'Music',
-  'Movies': 'Movies',
-  'Gaming': 'Gaming',
-  'Live': 'Live',
-  'News': 'News',
-  'Podcasts': 'Podcasts',
-  'Sports': 'Sports',
-  'Comedy': 'Comedy',
-  'Cooking': 'Cooking',
-  'Science': 'Science',
-  'Tech': 'Tech',
-  'Education': 'Education',
-};
-
 List<String> shortsQueries({
   required String chip,
   required Iterable<String> channels,
@@ -43,7 +28,6 @@ List<ShortItem> buildShortsShelf(
   Set<String> hidden = const {'hi'},
   Set<String> seen = const {},
   String source = 'shorts_shelf',
-  bool filterHindiDevotional = false,
 }) {
   final rng = random ?? Random();
   final uniqueIds = <String>{};
@@ -70,7 +54,6 @@ List<ShortItem> buildShortsShelf(
     seen: seen,
     random: rng,
     source: source,
-    filterHindiDevotional: filterHindiDevotional,
   ).map((item) => item.id).toList();
   final byId = {for (final item in all) item.id: item};
   final ordered = ranked.map((id) => byId[id]!).toList();

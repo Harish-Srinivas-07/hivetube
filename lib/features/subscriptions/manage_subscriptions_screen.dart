@@ -7,7 +7,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/providers.dart';
 import '../../core/yt/channel_metadata.dart';
-import '../../widgets/common.dart';
+import '../../widgets/ui/ui.dart';
 
 class ManageSubscriptionsScreen extends ConsumerStatefulWidget {
   const ManageSubscriptionsScreen({super.key});
@@ -27,9 +27,7 @@ class _ManageSubscriptionsScreenState
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Manage Subscriptions'),
-      ),
+      appBar: AppBar(title: const Text('Manage Subscriptions')),
       body: Column(
         children: [
           Padding(
@@ -37,16 +35,20 @@ class _ManageSubscriptionsScreenState
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Search subscriptions...',
-                prefixIcon: const Icon(LucideIcons.search, size: AppSizes.iconMd),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                prefixIcon: const Icon(
+                  LucideIcons.search,
+                  size: AppSizes.iconMd,
+                ),
+                border: const OutlineInputBorder(
+                  borderRadius: AppRadius.lgBorder,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
                   vertical: AppSpacing.sm,
                 ),
               ),
-              onChanged: (val) => setState(() => _query = val.trim().toLowerCase()),
+              onChanged: (val) =>
+                  setState(() => _query = val.trim().toLowerCase()),
             ),
           ),
           Expanded(
@@ -73,17 +75,15 @@ class _ManageSubscriptionsScreenState
 
                 return ListView.separated(
                   itemCount: filtered.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const AppDivider(),
                   itemBuilder: (ctx, idx) {
                     final sub = filtered[idx];
-                    final displayName = isMissingChannelName(
-                      sub.name,
-                      sub.channelId,
-                    )
+                    final displayName =
+                        isMissingChannelName(sub.name, sub.channelId)
                         ? 'Channel'
                         : sub.name;
                     return ListTile(
-                      leading: Avatar(
+                      leading: ChannelAvatar(
                         name: displayName,
                         url: sub.avatarUrl,
                         size: AppSizes.avatar,
@@ -108,19 +108,18 @@ class _ManageSubscriptionsScreenState
                         onPressed: () async {
                           final confirm = await showDialog<bool>(
                             context: context,
-                            builder: (dCtx) => AlertDialog(
-                              title: const Text('Unsubscribe'),
-                              content: Text(
-                                'Unsubscribe from $displayName?',
-                              ),
+                            builder: (dCtx) => AppDialog(
+                              title: 'Unsubscribe',
+                              content: Text('Unsubscribe from $displayName?'),
                               actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(dCtx).pop(false),
-                                  child: const Text('Cancel'),
+                                AppButton.text(
+                                  onPressed: () =>
+                                      Navigator.of(dCtx).pop(false),
+                                  label: 'Cancel',
                                 ),
-                                FilledButton(
+                                AppButton.filled(
                                   onPressed: () => Navigator.of(dCtx).pop(true),
-                                  child: const Text('Unsubscribe'),
+                                  label: 'Unsubscribe',
                                 ),
                               ],
                             ),

@@ -6,7 +6,6 @@ import 'package:hivetube/core/content/language_profile.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/core/yt/models.dart';
-import 'package:hivetube/features/home/home_variety.dart';
 
 void main() {
   setUpAll(() async {
@@ -66,7 +65,7 @@ void main() {
       expect(res.finalLanguage, 'hi');
     });
 
-    test('Unknown-Latin dropped when English is not shown', () {
+    test('Unknown-Latin drops when no selected language evidence exists', () {
       final res = filter.evaluate(
         id: 'v4',
         title: 'Amazing Super Action Movie Review 2024',
@@ -77,22 +76,107 @@ void main() {
         strictHome: true,
       );
       expect(res.kept, isFalse);
-      expect(res.finalLanguage, 'en');
+      expect(res.finalLanguage, 'unknown');
     });
 
-    test('Unknown-Latin kept when English is shown', () {
+    test(
+      'Unknown-Latin drops even when English is shown without English evidence',
+      () {
+        final res = filter.evaluate(
+          id: 'v5',
+          title: 'Amazing Super Action Movie Review 2024',
+          channelId: 'ch5',
+          channelName: 'Action Mania',
+          shownLanguages: {'en'},
+          hiddenLanguages: {'hi'},
+          strictHome: true,
+        );
+        expect(res.kept, isFalse);
+        expect(res.finalLanguage, 'unknown');
+      },
+    );
+
+    test('English lexical signal is kept for Tamil and English selection', () {
       final res = filter.evaluate(
-        id: 'v5',
-        title: 'Amazing Super Action Movie Review 2024',
-        channelId: 'ch5',
-        channelName: 'Action Mania',
-        shownLanguages: {'en'},
+        id: 'english',
+        title: 'The official video trailer review',
+        channelId: 'en-channel',
+        channelName: 'Film Reviews',
+        shownLanguages: {'ta', 'en'},
         hiddenLanguages: {'hi'},
-        strictHome: true,
       );
-      expect(res.kept, isTrue);
       expect(res.finalLanguage, 'en');
+      expect(res.kept, isTrue);
     });
+
+    test(
+      'Tamil and English selected keeps Tamil, drops Hindi and unsupported Latin',
+      () {
+        ContentFilterResult evaluate(String title) => filter.evaluate(
+          id: title,
+          title: title,
+          channelId: title,
+          channelName: 'Channel',
+          shownLanguages: {'ta', 'en'},
+          hiddenLanguages: {'hi'},
+        );
+
+        expect(evaluate('தமிழ் புதிய படம்').finalLanguage, 'ta');
+        expect(evaluate('தமிழ் புதிய படம்').kept, isTrue);
+        expect(evaluate('हिंदी नया गाना').finalLanguage, 'hi');
+        expect(evaluate('हिंदी नया गाना').kept, isFalse);
+        expect(evaluate('hai kya nahi').finalLanguage, 'hi');
+        expect(evaluate('hai kya nahi').kept, isFalse);
+        expect(evaluate('paadal isai').finalLanguage, 'ta');
+        expect(evaluate('paadal isai').kept, isTrue);
+        expect(
+          evaluate('Amazing Super Action Movie Review 2024').kept,
+          isFalse,
+        );
+      },
+    );
+
+    test('Explicit English channel vote is a valid English signal', () {
+      cache.vote('english-channel', 'en', weight: 2);
+      final res = filter.evaluate(
+        id: 'channel-en',
+        title: 'A Latin title without known English words',
+        channelId: 'english-channel',
+        channelName: 'Channel',
+        shownLanguages: {'ta', 'en'},
+        hiddenLanguages: {'hi'},
+      );
+      expect(res.finalLanguage, 'en');
+      expect(res.kept, isTrue);
+    });
+
+    test(
+      'Script and lexicon evidence outrank channel votes and probe results',
+      () {
+        cache.vote('conflict-script', 'hi', weight: 2);
+        cache.vote('conflict-lexicon', 'hi', weight: 2);
+        final script = filter.evaluate(
+          id: 'script',
+          title: 'தமிழ் புதிய படம்',
+          channelId: 'conflict-script',
+          channelName: 'Channel',
+          shownLanguages: {'ta', 'en'},
+          hiddenLanguages: {'hi'},
+          probeLanguage: 'hi',
+        );
+        final lexicon = filter.evaluate(
+          id: 'lexicon',
+          title: 'paadal isai',
+          channelId: 'conflict-lexicon',
+          channelName: 'Channel',
+          shownLanguages: {'ta', 'en'},
+          hiddenLanguages: {'hi'},
+          probeLanguage: 'hi',
+        );
+        expect(script.finalLanguage, 'ta');
+        expect(lexicon.finalLanguage, 'ta');
+      },
+    );
   });
 
   group('Romanized Lexicon & Marathi vs Hindi Disambiguation', () {
@@ -144,22 +228,6 @@ void main() {
       );
       expect(mrRes.finalLanguage, 'mr');
     });
-
-    test('No Tamil boost when Tamil is not shown', () {
-      final item = VideoItem(
-        id: 'v9',
-        title: 'தமிழ் புதிய திரைப்பட முன்னோட்டம்',
-        channelId: 'ch9',
-        channelName: 'Tamil Cinema Hub',
-      );
-      // When preferred is Telugu only
-      final scoreTe = homeLanguageScore(item, {'te'});
-      expect(scoreTe, 0);
-
-      // When preferred is Tamil
-      final scoreTa = homeLanguageScore(item, {'ta'});
-      expect(scoreTa, greaterThan(0));
-    });
   });
 
   group('Seed Filtering', () {
@@ -173,9 +241,24 @@ void main() {
 
     test('Only picks history seeds classified into shown languages', () {
       final history = [
-        const HistoryEntry('h1', Duration.zero, Duration.zero, channelName: 'Aditya Telugu Songs (తెలుగు పాటలు)'),
-        const HistoryEntry('h2', Duration.zero, Duration.zero, channelName: 'Hindi Comedy (हिंदी कॉमेडी)'),
-        const HistoryEntry('h3', Duration.zero, Duration.zero, channelName: 'BBC News English'),
+        const HistoryEntry(
+          'h1',
+          Duration.zero,
+          Duration.zero,
+          channelName: 'Aditya Telugu Songs (తెలుగు పాటలు)',
+        ),
+        const HistoryEntry(
+          'h2',
+          Duration.zero,
+          Duration.zero,
+          channelName: 'Hindi Comedy (हिंदी कॉमेडी)',
+        ),
+        const HistoryEntry(
+          'h3',
+          Duration.zero,
+          Duration.zero,
+          channelName: 'BBC News English',
+        ),
       ];
 
       final validSeeds = history.where((h) {
@@ -197,33 +280,36 @@ void main() {
   });
 
   group('Cache Keys & Prefs', () {
-    test('Cache key includes hl, gl, sorted shown, sorted hidden, mix, strictHome', () {
-      final s1 = const AppSettings(
-        hl: 'en',
-        gl: 'IN',
-        contentLanguages: {'te', 'en'},
-        hiddenLanguages: {'hi'},
-        localRatio: 0.7,
-        strictHome: true,
-      );
-      final s2 = const AppSettings(
-        hl: 'en',
-        gl: 'IN',
-        contentLanguages: {'en', 'te'},
-        hiddenLanguages: {'hi'},
-        localRatio: 0.7,
-        strictHome: true,
-      );
-      expect(s1.cacheKey, equals(s2.cacheKey));
-      expect(s1.cacheKey, contains('en-te'));
-      expect(s1.cacheKey, contains('hi'));
-      expect(s1.cacheKey, contains('70'));
-      expect(s1.cacheKey, contains('strict'));
+    test(
+      'Cache key includes hl, gl, sorted shown, sorted hidden, mix, strictHome',
+      () {
+        final s1 = const AppSettings(
+          hl: 'en',
+          gl: 'IN',
+          contentLanguages: {'te', 'en'},
+          hiddenLanguages: {'hi'},
+          localRatio: 0.7,
+          strictHome: true,
+        );
+        final s2 = const AppSettings(
+          hl: 'en',
+          gl: 'IN',
+          contentLanguages: {'en', 'te'},
+          hiddenLanguages: {'hi'},
+          localRatio: 0.7,
+          strictHome: true,
+        );
+        expect(s1.cacheKey, equals(s2.cacheKey));
+        expect(s1.cacheKey, contains('en-te'));
+        expect(s1.cacheKey, contains('hi'));
+        expect(s1.cacheKey, contains('70'));
+        expect(s1.cacheKey, contains('strict'));
 
-      final s3 = s1.copyWith(strictHome: false);
-      expect(s1.cacheKey, isNot(equals(s3.cacheKey)));
-      expect(s3.cacheKey, contains('lenient'));
-    });
+        final s3 = s1.copyWith(strictHome: false);
+        expect(s1.cacheKey, isNot(equals(s3.cacheKey)));
+        expect(s3.cacheKey, contains('lenient'));
+      },
+    );
   });
 
   group('Probe Cap & Failure Handling', () {
@@ -257,10 +343,30 @@ void main() {
       final filter = ContentFilter(channelCache: cache);
 
       final mixed = [
-        VideoItem(id: '1', title: 'తెలుగు సినిమా పాటలు', channelId: 'c1', channelName: 'Aditya Telugu'),
-        VideoItem(id: '2', title: 'हिंदी कॉमेडी शो', channelId: 'c2', channelName: 'Hindi TV'),
-        VideoItem(id: '3', title: 'ಕನ್ನಡ ಜನಪ್ರಿಯ ಗೀತೆಗಳು', channelId: 'c3', channelName: 'Anand Kannada'),
-        VideoItem(id: '4', title: 'English Technology News Review', channelId: 'c4', channelName: 'Tech Today'),
+        VideoItem(
+          id: '1',
+          title: 'తెలుగు సినిమా పాటలు',
+          channelId: 'c1',
+          channelName: 'Aditya Telugu',
+        ),
+        VideoItem(
+          id: '2',
+          title: 'हिंदी कॉमेडी शो',
+          channelId: 'c2',
+          channelName: 'Hindi TV',
+        ),
+        VideoItem(
+          id: '3',
+          title: 'ಕನ್ನಡ ಜನಪ್ರಿಯ ಗೀತೆಗಳು',
+          channelId: 'c3',
+          channelName: 'Anand Kannada',
+        ),
+        VideoItem(
+          id: '4',
+          title: 'English Technology News Review',
+          channelId: 'c4',
+          channelName: 'Tech Today',
+        ),
       ];
 
       final filtered = filter.filterVideos(
@@ -275,4 +381,3 @@ void main() {
     });
   });
 }
-

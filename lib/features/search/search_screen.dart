@@ -10,12 +10,12 @@ import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
 import '../../features/home/home_variety.dart';
+import '../../features/watch/mini_player_inset.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/ui/ui.dart';
-import '../../widgets/variety_video_card.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key, this.initialQuery});
@@ -162,20 +162,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildChannelRow(ChannelItem item) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: CircleAvatar(
-        radius: AppSizes.avatarSm,
-        backgroundColor: theme.colorScheme.surfaceContainerHigh,
-        backgroundImage: item.avatarUrl.isNotEmpty
-            ? CachedNetworkImageProvider(item.avatarUrl)
-            : null,
-        child: item.avatarUrl.isEmpty
-            ? Text(item.title.isNotEmpty ? item.title[0] : 'C')
-            : null,
+      leading: ChannelAvatar(
+        name: item.title,
+        url: item.avatarUrl,
+        size: AppSizes.avatarSm * 2,
       ),
       title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        [item.handle, item.subscriberCountText].where((s) => s.isNotEmpty).join(' • '),
-        style: theme.textTheme.bodySmall,
+        [
+          item.handle,
+          item.subscriberCountText,
+        ].where((s) => s.isNotEmpty).join(' · '),
+        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
       ),
       trailing: FilledButton.tonal(
         onPressed: () => context.push('/channel/${item.id}'),
@@ -188,20 +186,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildPlaylistRow(PlaylistItem item) {
     final theme = Theme.of(context);
     return ListTile(
-      leading: ClipRRect(
-        borderRadius: AppRadius.smBorder,
-        child: CachedNetworkImage(
-          imageUrl: item.thumbUrl,
-          width: 80,
-          height: 48,
-          fit: BoxFit.cover,
-          errorWidget: (_, _, _) => Container(color: theme.colorScheme.surfaceContainerHigh),
+      leading: SizedBox(
+        width: 80,
+        child: ThumbnailWithDuration(
+          url: item.thumbUrl,
+          borderRadius: AppRadius.smBorder,
         ),
       ),
       title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        [item.channelName, item.videoCountText].where((s) => s.isNotEmpty).join(' • '),
-        style: theme.textTheme.bodySmall,
+        [
+          item.channelName,
+          item.videoCountText,
+        ].where((s) => s.isNotEmpty).join(' · '),
+        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
       ),
       onTap: () => context.push('/playlist/${item.id}'),
     );
@@ -213,11 +211,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-          child: Text('Shorts', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          child: Text(
+            'Shorts',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ),
         SizedBox(
-          height: 180,
+          height: 140.0 +
+              AppSpacing.xs +
+              MediaQuery.textScalerOf(context).scale(40.0),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -269,7 +277,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return showHidden || !hiddenLanguage(item.video, prefs.hiddenLanguages);
       }
       if (item is ShortSearchResult) {
-        final v = VideoItem(id: item.short.id, title: item.short.title ?? '', isShort: true);
+        final v = VideoItem(
+          id: item.short.id,
+          title: item.short.title ?? '',
+          isShort: true,
+        );
         return showHidden || !hiddenLanguage(v, prefs.hiddenLanguages);
       }
       return true;
@@ -289,7 +301,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Row(
                 children: [
                   IconButton(
-                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(LucideIcons.arrowLeft),
                   ),
@@ -337,7 +351,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         selected: activeFilterParam == chip.params,
                         onTap: () {
                           final isSelected = activeFilterParam == chip.params;
-                          search(activeQuery, filterParam: isSelected ? null : chip.params);
+                          search(
+                            activeQuery,
+                            filterParam: isSelected ? null : chip.params,
+                          );
                         },
                       ),
                   ],
@@ -348,7 +365,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   controller: scroll,
                   padding: EdgeInsets.only(
                     bottom: MediaQuery.paddingOf(context).bottom +
-                        (ref.watch(watchPanelProvider) != null ? 120 : AppSpacing.lg),
+                        MiniPlayerInset.of(context) +
+                        AppSpacing.lg,
                   ),
                   children: [
                     if (loadingSuggestions)
@@ -376,8 +394,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       for (final res in filteredResults) ...[
                         if (res is VideoSearchResult)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                            child: VarietyVideoCard(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.md,
+                            ),
+                            child: VideoCard.grid(
                               video: res.video,
                               onTap: () => openWatchPanel(ref, res.video.id),
                             ),
@@ -390,14 +410,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           _buildShortsShelf(res.shorts)
                         else if (res is ShortSearchResult)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                            child: VarietyVideoCard(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.md,
+                            ),
+                            child: VideoCard.grid(
                               video: VideoItem(
                                 id: res.short.id,
                                 title: res.short.title ?? '',
                                 channelId: res.short.channelId ?? '',
                                 channelName: res.short.channelName ?? '',
-                                channelAvatarUrl: res.short.channelAvatarUrl ?? '',
+                                channelAvatarUrl:
+                                    res.short.channelAvatarUrl ?? '',
                                 thumbUrl: res.short.thumbUrl,
                                 viewsText: res.short.viewsText ?? '',
                                 isShort: true,

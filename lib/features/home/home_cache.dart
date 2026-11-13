@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../core/content/language_profile.dart';
 import '../../core/yt/models.dart';
 
 class HomeCache {
@@ -7,6 +8,7 @@ class HomeCache {
   final List<ShortItem> shorts;
   final DateTime savedAt;
   String encode() => jsonEncode({
+    'classifierVersion': CLASSIFIER_VERSION,
     'savedAt': savedAt.toIso8601String(),
     'videos': videos.map((e) => e.toJson()).toList(),
     'shorts': shorts.map((e) => e.toJson()).toList(),
@@ -14,6 +16,7 @@ class HomeCache {
   static HomeCache? decode(String? raw, DateTime now) {
     try {
       final j = jsonDecode(raw!) as Map<String, dynamic>;
+      if (j['classifierVersion'] != CLASSIFIER_VERSION) return null;
       final saved = DateTime.parse(j['savedAt'] as String);
       if (now.isBefore(saved) ||
           now.difference(saved) >= const Duration(minutes: 30)) {

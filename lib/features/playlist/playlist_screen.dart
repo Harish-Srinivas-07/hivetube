@@ -11,7 +11,9 @@ import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../core/yt/models.dart';
+import '../../features/watch/mini_player_inset.dart';
 import '../../features/watch/watch_panel.dart';
+import '../../widgets/ui/ui.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
   const PlaylistScreen({super.key, required this.playlistId});
@@ -389,7 +391,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
               ),
             ),
           ),
-          const SliverToBoxAdapter(child: Divider()),
+          const SliverToBoxAdapter(child: AppDivider()),
           // Video List
           if (videos.isEmpty)
             SliverFillRemaining(
@@ -416,18 +418,11 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                   final v = videos[idx];
                   return ListTile(
                     key: ValueKey('local_pl_${v.id}_$idx'),
-                    leading: ClipRRect(
-                      borderRadius: AppRadius.smBorder,
-                      child: SizedBox(
-                        width: 80,
-                        height: 45,
-                        child: CachedNetworkImage(
-                          imageUrl: v.thumbUrl,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, _, _) => Container(
-                            color: theme.colorScheme.surfaceContainerHigh,
-                          ),
-                        ),
+                    leading: SizedBox(
+                      width: 80,
+                      child: ThumbnailWithDuration(
+                        url: v.thumbUrl,
+                        borderRadius: AppRadius.smBorder,
                       ),
                     ),
                     title: Text(
@@ -472,18 +467,11 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
               delegate: SliverChildBuilderDelegate((ctx, idx) {
                 final v = videos[idx];
                 return ListTile(
-                  leading: ClipRRect(
-                    borderRadius: AppRadius.smBorder,
-                    child: SizedBox(
-                      width: 80,
-                      height: 45,
-                      child: CachedNetworkImage(
-                        imageUrl: v.thumbUrl,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => Container(
-                          color: theme.colorScheme.surfaceContainerHigh,
-                        ),
-                      ),
+                  leading: SizedBox(
+                    width: 80,
+                    child: ThumbnailWithDuration(
+                      url: v.thumbUrl,
+                      borderRadius: AppRadius.smBorder,
                     ),
                   ),
                   title: Text(
@@ -491,17 +479,19 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   subtitle: Text(
                     [
                       v.channelName,
                       v.durationText,
-                    ].where((s) => s.isNotEmpty).join(' • '),
+                    ].where((s) => s.isNotEmpty).join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -509,7 +499,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                       ? IconButton(
                           icon: const Icon(
                             LucideIcons.x,
-                            size: AppSizes.iconSm,
+                            size: AppSizes.icon,
                           ),
                           onPressed: () => _removeItem(idx),
                         )
@@ -525,6 +515,9 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             ),
+          SliverBottomInset(
+            extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
+          ),
         ],
       ),
     );

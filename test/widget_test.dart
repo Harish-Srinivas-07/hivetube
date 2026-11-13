@@ -67,9 +67,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text('Settings'));
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('Language'), findsOneWidget);
+      expect(find.text('Content languages'), findsOneWidget);
       expect(find.text('Location'), findsOneWidget);
       expect(find.text('Local content'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
     });
   }
 }

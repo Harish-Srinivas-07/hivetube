@@ -4,10 +4,7 @@ import 'channel_language_cache.dart';
 import 'home_trace.dart';
 import 'language_profile.dart';
 
-enum ContentSurface {
-  strict,
-  library,
-}
+enum ContentSurface { strict, library }
 
 class FilteredFeed<T> {
   const FilteredFeed(this.items);
@@ -23,7 +20,6 @@ class ContentFilterResult {
     this.lexiconVerdict,
     this.channelVoteVerdict,
     this.probeVerdict,
-    this.score = 0,
     this.matchedWords = const [],
     this.isAmbiguous = false,
   });
@@ -35,16 +31,13 @@ class ContentFilterResult {
   final String? lexiconVerdict;
   final String? channelVoteVerdict;
   final String? probeVerdict;
-  final int score;
   final List<String> matchedWords;
   final bool isAmbiguous;
 }
 
 class ContentFilter {
-  ContentFilter({
-    required this.channelCache,
-    LanguageProfileRegistry? registry,
-  }) : registry = registry ?? LanguageProfileRegistry.instance;
+  ContentFilter({required this.channelCache, LanguageProfileRegistry? registry})
+    : registry = registry ?? LanguageProfileRegistry.instance;
 
   final ChannelLanguageCache channelCache;
   final LanguageProfileRegistry registry;
@@ -52,22 +45,22 @@ class ContentFilter {
   bool _looksHindiChannelName(String channelName) {
     if (registry.detectScript(channelName) == 'hi') return true;
     const markers = {
-      'hindi', 'hindustani', 'hindustan', 'bollywood', 'bhojpuri', 'haryanvi',
-      'desi', 'हिंदी', 'हिन्दी', 'भोजपुरी', 'हरियाणवी',
+      'hindi',
+      'hindustani',
+      'hindustan',
+      'bollywood',
+      'bhojpuri',
+      'haryanvi',
+      'desi',
+      'हिंदी',
+      'हिन्दी',
+      'भोजपुरी',
+      'हरियाणवी',
     };
-    final tokens = channelName.toLowerCase().split(RegExp(r'[^a-z0-9\u0900-\u097f]+'));
+    final tokens = channelName.toLowerCase().split(
+      RegExp(r'[^a-z0-9\u0900-\u097f]+'),
+    );
     return tokens.any(markers.contains);
-  }
-
-  bool _isHindiDevotional(String text) {
-    final terms = registry.get('hi')?.devotionalBlocklist ?? const <String>[];
-    final lower = text.toLowerCase();
-    return terms.any((term) {
-      final escaped = RegExp.escape(term).replaceAll(r'\ ', r'\s+');
-      return RegExp(
-        '(?:^|[^a-z0-9\\u0900-\\u097f])$escaped(?:\$|[^a-z0-9\\u0900-\\u097f])',
-      ).hasMatch(lower);
-    });
   }
 
   ContentFilterResult evaluate({
@@ -80,16 +73,17 @@ class ContentFilter {
     bool strictHome = true,
     ContentSurface surface = ContentSurface.strict,
     String? probeLanguage,
-    bool filterHindiDevotional = false,
   }) {
     final text = '$title $channelName';
-    final lower = text.toLowerCase();
 
     // 1. Script detection (Unicode ground truth)
     final scriptLang = registry.detectScript(text);
 
     // 2. Channel votes
-    final channelLang = channelCache.getClassifiedLanguage(channelId, channelName: channelName);
+    final channelLang = channelCache.getClassifiedLanguage(
+      channelId,
+      channelName: channelName,
+    );
 
     // 3. Lexicon scoring
     String? lexiconLang;
@@ -97,13 +91,12 @@ class ContentFilter {
     for (final profile in registry.profiles.values) {
       if (profile.code == 'en') continue;
       final evidence = registry.lexiconEvidence(text, profile.code);
-      final matches = registry.lexiconMatches(text, profile.code) ||
+      final matches =
+          registry.lexiconMatches(text, profile.code) ||
           (profile.code == 'hi' &&
               registry.lexiconEvidence(text, 'hi').strong >= 1 &&
               _looksHindiChannelName(channelName));
-      final s = matches
-          ? evidence.strong * 2 + evidence.weak
-          : 0;
+      final s = matches ? evidence.strong * 2 + evidence.weak : 0;
       if (s > maxLexiconScore) {
         maxLexiconScore = s;
         lexiconLang = profile.code;
@@ -113,26 +106,20 @@ class ContentFilter {
       lexiconLang = null;
     }
 
-    // 4. Resolve final language
-    // ASR is ground truth for spoken language; script and then learned signals follow.
-    String finalLang = 'en';
+    // Script, lexicon, channel vote, then caption probe.
+    String finalLang = 'unknown';
     final normalizedProbe = probeLanguage?.toLowerCase().split('-').first;
-    if (normalizedProbe != null && registry.profiles.containsKey(normalizedProbe)) {
-      finalLang = normalizedProbe;
-    } else if (channelLang == 'not_in_shown') {
-      finalLang = 'not_in_shown';
-    } else if (scriptLang != null) {
+    if (scriptLang != null) {
       finalLang = scriptLang;
-    } else if (channelLang != null) {
-      finalLang = channelLang;
     } else if (lexiconLang != null) {
       finalLang = lexiconLang;
-    } else {
-      // Check if text matches 'other' language markers
-      final otherProfile = registry.get('other');
-      if (otherProfile != null && otherProfile.boostTerms.any(lower.contains)) {
-        finalLang = 'other';
-      }
+    } else if (registry.englishWordRatio(text) >= 0.2) {
+      finalLang = 'en';
+    } else if (channelLang != null) {
+      finalLang = channelLang;
+    } else if (normalizedProbe != null &&
+        registry.profiles.containsKey(normalizedProbe)) {
+      finalLang = normalizedProbe;
     }
 
     // 5. Allow-list Decision
@@ -142,18 +129,15 @@ class ContentFilter {
     bool kept = false;
     String reason = '';
 
-    if (filterHindiDevotional &&
-        hiddenLanguages.contains('hi') &&
-        _isHindiDevotional(text)) {
-      kept = false;
-      reason = 'devotional_blocklist (hi hidden)';
-    } else if (isHidden) {
+    if (isHidden) {
       kept = false;
       reason = 'hidden_language ($finalLang)';
     } else if (surface == ContentSurface.library || !strictHome) {
       // Hidden-only policy
       kept = true;
-      reason = isShown ? 'shown_match ($finalLang)' : 'library_allowed ($finalLang)';
+      reason = isShown
+          ? 'shown_match ($finalLang)'
+          : 'library_allowed ($finalLang)';
     } else {
       // Strict Home allow-list policy:
       // KEEP ONLY items classified into a shown language.
@@ -169,15 +153,8 @@ class ContentFilter {
       }
     }
 
-    // Compute ranking score
-    int score = 0;
-    if (isShown) {
-      score += 5;
-      if (finalLang != 'en') score += 3;
-    }
-    if (maxLexiconScore > 0) score += min(maxLexiconScore, 5);
-
-    final isAmbiguous = scriptLang == null && channelLang == null && maxLexiconScore < 2;
+    final isAmbiguous =
+        scriptLang == null && channelLang == null && maxLexiconScore < 2;
     final matchedWords = lexiconLang != null
         ? registry.getMatchedLexiconWords(text, lexiconLang)
         : const <String>[];
@@ -187,10 +164,11 @@ class ContentFilter {
       kept: kept,
       reason: reason,
       scriptVerdict: scriptLang,
-      lexiconVerdict: lexiconLang != null ? '$lexiconLang (score=$maxLexiconScore)' : null,
+      lexiconVerdict: lexiconLang != null
+          ? '$lexiconLang (score=$maxLexiconScore)'
+          : null,
       channelVoteVerdict: channelLang,
       probeVerdict: probeLanguage,
-      score: score,
       matchedWords: matchedWords,
       isAmbiguous: isAmbiguous,
     );
@@ -204,7 +182,14 @@ class ContentFilter {
   }) {
     final text = '$title $channelName';
     if (registry.detectScript(text) != null) return false;
-    if (channelCache.getClassifiedLanguage(channelId, channelName: channelName) != null) return false;
+    if (registry.englishWordRatio(text) >= 0.2) return false;
+    if (channelCache.getClassifiedLanguage(
+          channelId,
+          channelName: channelName,
+        ) !=
+        null) {
+      return false;
+    }
     for (final profile in registry.profiles.values) {
       if (profile.code == 'en') continue;
       if (registry.lexiconMatches(text, profile.code)) return false;
@@ -223,10 +208,18 @@ class ContentFilter {
     Set<String> seen = const {},
     Map<String, String?> probeResults = const {},
     Random? random,
-    bool filterHindiDevotional = false,
   }) {
     final rng = random ?? Random();
-    final ranked = <({VideoItem item, int score, bool seen, int tie, int order})>[];
+    final ranked =
+        <
+          ({
+            VideoItem item,
+            bool seen,
+            DateTime? publishedAt,
+            int tie,
+            int order,
+          })
+        >[];
     var order = 0;
 
     for (final item in items) {
@@ -241,7 +234,6 @@ class ContentFilter {
         strictHome: strictHome,
         surface: surface,
         probeLanguage: probe,
-        filterHindiDevotional: filterHindiDevotional,
       );
 
       HomeTraceStore.instance.record(
@@ -266,8 +258,8 @@ class ContentFilter {
 
       ranked.add((
         item: item,
-        score: res.score,
         seen: seen.contains(item.id),
+        publishedAt: item.publishedAt,
         tie: rng.nextInt(1 << 31),
         order: order++,
       ));
@@ -275,8 +267,10 @@ class ContentFilter {
 
     ranked.sort((a, b) {
       if (a.seen != b.seen) return a.seen ? 1 : -1;
-      final scoreDiff = b.score.compareTo(a.score);
-      if (scoreDiff != 0) return scoreDiff;
+      final aDate = a.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final freshness = bDate.compareTo(aDate);
+      if (freshness != 0) return freshness;
       final tie = a.tie.compareTo(b.tie);
       return tie != 0 ? tie : a.order.compareTo(b.order);
     });
@@ -327,4 +321,3 @@ class ContentFilter {
     return FilteredFeed(result);
   }
 }
-

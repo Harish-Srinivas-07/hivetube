@@ -6,6 +6,9 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../common/channel_avatar.dart';
+
+export '../common/channel_avatar.dart' show ChannelAvatar;
 
 /// Standard compact pill chip.
 class AppChip extends StatelessWidget {
@@ -60,9 +63,13 @@ class AppChip extends StatelessWidget {
                   if (label.isNotEmpty) const SizedBox(width: AppSpacing.xs),
                 ],
                 if (label.isNotEmpty)
-                  Text(
-                    label,
-                    style: labelStyle,
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: labelStyle,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
               ],
             ),
@@ -565,57 +572,5 @@ class AppListTile extends StatelessWidget {
   }
 }
 
-/// App avatar — always circular with letter fallback.
-class AppAvatar extends StatelessWidget {
-  const AppAvatar({
-    super.key,
-    required this.name,
-    this.url,
-    this.size = AppSizes.avatar,
-    this.onTap,
-  });
-
-  final String name;
-  final String? url;
-  final double size;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final letter = name.trim().isEmpty
-        ? '?'
-        : name.trim().characters.first.toUpperCase();
-
-    Widget inner = CircleAvatar(
-      radius: size / 2,
-      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      child: Text(
-        letter,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-
-    if (url != null && url!.isNotEmpty) {
-      inner = ClipOval(
-        child: Image.network(
-          url!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => inner,
-        ),
-      );
-    }
-
-    final avatar = SizedBox.square(dimension: size, child: inner);
-
-    if (onTap == null) return avatar;
-    return GestureDetector(
-      onTap: onTap,
-      child: avatar,
-    );
-  }
-}
+/// Backward-compatibility alias for [ChannelAvatar].
+typedef AppAvatar = ChannelAvatar;

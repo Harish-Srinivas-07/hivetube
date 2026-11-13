@@ -360,6 +360,8 @@ class BackupService {
         );
       }
 
+      await db.deleteValue('settings_hl');
+      await db.deleteValue('content_hl_v1');
       final prefs = data['prefs'];
       if (prefs is Map) {
         for (final entry in prefs.entries) {

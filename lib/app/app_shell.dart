@@ -62,14 +62,15 @@ class AppShell extends ConsumerWidget {
       );
     }
 
-    // Panel progress: 0 = mini, 1 = fully expanded
-    final panelProgress = ref.watch(
-      playerUiProvider.select((s) => s.panelProgress),
-    );
-    // Nav pill: visible when no panel, or panel is mini (< 0.5)
-    final navVisible = panelProgress < 0.5;
+    final panelMode = ref.watch(playerUiProvider.select((s) => s.panelMode));
+    final panelExpanded =
+        ref.watch(watchPanelProvider) != null &&
+        panelMode == PlayerPanelMode.expanded;
 
-    final hasMini = ref.watch(watchPanelProvider) != null && navVisible && !shorts;
+    final hasMini =
+        ref.watch(watchPanelProvider) != null &&
+        panelMode != PlayerPanelMode.expanded &&
+        !shorts;
     final miniHeight =
         (wide
             ? AppSpacing.videoMaxWidth
@@ -148,8 +149,8 @@ class AppShell extends ConsumerWidget {
                               AnimatedContainer(
                                 duration: AppMotion.slow,
                                 curve: AppMotion.emphasized,
-                                width: panelProgress < 0.5 ? 72 : 0,
-                                child: panelProgress < 0.5
+                                width: !panelExpanded ? 72 : 0,
+                                child: !panelExpanded
                                     ? NavigationRail(
                                         selectedIndex:
                                             navigationShell.currentIndex,
@@ -158,8 +159,17 @@ class AppShell extends ConsumerWidget {
                                         destinations: [
                                           for (final item in _destinations)
                                             NavigationRailDestination(
-                                              icon: item.label == 'Subscriptions' && hasUnreadSubs
-                                                  ? const Badge(smallSize: 8, child: Icon(LucideIcons.clapperboard))
+                                              icon:
+                                                  item.label ==
+                                                          'Subscriptions' &&
+                                                      hasUnreadSubs
+                                                  ? const Badge(
+                                                      smallSize: 8,
+                                                      child: Icon(
+                                                        LucideIcons
+                                                            .clapperboard,
+                                                      ),
+                                                    )
                                                   : Icon(item.icon),
                                               label: Text(item.label),
                                             ),
@@ -187,31 +197,39 @@ class AppShell extends ConsumerWidget {
             left: AppSpacing.lg,
             right: AppSpacing.lg,
             bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
-            child: AnimatedSlide(
-              offset: navVisible ? Offset.zero : const Offset(0, 2),
-              duration: AppMotion.slow,
-              curve: AppMotion.emphasized,
-              child: AnimatedOpacity(
-                opacity: navVisible ? 1 : 0,
-                duration: AppMotion.base,
-                child: Center(
-                  child: FloatingNav(
-                    key: const ValueKey('bottomNavPill'),
-                    items: [
-                      for (final item in _destinations)
-                        FloatingNavItem(
-                          item.label,
-                          item.icon,
-                          showBadge: item.label == 'Subscriptions' && hasUnreadSubs,
-                        ),
-                    ],
-                    currentIndex: navigationShell.currentIndex,
-                    onSelected: (index) => select(index),
-                    onDragSelected: (index) => select(index),
-                    inverted: shorts,
+            child: ValueListenableBuilder<double>(
+              valueListenable: ref.watch(watchPanelProgressProvider),
+              builder: (context, progress, _) {
+                final navVisible = progress < .5;
+                return AnimatedSlide(
+                  offset: navVisible ? Offset.zero : const Offset(0, 2),
+                  duration: AppMotion.slow,
+                  curve: AppMotion.emphasized,
+                  child: AnimatedOpacity(
+                    opacity: navVisible ? 1 : 0,
+                    duration: AppMotion.base,
+                    child: Center(
+                      child: FloatingNav(
+                        key: const ValueKey('bottomNavPill'),
+                        items: [
+                          for (final item in _destinations)
+                            FloatingNavItem(
+                              item.label,
+                              item.icon,
+                              showBadge:
+                                  item.label == 'Subscriptions' &&
+                                  hasUnreadSubs,
+                            ),
+                        ],
+                        currentIndex: navigationShell.currentIndex,
+                        onSelected: (index) => select(index),
+                        onDragSelected: (index) => select(index),
+                        inverted: shorts,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
 

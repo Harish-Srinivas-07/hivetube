@@ -1,9 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'playback_service.dart';
 import '../settings/app_settings.dart';
+
+enum PlayerPanelMode { mini, moving, expanded }
 
 class PlayerUiState {
   const PlayerUiState({
@@ -13,7 +13,7 @@ class PlayerUiState {
     this.speed = 1,
     this.scrubbing = false,
     this.scrubPosition = Duration.zero,
-    this.panelProgress = 0,
+    this.panelMode = PlayerPanelMode.expanded,
     this.dismissed = true,
     this.position = Duration.zero,
     this.buffered = Duration.zero,
@@ -26,7 +26,8 @@ class PlayerUiState {
   });
 
   final bool overlayVisible, locked, isFullscreen, scrubbing, dismissed;
-  final double speed, panelProgress;
+  final double speed;
+  final PlayerPanelMode panelMode;
   final Duration scrubPosition, position, buffered, duration;
   final bool buffering, playing, completed, autoplay, recovering;
 
@@ -39,7 +40,7 @@ class PlayerUiState {
     double? speed,
     bool? scrubbing,
     Duration? scrubPosition,
-    double? panelProgress,
+    PlayerPanelMode? panelMode,
     bool? dismissed,
     Duration? position,
     Duration? buffered,
@@ -56,7 +57,7 @@ class PlayerUiState {
     speed: speed ?? this.speed,
     scrubbing: scrubbing ?? this.scrubbing,
     scrubPosition: scrubPosition ?? this.scrubPosition,
-    panelProgress: panelProgress ?? this.panelProgress,
+    panelMode: panelMode ?? this.panelMode,
     dismissed: dismissed ?? this.dismissed,
     position: position ?? this.position,
     buffered: buffered ?? this.buffered,
@@ -82,55 +83,36 @@ class PlayerUiController extends Notifier<PlayerUiState> {
     });
     final service = ref.watch(playbackProvider.select((value) => value));
     if (service == null) return PlayerUiState(autoplay: autoplay);
-    final player = service.player;
-    var lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-    final subscriptions = <StreamSubscription<dynamic>>[
-      player.stream.position.listen((value) {
-        final now = DateTime.now();
-        if (now.difference(lastPositionUpdate) >= const Duration(milliseconds: 200) ||
-            value == Duration.zero ||
-            value >= state.duration) {
-          lastPositionUpdate = now;
-          state = state.copyWith(position: value);
-        }
-      }),
-      player.stream.buffer.listen(
-        (value) => state = state.copyWith(buffered: value),
-      ),
-      player.stream.duration.listen(
-        (value) => state = state.copyWith(duration: value),
-      ),
-      player.stream.buffering.listen(
-        (value) => state = state.copyWith(buffering: value),
-      ),
-      player.stream.playing.listen(
-        (value) => state = state.copyWith(playing: value),
-      ),
-      player.stream.rate.listen(
-        (value) => state = state.copyWith(speed: value),
-      ),
-      player.stream.completed.listen(
-        (value) => state = state.copyWith(completed: value),
-      ),
-    ];
-    void changed() =>
-        state = state.copyWith(recovering: service.state.recovering);
+    final playback = service.state;
+    void changed() {
+      final current = service.state;
+      state = state.copyWith(
+        position: current.position,
+        buffered: current.buffered,
+        duration: current.duration,
+        buffering:
+            current.status == PlayerStatus.loading ||
+            current.status == PlayerStatus.buffering,
+        playing: current.playing,
+        completed: current.status == PlayerStatus.ended,
+        speed: current.rate,
+        recovering: current.recovering,
+      );
+    }
+
     service.addListener(changed);
-    ref.onDispose(() {
-      service.removeListener(changed);
-      for (final subscription in subscriptions) {
-        unawaited(subscription.cancel());
-      }
-    });
+    ref.onDispose(() => service.removeListener(changed));
     return PlayerUiState(
-      position: player.state.position,
-      buffered: player.state.buffer,
-      duration: player.state.duration,
-      buffering: player.state.buffering,
-      playing: player.state.playing,
-      speed: player.state.rate,
-      completed: player.state.completed,
-      recovering: service.state.recovering,
+      position: playback.position,
+      buffered: playback.buffered,
+      duration: playback.duration,
+      buffering:
+          playback.status == PlayerStatus.loading ||
+          playback.status == PlayerStatus.buffering,
+      playing: playback.playing,
+      speed: playback.rate,
+      completed: playback.status == PlayerStatus.ended,
+      recovering: playback.recovering,
       autoplay: autoplay,
       dismissed: service.request == null,
     );
@@ -143,8 +125,11 @@ class PlayerUiController extends Notifier<PlayerUiState> {
   void setScrubbing(bool value) => state = state.copyWith(scrubbing: value);
   void setScrubPosition(Duration value) =>
       state = state.copyWith(scrubPosition: value);
-  void setPanelProgress(double value) =>
-      state = state.copyWith(panelProgress: value.clamp(0.0, 1.0));
+  void setPanelMode(PlayerPanelMode value) {
+    if (state.panelMode == value) return;
+    state = state.copyWith(panelMode: value);
+  }
+
   void setDismissed(bool value) => state = state.copyWith(dismissed: value);
 }
 

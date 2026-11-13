@@ -6,6 +6,7 @@ import 'package:hivetube/core/content/channel_language_cache.dart';
 import 'package:hivetube/core/content/language_profile.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/yt/models.dart';
+import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/features/home/home_mixer.dart';
 import 'package:hivetube/features/home/home_variety.dart';
 
@@ -13,7 +14,42 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await LanguageProfileRegistry.instance.ensureLoaded();
-    ChannelLanguageCache.instance = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+    ChannelLanguageCache.instance = ChannelLanguageCache(
+      AppDb(NativeDatabase.memory()),
+    );
+  });
+  test('Home chips expose All and only the supported user categories', () {
+    expect(homeChips, [
+      'All',
+      'Music',
+      'Movies',
+      'Gaming',
+      'Live',
+      'News',
+      'Podcasts',
+      'Sports',
+      'Comedy',
+      'Cooking',
+      'Science',
+      'Tech',
+      'Education',
+    ]);
+  });
+
+  test('category cache keys are isolated from All and each other', () {
+    const settings = AppSettings(gl: 'AUTO');
+    expect(
+      homeCacheKey(settings),
+      isNot(homeCacheKey(settings, chip: 'Music')),
+    );
+    expect(
+      homeCacheKey(settings, chip: 'Music'),
+      isNot(homeCacheKey(settings, chip: 'Movies')),
+    );
+    expect(
+      homeSeenKey(settings, chip: 'Music'),
+      isNot(homeSeenKey(settings, chip: 'Movies')),
+    );
   });
   test('detects the supported Unicode scripts', () {
     expect(scriptLanguage('தமிழ்'), 'ta');
@@ -26,11 +62,11 @@ void main() {
     expect(scriptLanguage('ਪੰਜਾਬੀ'), 'pa');
     expect(scriptLanguage('ଓଡ଼ିଆ'), 'or');
     expect(scriptLanguage('اردو'), 'ur');
-    expect(scriptLanguage('English title'), 'en');
+    expect(scriptLanguage('The official video trailer'), 'en');
   });
 
   test(
-    'filters hidden language and scores preferred script and Tamil terms',
+    'filters only language policy without adding language ranking scores',
     () {
       const tamil = VideoItem(id: 'ta', title: 'தமிழ் பாடல்');
       const keyword = VideoItem(id: 'kw', title: 'Chennai food guide');
@@ -44,25 +80,37 @@ void main() {
         ),
         isTrue,
       );
-      expect(homeLanguageScore(tamil, {'ta', 'en'}), 5);
-      expect(homeLanguageScore(keyword, {'ta', 'en'}), 2);
-      expect(homeLanguageScore(latin, {'ta', 'en'}), 2);
+      expect(hiddenLanguage(tamil, {'hi'}), isFalse);
+      expect(hiddenLanguage(keyword, {'hi'}), isFalse);
+      expect(hiddenLanguage(latin, {'hi'}), isFalse);
     },
   );
 
-  test('sorts preferred/Tamil items first and demotes seen ids', () {
-    const tamil = VideoItem(id: 'ta', title: 'தமிழ் இசை');
-    const neutral = VideoItem(id: 'en', title: 'Music');
-    const seenTamil = VideoItem(id: 'old', title: 'தமிழ் பாடல்');
-    final ids = rankHomeItems(
-      [neutral, seenTamil, tamil],
-      preferred: {'ta', 'en'},
-      hidden: {'hi'},
-      seen: {'old'},
-      random: Random(7),
-    ).map((item) => item.id);
-    expect(ids.toList(), ['ta', 'en', 'old']);
-  });
+  test(
+    'ranks by freshness and demotes seen ids without language preference',
+    () {
+      final now = DateTime.now();
+      final tamil = VideoItem(id: 'ta', title: 'தமிழ் இசை', publishedAt: now);
+      final english = VideoItem(
+        id: 'en',
+        title: 'The official video',
+        publishedAt: now.subtract(const Duration(days: 1)),
+      );
+      final seenTamil = VideoItem(
+        id: 'old',
+        title: 'தமிழ் பாடல்',
+        publishedAt: now,
+      );
+      final ids = rankHomeItems(
+        [english, seenTamil, tamil],
+        preferred: {'ta', 'en'},
+        hidden: {'hi'},
+        seen: {'old'},
+        random: Random(7),
+      ).map((item) => item.id);
+      expect(ids.toList(), ['ta', 'en', 'old']);
+    },
+  );
 
   test('query choice rotates with its random seed', () {
     final first = chooseHomeQueries(
@@ -131,12 +179,12 @@ void main() {
             return VideoPage([
               const VideoItem(id: 'h1', title: 'हिन्दी'),
               const VideoItem(id: 'h2', title: 'हिन्दी'),
-              const VideoItem(id: 'first', title: 'Tamil song'),
+              const VideoItem(id: 'first', title: 'தமிழ் புதிய பாடல்'),
             ], 'next');
           }
           return VideoPage([
             for (var i = 0; i < 19; i++)
-              VideoItem(id: 'p$i', title: 'English item $i'),
+              VideoItem(id: 'p$i', title: 'The official video item $i'),
           ], null);
         },
       );

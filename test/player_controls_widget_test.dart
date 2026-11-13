@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/models.dart';
@@ -10,11 +11,33 @@ import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
 
+class _FakeMediaPlayerState extends Fake implements PlayerState {
+  @override
+  List<String> get subtitle => const [];
+}
+
+class _FakeMediaPlayerStream extends Fake implements PlayerStream {
+  @override
+  Stream<List<String>> get subtitle => const Stream.empty();
+}
+
+class _FakeMediaPlayer extends Fake implements Player {
+  @override
+  PlayerState get state => _FakeMediaPlayerState();
+  @override
+  PlayerStream get stream => _FakeMediaPlayerStream();
+}
+
 class _FakePlayback extends Fake implements PlaybackService {
+  final Player _player = _FakeMediaPlayer();
   final snapshot = PlaybackSnapshot()..status = PlayerStatus.playing;
   bool stopped = false;
   @override
+  PlayRequest? get request => null;
+  @override
   PlaybackSnapshot get state => snapshot;
+  @override
+  Player get player => _player;
   @override
   void addListener(VoidCallback listener) {}
   @override
@@ -52,7 +75,73 @@ class _FakeUi extends PlayerUiController {
   PlayerUiState build() => const PlayerUiState(playing: true, dismissed: false);
 }
 
+class _MovingUi extends PlayerUiController {
+  @override
+  PlayerUiState build() => const PlayerUiState(
+    playing: true,
+    dismissed: false,
+    panelMode: PlayerPanelMode.moving,
+  );
+}
+
+class _FullscreenMovingUi extends PlayerUiController {
+  @override
+  PlayerUiState build() => const PlayerUiState(
+    playing: true,
+    dismissed: false,
+    isFullscreen: true,
+    panelMode: PlayerPanelMode.moving,
+  );
+}
+
 void main() {
+  testWidgets('full controls are absent while panel is moving', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_MovingUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 800,
+              height: 500,
+              child: SharedPlayer(
+                service: _FakePlayback(),
+                videoOverride: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('playerOverlay')), findsNothing);
+  });
+
+  testWidgets('fullscreen controls remain available while panel is moving', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_FullscreenMovingUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 800,
+              height: 500,
+              child: SharedPlayer(
+                service: _FakePlayback(),
+                videoOverride: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('fullscreenPlayerOverlay')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('overlay hides after playing and returns on tap', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -121,8 +210,6 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Minimize'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(SharedPlayer));
-    await tester.pump();
     await tester.tap(find.byTooltip('Close player'));
     await tester.pump();
     expect(container.read(watchPanelProvider), isNull);

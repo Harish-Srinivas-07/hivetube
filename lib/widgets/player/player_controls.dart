@@ -22,6 +22,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
+import '../sheets/app_sheet.dart';
 import 'player_seek_bar.dart';
 import 'player_settings_menu.dart';
 
@@ -64,13 +65,37 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   bool liked = false, disliked = false, saved = false;
   double? oldRate, dragStartValue;
   String? hud;
-  String subtitleText = '';
-  StreamSubscription<List<String>>? _subtitleSubscription;
   IconData? hudIcon;
   double dragX = 0, verticalDelta = 0;
   bool dragCenter = false;
   bool panelDragStarted = false;
   PlayerStatus? lastStatus;
+  final TransformationController _videoTransform = TransformationController();
+  String? _zoomVideoId;
+  bool _wasFullscreen = false, _videoZoomedState = false;
+
+  bool get _videoZoomed => _videoTransform.value.getMaxScaleOnAxis() > 1.01;
+
+  void _resetVideoZoom() {
+    _videoZoomedState = false;
+    _videoTransform.value = Matrix4.identity();
+  }
+
+  void _onVideoTransformChanged() {
+    final zoomed = _videoZoomed;
+    if (zoomed == _videoZoomedState) return;
+    _videoZoomedState = zoomed;
+    if (mounted) setState(() {});
+  }
+
+  void _syncVideoZoom(PlayerUiState ui) {
+    final videoId = widget.service.state.videoId;
+    if (_zoomVideoId != videoId || (_wasFullscreen && !ui.isFullscreen)) {
+      _resetVideoZoom();
+    }
+    _zoomVideoId = videoId;
+    _wasFullscreen = ui.isFullscreen;
+  }
 
   void _changed() {
     final status = widget.service.state.status;
@@ -88,9 +113,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   @override
   void initState() {
     super.initState();
+    _videoTransform.addListener(_onVideoTransformChanged);
     widget.service.addListener(_changed);
     _settingsSession = PlayerSettingsSession(widget.service);
-    _listenToSubtitles();
     _changed();
   }
 
@@ -102,23 +127,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       _settingsSession.dispose();
       _settingsSession = PlayerSettingsSession(widget.service);
       widget.service.addListener(_changed);
-      _listenToSubtitles();
       lastStatus = null;
       _changed();
     }
-  }
-
-  void _listenToSubtitles() {
-    _subtitleSubscription?.cancel();
-    subtitleText = widget.service.player.state.subtitle
-        .where((line) => line.trim().isNotEmpty)
-        .join('\n');
-    _subtitleSubscription = widget.service.player.stream.subtitle.listen((lines) {
-      if (!mounted) return;
-      setState(() {
-        subtitleText = lines.where((line) => line.trim().isNotEmpty).join('\n');
-      });
-    });
   }
 
   void _scheduleHide() {
@@ -173,6 +184,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   }
 
   Future<void> _fullscreen(bool value) async {
+    if (!value) _resetVideoZoom();
     ref.read(playerUiProvider.notifier).setLocked(false);
     ref.read(playerUiProvider.notifier).setFullscreen(value);
     await SystemChrome.setPreferredOrientations(
@@ -274,31 +286,27 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     hideTimer?.cancel();
     sheetOpen = true;
     try {
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('More videos'),
-                subtitle: const Text('Continue to the next video'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.skip_next_rounded),
-                title: const Text('Play next'),
-                enabled: widget.onNext != null,
-                onTap: widget.onNext == null
-                    ? null
-                    : () {
-                        Navigator.pop(context);
-                        widget.onNext?.call();
-                      },
-              ),
-            ],
-          ),
+      await showAppSheet<void>(
+        context,
+        fit: true,
+        title: 'More videos',
+        onVideo: true,
+        builder: (ctx, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppSheetRow(
+              icon: LucideIcons.skipForward,
+              label: 'Play next',
+              subtitle: 'Continue to the next video',
+              enabled: widget.onNext != null,
+              onTap: widget.onNext == null
+                  ? null
+                  : () {
+                      Navigator.pop(ctx);
+                      widget.onNext?.call();
+                    },
+            ),
+          ],
         ),
       );
     } finally {
@@ -378,13 +386,13 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   );
 
   Future<void> _copyVideoLink() async {
-    final id = widget.service.request?.videoId;
+    final id = widget.service.state.videoId;
     if (id == null) return;
     await Clipboard.setData(ClipboardData(text: 'https://youtu.be/$id'));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Video link copied')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Video link copied')));
   }
 
   void _showActionMessage(String message) {
@@ -404,8 +412,10 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final mediaItem = ref.watch(audioHandlerProvider)?.mediaItem.valueOrNull;
     final title = mediaItem?.title.isNotEmpty == true
         ? mediaItem!.title
-        : (service.request?.videoId ?? 'HiveTube');
+        : (state.videoId ?? 'HiveTube');
     final channel = mediaItem?.artist ?? '';
+    final compactFullscreen =
+        MediaQuery.sizeOf(context).width < AppSpacing.navigationBreakpoint;
     final durationMs = math.max(1, ui.duration.inMilliseconds).toDouble();
     final positionMs = ui.displayPosition.inMilliseconds
         .clamp(0, durationMs.toInt())
@@ -413,11 +423,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final bufferMs = ui.buffered.inMilliseconds
         .clamp(positionMs.toInt(), durationMs.toInt())
         .toDouble();
-    final thumbnailUrl = service.request == null
+    final thumbnailUrl = state.videoId == null
         ? null
-        : 'https://i.ytimg.com/vi/${service.request!.videoId}/mqdefault.jpg';
-    final caption = subtitleText.trim();
-
+        : 'https://i.ytimg.com/vi/${state.videoId}/mqdefault.jpg';
     return IgnorePointer(
       ignoring: !ui.overlayVisible,
       child: AnimatedOpacity(
@@ -468,7 +476,11 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               ShaderMask(
                                 shaderCallback: (bounds) =>
                                     const LinearGradient(
-                                      colors: [Colors.white, Colors.white70, Colors.transparent],
+                                      colors: [
+                                        Colors.white,
+                                        Colors.white70,
+                                        Colors.transparent,
+                                      ],
                                       stops: [0, .8, 1],
                                     ).createShader(bounds),
                                 blendMode: BlendMode.dstIn,
@@ -485,7 +497,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               ),
                               if (channel.isNotEmpty)
                                 Text(
-                                  channel.startsWith('@') ? channel : '@$channel',
+                                  channel.startsWith('@')
+                                      ? channel
+                                      : '@$channel',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -497,7 +511,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Material(
+                        if (!compactFullscreen)
+                          Material(
                           color: AppColors.playerControlGlass,
                           borderRadius: AppRadius.pillBorder,
                           child: InkWell(
@@ -542,12 +557,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                             ),
                           ),
                         ),
-                        _roundControl(
-                          icon: Icons.cast_rounded,
-                          tooltip: 'Cast',
-                          onPressed: () => _showActionMessage('Cast is unavailable'),
-                          diameter: 42,
-                        ),
+                        if (!compactFullscreen)
+                          _roundControl(
+                            icon: Icons.cast_rounded,
+                            tooltip: 'Cast',
+                            onPressed: () =>
+                                _showActionMessage('Cast is unavailable'),
+                            diameter: 42,
+                          ),
                         _roundControl(
                           icon: Icons.closed_caption_rounded,
                           tooltip: 'Captions',
@@ -583,15 +600,13 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                         ),
                         const SizedBox(width: 30),
                         _roundControl(
-                          icon: state.status == PlayerStatus.playing
+                          icon: state.playing
                               ? Icons.pause_rounded
                               : state.status == PlayerStatus.ended
                               ? Icons.replay_rounded
                               : Icons.play_arrow_rounded,
-                          tooltip: state.status == PlayerStatus.playing
-                              ? 'Pause'
-                              : 'Play',
-                          onPressed: () => unawaited(service.togglePlayPause()),
+                          tooltip: state.playing ? 'Pause' : 'Play',
+                          onPressed: () => unawaited(service.togglePlay()),
                           diameter: 76,
                           size: 43,
                         ),
@@ -607,32 +622,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                       ],
                     ),
                   ),
-                  if (caption.isNotEmpty)
-                    Positioned(
-                      left: 40,
-                      right: 40,
-                      bottom: 150,
-                      child: IgnorePointer(
-                        child: Text(
-                          caption,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w500,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black87,
-                                blurRadius: 8,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                   Positioned(
                     left: 22,
                     right: 22,
@@ -781,14 +770,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                         : Icons.bookmark_border_rounded,
                                     tooltip: 'Save',
                                     selected: saved,
-                                    onPressed: () => setState(
-                                      () => saved = !saved,
-                                    ),
+                                    onPressed: () =>
+                                        setState(() => saved = !saved),
                                   ),
                                   _actionControl(
                                     icon: Icons.ios_share_rounded,
                                     tooltip: 'Share',
-                                    onPressed: () => unawaited(_copyVideoLink()),
+                                    onPressed: () =>
+                                        unawaited(_copyVideoLink()),
                                   ),
                                   _actionControl(
                                     icon: Icons.auto_awesome_rounded,
@@ -810,7 +799,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                             onPressed: _moreVideos,
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
                             ),
                             child: const Text('More videos'),
                           ),
@@ -853,7 +844,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     seekTimer?.cancel();
     _doubleTapCommitTimer?.cancel();
     hudTimer?.cancel();
-    _subtitleSubscription?.cancel();
+    _videoTransform.removeListener(_onVideoTransformChanged);
+    _videoTransform.dispose();
     _settingsSession.dispose();
     widget.service.removeListener(_changed);
     super.dispose();
@@ -866,36 +858,105 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final notifier = ref.read(playerUiProvider.notifier);
     final service = widget.service;
     final state = service.state;
-    final busy =
-        state.status == PlayerStatus.loading ||
-        state.status == PlayerStatus.buffering;
+    final compact =
+        widget.compact ||
+        (!widget.short &&
+            !ui.isFullscreen &&
+            ui.panelMode == PlayerPanelMode.mini);
+    _syncVideoZoom(ui);
+    final videoZoomed = _videoZoomed;
     final displayPosition = ui.scrubbing ? ui.scrubPosition : ui.position;
     return LayoutBuilder(
       builder: (context, constraints) => Stack(
         fit: StackFit.expand,
         children: [
           RepaintBoundary(
-            child:
-                widget.videoOverride ??
-                Video(
-                  controller: service.controller,
-                  controls: NoVideoControls,
-                  fit: widget.short ? BoxFit.cover : BoxFit.contain,
-                  subtitleViewConfiguration: SubtitleViewConfiguration(
-                    visible: !ui.isFullscreen,
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.shortsForeground,
-                      backgroundColor: AppColors.shortsScrim,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: compact ? null : _toggleOverlay,
+              onDoubleTapDown: compact
+                  ? null
+                  : (d) => dragX = d.localPosition.dx / constraints.maxWidth,
+              onDoubleTap: compact
+                  ? null
+                  : () {
+                      if (_videoZoomed) {
+                        _resetVideoZoom();
+                      } else {
+                        if (dragX < 1 / 3) _seekBy(-10);
+                        if (dragX > 2 / 3) _seekBy(10);
+                      }
+                    },
+              onLongPressStart: compact
+                  ? null
+                  : (_) {
+                      oldRate = service.state.rate;
+                      longPress = true;
+                      unawaited(service.setRate(2));
+                      setState(() {});
+                    },
+              onLongPressEnd: compact
+                  ? null
+                  : (_) {
+                      if (oldRate != null) {
+                        unawaited(service.setRate(oldRate!));
+                      }
+                      longPress = false;
+                      setState(() {});
+                    },
+              onLongPressCancel: compact
+                  ? null
+                  : () {
+                      if (longPress && oldRate != null) {
+                        unawaited(service.setRate(oldRate!));
+                      }
+                      longPress = false;
+                      setState(() {});
+                    },
+              onVerticalDragStart: compact || videoZoomed
+                  ? null
+                  : (d) => unawaited(
+                      _startVertical(d, constraints.maxWidth, ui.isFullscreen),
                     ),
-                    textAlign: TextAlign.center,
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      0,
-                      AppSpacing.lg,
-                      AppSpacing.xl,
+              onVerticalDragUpdate: compact || videoZoomed
+                  ? null
+                  : (d) => _updateVertical(
+                      d,
+                      constraints.maxHeight,
+                      ui.isFullscreen,
+                    ),
+              onVerticalDragEnd: compact || videoZoomed
+                  ? null
+                  : (d) => _endVertical(d, ui.isFullscreen),
+              child:
+                  widget.videoOverride ??
+                  InteractiveViewer(
+                    transformationController: _videoTransform,
+                    minScale: 1,
+                    maxScale: 3,
+                    panEnabled: !widget.short && !compact,
+                    scaleEnabled: !widget.short && !compact,
+                    child: Video(
+                      controller: service.controller,
+                      controls: NoVideoControls,
+                      fit: widget.short ? BoxFit.cover : BoxFit.contain,
+                      subtitleViewConfiguration: SubtitleViewConfiguration(
+                        visible: !ui.isFullscreen,
+                        style: AppTextStyles.body.copyWith(
+                          color: AppColors.shortsForeground,
+                          backgroundColor: AppColors.shortsScrim,
+                        ),
+                        textAlign: TextAlign.center,
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.xl,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+            ),
           ),
           if (state.frozenFrame != null)
             Image.memory(
@@ -903,43 +964,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
               fit: BoxFit.contain,
               gaplessPlayback: true,
             ),
-          if (!widget.compact) ...[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleOverlay,
-              onDoubleTapDown: (d) =>
-                  dragX = d.localPosition.dx / constraints.maxWidth,
-              onDoubleTap: () {
-                if (dragX < 1 / 3) _seekBy(-10);
-                if (dragX > 2 / 3) _seekBy(10);
-              },
-              onLongPressStart: (_) {
-                oldRate = service.state.rate;
-                longPress = true;
-                unawaited(service.setRate(2));
-                setState(() {});
-              },
-              onLongPressEnd: (_) {
-                if (oldRate != null) unawaited(service.setRate(oldRate!));
-                longPress = false;
-                setState(() {});
-              },
-              onLongPressCancel: () {
-                if (longPress && oldRate != null) {
-                  unawaited(service.setRate(oldRate!));
-                }
-                longPress = false;
-                setState(() {});
-              },
-              onVerticalDragStart: (d) => unawaited(
-                _startVertical(d, constraints.maxWidth, ui.isFullscreen),
-              ),
-              onVerticalDragUpdate: (d) =>
-                  _updateVertical(d, constraints.maxHeight, ui.isFullscreen),
-              onVerticalDragEnd: (d) => _endVertical(d, ui.isFullscreen),
-            ),
-            if (ui.isFullscreen &&
-                (ui.panelProgress == 0 || ui.panelProgress > .3))
+          if (!compact) ...[
+            if (ui.isFullscreen)
               _fullscreenOverlay(
                 context: context,
                 ui: ui,
@@ -947,8 +973,36 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 autoplay: autoplay,
                 notifier: notifier,
               ),
+            if (ui.isFullscreen &&
+                state.selectedCaption != null &&
+                state.subtitleText.trim().isNotEmpty)
+              Positioned(
+                left: 40,
+                right: 40,
+                bottom: 150,
+                child: IgnorePointer(
+                  child: Text(
+                    state.subtitleText.trim(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black87,
+                          blurRadius: 8,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             if (!ui.isFullscreen &&
-                (ui.panelProgress == 0 || ui.panelProgress > .3))
+                (widget.short || ui.panelMode == PlayerPanelMode.expanded))
               IgnorePointer(
                 ignoring: !ui.overlayVisible,
                 child: AnimatedOpacity(
@@ -1071,13 +1125,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               ],
                                             ),
                                           )
-                                        : busy
-                                        ? const Padding(
-                                            padding: EdgeInsets.all(
-                                              AppSpacing.md,
-                                            ),
-                                            child: CircularProgressIndicator(),
-                                          )
                                         : IconButton(
                                             color: AppColors.shortsForeground,
                                             style: IconButton.styleFrom(
@@ -1091,15 +1138,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               ),
                                             ),
                                             onPressed: () async {
-                                              await service.togglePlayPause();
+                                              await service.togglePlay();
                                               if (mounted) _scheduleHide();
                                             },
                                             iconSize: AppSizes.avatar,
                                             icon: Icon(
                                               state.status == PlayerStatus.ended
                                                   ? LucideIcons.rotateCcw
-                                                  : state.status ==
-                                                        PlayerStatus.playing
+                                                  : state.playing
                                                   ? Icons.pause_rounded
                                                   : Icons.play_arrow_rounded,
                                             ),
@@ -1185,9 +1231,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                   ),
                 ),
               ),
-            if (!widget.short &&
-                !ui.isFullscreen &&
-                (ui.panelProgress == 0 || ui.panelProgress > .3))
+            if (!widget.short && !ui.isFullscreen)
               Positioned(
                 left: 0,
                 right: 0,

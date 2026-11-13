@@ -24,8 +24,37 @@ void main() {
     );
     expect(queries, isNotEmpty);
     expect(queries.every((q) => !q.contains('{') && !q.contains('}')), isTrue);
-    expect(queries.any((q) => ['latest', 'new', 'today', 'this week', 'recent'].any(q.toLowerCase().contains)), isTrue);
+    expect(
+      queries.any(
+        (q) => [
+          'latest',
+          'new',
+          'today',
+          'this week',
+          'recent',
+        ].any(q.toLowerCase().contains),
+      ),
+      isTrue,
+    );
     expect(queries.any((q) => q.contains('Pongal')), isTrue);
+  });
+
+  test('selected Tamil and English receive equal profile query counts', () {
+    final queries = LanguageProfileRegistry.instance.buildQueries(
+      shownLanguages: {'ta', 'en'},
+      chip: 'All',
+      localRatio: .6,
+      random: Random(4),
+      date: DateTime(2026, 1, 12),
+    );
+    final tamil = queries
+        .where((q) => q.toLowerCase().contains('tamil') || q.contains('தமிழ்'))
+        .length;
+    final english = queries
+        .where((q) => q.toLowerCase().contains('english'))
+        .length;
+    expect(tamil, greaterThan(0));
+    expect(tamil, english);
   });
 
   test('Tamil lexicon needs two strong or one strong plus two weak terms', () {
@@ -41,26 +70,50 @@ void main() {
     expect(tamil.negativeCollisions, isEmpty);
   });
 
-  test('query bandit favors measured yield and enforces 24 hour reuse', () async {
-    final db = AppDb(NativeDatabase.memory());
-    final store = DiscoveryStore(db);
-    final old = DateTime.now().subtract(const Duration(days: 2)).millisecondsSinceEpoch;
-    await db.into(db.discoveryQueries).insert(DiscoveryQueriesCompanion.insert(
-      query: 'high yield', lastUsed: old, yieldNew: const Value(50), precision: const Value(.9), dwellMs: const Value(500),
-    ));
-    await db.into(db.discoveryQueries).insert(DiscoveryQueriesCompanion.insert(
-      query: 'low yield', lastUsed: old, yieldNew: const Value(1), precision: const Value(.1), dwellMs: const Value(5000),
-    ));
-    final selected = await store.chooseQueries(
-      ['high yield', 'low yield', 'untried'],
-      count: 1,
-      random: Random(3),
-    );
-    expect(selected, ['high yield']);
-    expect(await store.recentlyUsedQueries(), contains('high yield'));
-    expect(await store.chooseQueries(['high yield'], random: Random(4)), isEmpty);
-    await db.close();
-  });
+  test(
+    'query bandit favors measured yield and enforces 24 hour reuse',
+    () async {
+      final db = AppDb(NativeDatabase.memory());
+      final store = DiscoveryStore(db);
+      final old = DateTime.now()
+          .subtract(const Duration(days: 2))
+          .millisecondsSinceEpoch;
+      await db
+          .into(db.discoveryQueries)
+          .insert(
+            DiscoveryQueriesCompanion.insert(
+              query: 'high yield',
+              lastUsed: old,
+              yieldNew: const Value(50),
+              precision: const Value(.9),
+              dwellMs: const Value(500),
+            ),
+          );
+      await db
+          .into(db.discoveryQueries)
+          .insert(
+            DiscoveryQueriesCompanion.insert(
+              query: 'low yield',
+              lastUsed: old,
+              yieldNew: const Value(1),
+              precision: const Value(.1),
+              dwellMs: const Value(5000),
+            ),
+          );
+      final selected = await store.chooseQueries(
+        ['high yield', 'low yield', 'untried'],
+        count: 1,
+        random: Random(3),
+      );
+      expect(selected, ['high yield']);
+      expect(await store.recentlyUsedQueries(), contains('high yield'));
+      expect(
+        await store.chooseQueries(['high yield'], random: Random(4)),
+        isEmpty,
+      );
+      await db.close();
+    },
+  );
 
   test('query history keeps newest 300 rows', () async {
     final db = AppDb(NativeDatabase.memory());
@@ -73,30 +126,69 @@ void main() {
     await db.close();
   });
 
-  test('channel promotes after three distinct ground truth videos and demotes', () async {
-    final db = AppDb(NativeDatabase.memory());
-    final store = DiscoveryStore(db);
-    for (var i = 1; i <= 2; i++) {
-      await store.observeChannel(channelId: 'UC_test', videoId: 'v$i', language: 'ta', groundTruthMatch: true);
+  test(
+    'channel promotes after three distinct ground truth videos and demotes',
+    () async {
+      final db = AppDb(NativeDatabase.memory());
+      final store = DiscoveryStore(db);
+      for (var i = 1; i <= 2; i++) {
+        await store.observeChannel(
+          channelId: 'UC_test',
+          videoId: 'v$i',
+          language: 'ta',
+          groundTruthMatch: true,
+        );
+        expect(await store.channels('ta'), isEmpty);
+      }
+      await store.observeChannel(
+        channelId: 'UC_test',
+        videoId: 'v3',
+        language: 'ta',
+        groundTruthMatch: true,
+      );
+      expect((await store.channels('ta')).single.votes, 3);
+      await store.observeChannel(
+        channelId: 'UC_test',
+        videoId: 'v3',
+        language: 'ta',
+        groundTruthMatch: true,
+      );
+      expect((await store.channels('ta')).single.votes, 3);
+      await store.observeChannel(
+        channelId: 'UC_test',
+        videoId: 'v4',
+        language: 'ta',
+        groundTruthMatch: false,
+      );
+      expect((await store.channels('ta')).single.votes, 3);
+      await store.observeChannel(
+        channelId: 'UC_test',
+        videoId: 'v5',
+        language: 'ta',
+        groundTruthMatch: false,
+      );
       expect(await store.channels('ta'), isEmpty);
-    }
-    await store.observeChannel(channelId: 'UC_test', videoId: 'v3', language: 'ta', groundTruthMatch: true);
-    expect((await store.channels('ta')).single.votes, 3);
-    await store.observeChannel(channelId: 'UC_test', videoId: 'v3', language: 'ta', groundTruthMatch: true);
-    expect((await store.channels('ta')).single.votes, 3);
-    await store.observeChannel(channelId: 'UC_test', videoId: 'v4', language: 'ta', groundTruthMatch: false);
-    expect((await store.channels('ta')).single.votes, 3);
-    await store.observeChannel(channelId: 'UC_test', videoId: 'v5', language: 'ta', groundTruthMatch: false);
-    expect(await store.channels('ta'), isEmpty);
-    await db.close();
-  });
+      await db.close();
+    },
+  );
 
   test('mined title terms become weak after second verification', () async {
     final db = AppDb(NativeDatabase.memory());
     final store = DiscoveryStore(db);
-    await store.mineTerms(language: 'ta', title: 'Anirudh new paadal', verifiedNonLanguageTerms: {'new'});
-    expect((await store.topTerms('ta')).every((term) => term.strength == 0), isTrue);
-    await store.mineTerms(language: 'ta', title: 'Anirudh paadal latest', verifiedNonLanguageTerms: {'latest'});
+    await store.mineTerms(
+      language: 'ta',
+      title: 'Anirudh new paadal',
+      verifiedNonLanguageTerms: {'new'},
+    );
+    expect(
+      (await store.topTerms('ta')).every((term) => term.strength == 0),
+      isTrue,
+    );
+    await store.mineTerms(
+      language: 'ta',
+      title: 'Anirudh paadal latest',
+      verifiedNonLanguageTerms: {'latest'},
+    );
     final mined = await store.topTerms('ta');
     expect(mined.firstWhere((term) => term.term == 'anirudh').strength, 1);
     expect(mined.firstWhere((term) => term.term == 'paadal').strength, 1);
@@ -106,21 +198,50 @@ void main() {
   test('Home age mix uses fresh, recent, and evergreen quotas', () {
     final now = DateTime.now();
     final items = <VideoItem>[
-      for (var i = 0; i < 12; i++) VideoItem(id: 'f$i', title: 'fresh', publishedAt: now.subtract(Duration(days: i % 7))),
-      for (var i = 0; i < 6; i++) VideoItem(id: 'r$i', title: 'recent', publishedAt: now.subtract(Duration(days: 10 + i))),
-      for (var i = 0; i < 2; i++) VideoItem(id: 'e$i', title: 'evergreen', publishedAt: now.subtract(const Duration(days: 100))),
+      for (var i = 0; i < 12; i++)
+        VideoItem(
+          id: 'f$i',
+          title: 'fresh',
+          publishedAt: now.subtract(Duration(days: i % 7)),
+        ),
+      for (var i = 0; i < 6; i++)
+        VideoItem(
+          id: 'r$i',
+          title: 'recent',
+          publishedAt: now.subtract(Duration(days: 10 + i)),
+        ),
+      for (var i = 0; i < 2; i++)
+        VideoItem(
+          id: 'e$i',
+          title: 'evergreen',
+          publishedAt: now.subtract(const Duration(days: 100)),
+        ),
     ];
     final mixed = mixByPublishedAge(items, random: Random(5));
-    expect(mixed.take(12).where((e) => publishedAgeDays(e)! <= 7), hasLength(12));
-    expect(mixed.skip(12).take(6).where((e) => publishedAgeDays(e)! <= 60), hasLength(6));
+    expect(
+      mixed.take(12).where((e) => publishedAgeDays(e)! <= 7),
+      hasLength(12),
+    );
+    expect(
+      mixed.skip(12).take(6).where((e) => publishedAgeDays(e)! <= 60),
+      hasLength(6),
+    );
     expect(mixed.skip(18).every((e) => publishedAgeDays(e)! > 60), isTrue);
   });
 
   test('Home launch cache expires at 30 minutes', () {
     final now = DateTime.now();
-    final cache = HomeCache(const [], const [], now.subtract(const Duration(minutes: 29)));
+    final cache = HomeCache(
+      const [],
+      const [],
+      now.subtract(const Duration(minutes: 29)),
+    );
     expect(HomeCache.decode(cache.encode(), now), isNotNull);
-    final expired = HomeCache(const [], const [], now.subtract(const Duration(minutes: 31)));
+    final expired = HomeCache(
+      const [],
+      const [],
+      now.subtract(const Duration(minutes: 31)),
+    );
     expect(HomeCache.decode(expired.encode(), now), isNull);
   });
 }

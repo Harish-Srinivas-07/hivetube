@@ -83,14 +83,12 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
           decoration: const InputDecoration(hintText: 'Enter title...'),
         ),
         actions: [
-          AppButton(
+          AppButton.text(
             label: 'Cancel',
-            variant: AppButtonVariant.text,
             onPressed: () => Navigator.of(ctx).pop(),
           ),
-          AppButton(
+          AppButton.filled(
             label: 'Create',
-            variant: AppButtonVariant.filled,
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
           ),
         ],

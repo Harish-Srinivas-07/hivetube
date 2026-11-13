@@ -83,7 +83,7 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
       PlaybackState(
         controls: [
           MediaControl.skipToPrevious,
-          service.player.state.playing ? MediaControl.pause : MediaControl.play,
+          state.playing ? MediaControl.pause : MediaControl.play,
           MediaControl.skipToNext,
           MediaControl.stop,
         ],
@@ -94,7 +94,7 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
         },
         androidCompactActionIndices: const [0, 1, 2],
         processingState: processing,
-        playing: service.player.state.playing,
+        playing: state.playing,
         updatePosition: state.position,
         bufferedPosition: state.buffered,
         speed: state.rate,

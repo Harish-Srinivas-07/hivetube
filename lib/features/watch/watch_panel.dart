@@ -19,8 +19,6 @@ import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
-import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/player/player_controls.dart';
 import '../shorts/shorts_screen.dart';
@@ -46,6 +44,12 @@ class WatchPanelExpandController extends Notifier<int> {
   void minimize() => state--;
 }
 
+final watchPanelProgressProvider = Provider<ValueNotifier<double>>((ref) {
+  final progress = ValueNotifier<double>(0);
+  ref.onDispose(progress.dispose);
+  return progress;
+});
+
 class WatchPanelController extends Notifier<String?> {
   @override
   String? build() => null;
@@ -60,16 +64,17 @@ void openWatchPanel(WidgetRef ref, String id) {
   ref.read(playerUiProvider.notifier).setDismissed(false);
 }
 
-/// Remembers the corner of the mini player (false = right, true = left) for the session.
-final miniCornerLeftProvider = NotifierProvider<MiniCornerController, bool>(
+enum MiniCorner { tl, tr, bl, br }
+
+/// Remembers the mini player's corner for the session.
+final miniCornerProvider = NotifierProvider<MiniCornerController, MiniCorner>(
   MiniCornerController.new,
 );
 
-class MiniCornerController extends Notifier<bool> {
+class MiniCornerController extends Notifier<MiniCorner> {
   @override
-  bool build() => false;
-  void toggle() => state = !state;
-  void setLeft(bool value) => state = value;
+  MiniCorner build() => MiniCorner.br;
+  void setCorner(MiniCorner value) => state = value;
 }
 
 final relatedVideosProvider =
@@ -123,21 +128,18 @@ class WatchPanel extends ConsumerStatefulWidget {
 }
 
 class _WatchPanelState extends ConsumerState<WatchPanel>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// 0 = mini, 1 = expanded
   late final AnimationController animation;
+  late final AnimationController _snapCtrl;
+  late final ValueNotifier<double> _progress;
+  final ValueNotifier<Offset> _miniPos = ValueNotifier(Offset.zero);
+  Offset _snapFrom = Offset.zero;
+  Offset _snapTarget = Offset.zero;
+  Size? _lastBounds;
+  bool _panelActive = false;
   bool _skipHistory = false;
   bool _keepMini = false;
-  bool _dragging = false;
-
-  // Mini controls visibility & timer
-  bool _miniControls = false;
-  Timer? _miniTimer;
-
-  // Vertical & horizontal slide/drag offset for mini card
-  double _miniDismissY = 0;
-  double _miniDismissOpacity = 1;
-  double _miniDragX = 0;
 
   String? _started;
   PlaybackService? _active;
@@ -151,19 +153,36 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   @override
   void initState() {
     super.initState();
+    _progress = ref.read(watchPanelProgressProvider);
     // Start at 1 (expanded) when opened
     animation = AnimationController(vsync: this, value: 1)
+      ..addListener(() => _publish(animation.value));
+    _snapCtrl = AnimationController(vsync: this)
       ..addListener(() {
-        ref.read(playerUiProvider.notifier).setPanelProgress(animation.value);
+        _miniPos.value = Offset.lerp(_snapFrom, _snapTarget, _snapCtrl.value)!;
       });
+    _panelActive = ref.read(watchPanelProvider) != null;
+    if (_panelActive) _publish(animation.value);
   }
 
   @override
   void dispose() {
     _countdown?.cancel();
-    _miniTimer?.cancel();
     animation.dispose();
+    _snapCtrl.dispose();
+    _miniPos.dispose();
     super.dispose();
+  }
+
+  void _publish(double p) {
+    if (!_panelActive) return;
+    _progress.value = p;
+    final mode = p <= 0
+        ? PlayerPanelMode.mini
+        : p >= 1
+        ? PlayerPanelMode.expanded
+        : PlayerPanelMode.moving;
+    ref.read(playerUiProvider.notifier).setPanelMode(mode);
   }
 
   void _animate(double target, [double velocity = 0]) {
@@ -181,10 +200,6 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     _skipHistory = !record;
     ref.read(watchPanelProvider.notifier).open(id);
     ref.read(playerUiProvider.notifier).setDismissed(false);
-    setState(() {
-      _miniDismissY = 0;
-      _miniDismissOpacity = 1;
-    });
     _animate(1);
   }
 
@@ -203,12 +218,9 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     ref.read(playerUiProvider.notifier).setFullscreen(false);
     _started = null;
     if (stop) unawaited(_active?.stop());
-    _miniTimer?.cancel();
-    setState(() {
-      _miniControls = false;
-      _miniDismissY = 0;
-      _miniDismissOpacity = 1;
-    });
+    animation.value = 0;
+    _progress.value = 0;
+    ref.read(playerUiProvider.notifier).setPanelMode(PlayerPanelMode.mini);
   }
 
   Future<void> _exitFullscreen() async {
@@ -234,6 +246,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     }
     _started = id;
     _active = service;
+    if (service.state.videoId == id &&
+        service.state.mode == PlaybackMode.video) {
+      return;
+    }
     if (!ref.read(watchSessionProvider).watched.contains(id)) {
       ref.read(watchSessionProvider.notifier).opened(null, id, record: false);
     }
@@ -261,18 +277,6 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     }
     final previous = ref.read(watchSessionProvider.notifier).popPrevious();
     if (previous != null) _openMini(previous, record: false);
-  }
-
-  void _showMiniControls(PlaybackService? service) {
-    _miniTimer?.cancel();
-    setState(() => _miniControls = true);
-    if (service?.state.status == PlayerStatus.playing) {
-      _miniTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _active?.state.status == PlayerStatus.playing) {
-          setState(() => _miniControls = false);
-        }
-      });
-    }
   }
 
   void _syncAutoplay(
@@ -333,28 +337,24 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     // React to panel id changes
     ref.listen<String?>(watchPanelProvider, (previous, next) {
       if (next != null && next != previous) {
+        _panelActive = true;
+        _publish(animation.value);
         ref
             .read(watchSessionProvider.notifier)
             .opened(previous, next, record: !_skipHistory);
         _skipHistory = false;
         ref.read(playerUiProvider.notifier).setDismissed(false);
-        setState(() {
-          _miniDismissY = 0;
-          _miniDismissOpacity = 1;
-        });
         if (!_keepMini) {
           _animate(1);
         }
         _keepMini = false;
       } else if (next == null && previous != null) {
+        _panelActive = false;
         _started = null;
         _active?.stop();
-        _miniTimer?.cancel();
-        setState(() {
-          _miniControls = false;
-          _miniDismissY = 0;
-          _miniDismissOpacity = 1;
-        });
+        animation.value = 0;
+        _progress.value = 0;
+        ref.read(playerUiProvider.notifier).setPanelMode(PlayerPanelMode.mini);
       }
     });
 
@@ -363,7 +363,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
     final service = ref.watch(playbackProvider);
     final ui = ref.watch(playerUiProvider);
-    final miniLeft = ref.watch(miniCornerLeftProvider);
+    final miniCorner = ref.watch(miniCornerProvider);
     final metadataState = ref.watch(shortMetadataProvider(id));
     final metadata = metadataState.value;
     final title = metadata?.title?.trim().isNotEmpty == true
@@ -386,11 +386,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
         unawaited(_start(id, service));
         _syncAutoplay(id, service, unplayed, autoplay);
         final handler = ref.read(audioHandlerProvider);
-        handler?.setMetadata(
-          id,
-          title,
-          channelName,
-        );
+        handler?.setMetadata(id, title, channelName);
         handler?.onNext = () async {
           if (mounted && nextId != null) _openExpanded(nextId);
         };
@@ -425,159 +421,264 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
             : SystemUiOverlayStyle.dark,
         child: LayoutBuilder(
           builder: (context, bounds) {
-            final sysPadding = MediaQuery.paddingOf(context);
-            final navBottom =
-                sysPadding.bottom + AppSpacing.navHeight + AppSpacing.sm;
+            final padding = MediaQuery.paddingOf(context);
             final wide = bounds.maxWidth >= 900;
-
-            // Mini player dimensions: 55% of width on phone (16:9), capped at 360dp on wide
+            final fullWidth = wide ? bounds.maxWidth * .64 : bounds.maxWidth;
+            final fullHeight = ui.isFullscreen
+                ? bounds.maxHeight
+                : fullWidth / AppSpacing.thumbnailRatio;
             final miniWidth = wide
                 ? AppSpacing.videoMaxWidth
                 : bounds.maxWidth * .55;
             final miniHeight = miniWidth / AppSpacing.thumbnailRatio;
-            final miniY = bounds.maxHeight - navBottom - miniHeight;
-            final miniRight = wide ? AppSpacing.lg : AppSpacing.lg;
-
-            // Inset exposed to tabs
+            final safeTop = padding.top + AppSpacing.md;
+            final safeBottom =
+                padding.bottom +
+                AppSpacing.navHeight +
+                AppSpacing.sm +
+                AppSpacing.md;
+            final left = AppSpacing.md;
+            final right = bounds.maxWidth - miniWidth - AppSpacing.md;
+            final top = safeTop;
+            final bottom = bounds.maxHeight - safeBottom - miniHeight;
+            final anchors = <MiniCorner, Offset>{
+              MiniCorner.tl: Offset(left, top),
+              MiniCorner.tr: Offset(right, top),
+              MiniCorner.bl: Offset(left, bottom),
+              MiniCorner.br: Offset(right, bottom),
+            };
             final miniInset = miniHeight + AppSpacing.sm * 2;
+            if (_lastBounds != bounds.biggest) {
+              _lastBounds = bounds.biggest;
+              _miniPos.value = anchors[miniCorner]!;
+            }
 
-            return AnimatedBuilder(
-              animation: animation,
-              builder: (context, _) {
-                final p = ui.isFullscreen ? 1.0 : animation.value;
-                final isMini = p < 0.05;
+            final expandedTopLeft = Offset(
+              0,
+              ui.isFullscreen ? 0 : padding.top,
+            );
+            final sharedPlayer = service == null
+                ? const ColoredBox(
+                    color: AppColors.shortsBackground,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : SharedPlayer(
+                    key: _sharedVideoKey,
+                    service: service,
+                    topInsetAlreadyApplied: true,
+                    videoOverride: widget.videoOverride,
+                    onMinimize: () => _animate(0),
+                    onPrevious: () => _previous(service),
+                    onNext: nextId == null ? null : () => _openExpanded(nextId),
+                    onPanelDragUpdate: (dy) {
+                      animation.stop();
+                      animation.value =
+                          (animation.value - dy / bounds.maxHeight).clamp(0, 1);
+                    },
+                    onPanelDragEnd: (velocity) {
+                      if (velocity > 400 || animation.value < .5) {
+                        _animate(0, -velocity / bounds.maxHeight);
+                      } else {
+                        _animate(1);
+                      }
+                    },
+                  );
+            final videoChild = RepaintBoundary(
+              child: SizedBox(
+                width: fullWidth,
+                height: fullHeight,
+                child: sharedPlayer,
+              ),
+            );
+            final watchScreen = RepaintBoundary(
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: WatchScreen(
+                  id: id,
+                  placeholderVideo: true,
+                  embedded: true,
+                  deferHeavyContent: true,
+                  onMinimize: () => _animate(0),
+                ),
+              ),
+            );
 
-                // Video geometry morph
-                final expandedWidth = wide ? bounds.maxWidth * 0.64 : bounds.maxWidth;
-                final expandedHeight = ui.isFullscreen
-                    ? bounds.maxHeight
-                    : expandedWidth / AppSpacing.thumbnailRatio;
-
-                final videoWidth = lerpDouble(miniWidth, expandedWidth, p)!;
-                final videoHeight = lerpDouble(miniHeight, expandedHeight, p)!;
-
-                final videoTop = ui.isFullscreen
-                    ? 0.0
-                    : lerpDouble(miniY, sysPadding.top, p)! + _miniDismissY;
-
-                // Horizontal position
-                final miniLeftPos = miniLeft ? miniRight : bounds.maxWidth - miniWidth - miniRight;
-                final videoLeft = lerpDouble(miniLeftPos, 0, p)!;
-
-                // Panel content fades in as animation passes 0.5
-                final contentOpacity = ((p - 0.5) / 0.5).clamp(0.0, 1.0);
-
-                return MiniPlayerInset(
-                  bottom: isMini ? miniInset : 0.0,
-                  child: Stack(
-                    children: [
-                      // ── Expanded Content (fades in past 0.5) ─────────────
-                      if (p > 0.05 && !ui.isFullscreen)
-                        Positioned.fill(
+            return MiniPlayerInset(
+              bottom: ui.panelMode == PlayerPanelMode.mini ? miniInset : 0,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedBuilder(
+                    animation: _progress,
+                    child: watchScreen,
+                    builder: (context, child) {
+                      final p = ui.isFullscreen ? 1.0 : _progress.value;
+                      if (p <= .02 || ui.isFullscreen) {
+                        return const SizedBox.shrink();
+                      }
+                      final opacity = ((p - .2) / .6).clamp(0.0, 1.0);
+                      return Positioned.fill(
+                        child: RepaintBoundary(
                           child: IgnorePointer(
-                            ignoring: contentOpacity < 0.5,
-                            child: Opacity(
-                              opacity: contentOpacity,
-                              child: Material(
-                                color: Theme.of(context).scaffoldBackgroundColor,
-                                child: WatchScreen(
-                                  id: id,
-                                  placeholderVideo: true,
-                                  embedded: true,
-                                  onMinimize: () => _animate(0),
-                                ),
+                            ignoring: p < .95,
+                            child: Opacity(opacity: opacity, child: child),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  AnimatedBuilder(
+                    animation: Listenable.merge([_progress, _miniPos]),
+                    child: videoChild,
+                    builder: (context, child) {
+                      final p = ui.isFullscreen ? 1.0 : _progress.value;
+                      final scale = ui.isFullscreen
+                          ? 1.0
+                          : lerpDouble(miniWidth / fullWidth, 1, p)!;
+                      final pos = Offset.lerp(
+                        _miniPos.value,
+                        expandedTopLeft,
+                        p,
+                      )!;
+                      final radius = lerpDouble(12, 0, p)!;
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Transform(
+                          alignment: Alignment.topLeft,
+                          transform: Matrix4.identity()
+                            ..translateByDouble(pos.dx, pos.dy, 0, 1)
+                            ..scaleByDouble(scale, scale, 1, 1),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(radius),
+                            child: child,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  if (service != null)
+                    AnimatedBuilder(
+                      animation: Listenable.merge([_progress, _miniPos]),
+                      builder: (context, _) {
+                        final p = _progress.value;
+                        final rect = Rect.fromLTWH(
+                          _miniPos.value.dx,
+                          _miniPos.value.dy,
+                          miniWidth,
+                          miniHeight,
+                        );
+                        return Positioned.fromRect(
+                          rect: rect,
+                          child: Opacity(
+                            opacity: (1 - p * 4).clamp(0.0, 1.0),
+                            child: IgnorePointer(
+                              ignoring: p > .05,
+                              child: Stack(
+                                children: [
+                                  GestureDetector(
+                                    key: const ValueKey(
+                                      'miniPlayerDragSurface',
+                                    ),
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _animate(1),
+                                    onPanStart: (_) => _snapCtrl.stop(),
+                                    onPanUpdate: (details) {
+                                      final next =
+                                          _miniPos.value + details.delta;
+                                      _miniPos.value = Offset(
+                                        next.dx.clamp(left, right),
+                                        next.dy.clamp(
+                                          padding.top + AppSpacing.md,
+                                          bounds.maxHeight -
+                                              padding.bottom -
+                                              miniHeight -
+                                              AppSpacing.md,
+                                        ),
+                                      );
+                                    },
+                                    onPanEnd: (details) {
+                                      final velocity =
+                                          details.velocity.pixelsPerSecond;
+                                      if (velocity.dy < -1200 &&
+                                          velocity.dy.abs() >
+                                              velocity.dx.abs()) {
+                                        _animate(
+                                          1,
+                                          -velocity.dy / bounds.maxHeight,
+                                        );
+                                      } else {
+                                        final projected =
+                                            _miniPos.value + velocity * .12;
+                                        final targetEntry = anchors.entries
+                                            .reduce((a, b) {
+                                              final da = (a.value - projected)
+                                                  .distanceSquared;
+                                              final db = (b.value - projected)
+                                                  .distanceSquared;
+                                              return da <= db ? a : b;
+                                            });
+                                        ref
+                                            .read(miniCornerProvider.notifier)
+                                            .setCorner(targetEntry.key);
+                                        _snapFrom = _miniPos.value;
+                                        _snapTarget = targetEntry.value;
+                                        final delta = _snapTarget - _snapFrom;
+                                        final distanceSquared =
+                                            delta.distanceSquared;
+                                        final velocityFraction =
+                                            distanceSquared == 0
+                                            ? 0.0
+                                            : ((velocity.dx * delta.dx +
+                                                          velocity.dy *
+                                                              delta.dy) /
+                                                      distanceSquared)
+                                                  .clamp(-8.0, 8.0);
+                                        _snapCtrl.value = 0;
+                                        _snapCtrl.animateWith(
+                                          SpringSimulation(
+                                            const SpringDescription(
+                                              mass: 1,
+                                              stiffness: 450,
+                                              damping: 38,
+                                            ),
+                                            0,
+                                            1,
+                                            velocityFraction,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const SizedBox.expand(),
+                                  ),
+                                  Align(
+                                    alignment: Alignment.topLeft,
+                                    child: _MiniControlButton(
+                                      tooltip: service.state.playing
+                                          ? 'Pause'
+                                          : 'Play',
+                                      icon: service.state.playing
+                                          ? LucideIcons.pause
+                                          : LucideIcons.play,
+                                      onPressed: service.togglePlay,
+                                    ),
+                                  ),
+                                  Align(
+                                    alignment: Alignment.topRight,
+                                    child: _MiniControlButton(
+                                      tooltip: 'Close player',
+                                      icon: LucideIcons.x,
+                                      onPressed: _dismiss,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                        ),
-
-                      // ── Morphed Shared Video Widget ───────────────────────
-                      Positioned(
-                        left: videoLeft,
-                        top: videoTop,
-                        width: videoWidth,
-                        height: videoHeight,
-                        child: Opacity(
-                          opacity: _miniDismissOpacity,
-                          child: _VideoMorphCard(
-                            panelKey: _sharedVideoKey,
-                            isMini: isMini,
-                            miniControls: _miniControls,
-                            service: service,
-                            videoOverride: widget.videoOverride,
-                            title: title,
-                            nextId: nextId,
-                            dragging: _dragging,
-                            onMinimize: () => _animate(0),
-                            onExpand: () => _animate(1),
-                            onDismiss: _dismiss,
-                            onPrevious: () => _previous(service),
-                            onNext: nextId == null ? null : () => _openMini(nextId),
-                            onTapMini: () => _showMiniControls(service),
-                            onMiniVerticalDragUpdate: (dy) {
-                              _dragging = true;
-                              if (dy > 0) {
-                                // Drag down on mini: slide down and fade
-                                setState(() {
-                                  _miniDismissY = (_miniDismissY + dy).clamp(0.0, 200.0);
-                                  _miniDismissOpacity = (1.0 - _miniDismissY / 150.0).clamp(0.0, 1.0);
-                                });
-                              } else {
-                                // Drag up on mini: expand
-                                animation.stop();
-                                final delta = -dy / (miniY > 1 ? miniY : 1);
-                                animation.value = (animation.value + delta).clamp(0.0, 1.0);
-                              }
-                            },
-                            onMiniVerticalDragEnd: (vel) {
-                              _dragging = false;
-                              if (_miniDismissY > 48 || vel > 400) {
-                                // Swipe down: slides down, fades, stops & closes
-                                _dismiss();
-                              } else {
-                                setState(() {
-                                  _miniDismissY = 0;
-                                  _miniDismissOpacity = 1;
-                                });
-                                if (vel < -400 || animation.value > 0.5) {
-                                  _animate(1, -vel / (miniY > 1 ? miniY : 1));
-                                } else {
-                                  _animate(0);
-                                }
-                              }
-                            },
-                            onMiniHorizontalDragUpdate: (dx) {
-                              _miniDragX += dx;
-                            },
-                            onMiniHorizontalDragEnd: (vel) {
-                              if (_miniDragX < -48 || vel < -150) {
-                                ref.read(miniCornerLeftProvider.notifier).setLeft(true);
-                              } else if (_miniDragX > 48 || vel > 150) {
-                                ref.read(miniCornerLeftProvider.notifier).setLeft(false);
-                              }
-                              _miniDragX = 0;
-                            },
-                            onExpandedDragUpdate: (dy) {
-                              _dragging = true;
-                              animation.stop();
-                              final delta = -dy / (miniY > 1 ? miniY : 1);
-                              animation.value = (animation.value + delta).clamp(0.0, 1.0);
-                            },
-                            onExpandedDragEnd: (vel) {
-                              _dragging = false;
-                              if (vel > 400 || animation.value < 0.5) {
-                                _animate(0, -vel / (miniY > 1 ? miniY : 1));
-                              } else {
-                                _animate(1);
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                        );
+                      },
+                    ),
+                ],
+              ),
             );
           },
         ),
@@ -586,333 +687,41 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   }
 }
 
-// ─────────────────────────── mini progress bar ───────────────────────────────
-
-class _MiniProgressBar extends StatelessWidget {
-  const _MiniProgressBar({
-    required this.service,
-    required this.position,
-    required this.buffered,
-    required this.duration,
+class _MiniControlButton extends StatelessWidget {
+  const _MiniControlButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
   });
-  final PlaybackService service;
-  final Duration position, buffered, duration;
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    if (duration <= Duration.zero) return const SizedBox.shrink();
-    final played =
-        (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-    final buf =
-        (buffered.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-    return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (details) {
-          final frac = (details.localPosition.dx / constraints.maxWidth)
-              .clamp(0.0, 1.0);
-          final target =
-              Duration(milliseconds: (frac * duration.inMilliseconds).round());
-          unawaited(service.seekTo(target));
-        },
-        onHorizontalDragUpdate: (details) {
-          final frac = (details.localPosition.dx / constraints.maxWidth)
-              .clamp(0.0, 1.0);
-          final target =
-              Duration(milliseconds: (frac * duration.inMilliseconds).round());
-          unawaited(service.seekTo(target));
-        },
-        child: SizedBox(
-          height: 12,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              SizedBox(
-                height: 2,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    FractionallySizedBox(
-                      widthFactor: buf,
-                      alignment: Alignment.centerLeft,
-                      child: const ColoredBox(color: AppColors.shortsProgressTrack),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: played,
-                      alignment: Alignment.centerLeft,
-                      child: const ColoredBox(color: AppColors.primary),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+  Widget build(BuildContext context) => SizedBox(
+    width: 40,
+    height: 40,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            color: Color(0x99000000),
+            shape: BoxShape.circle,
           ),
+          child: SizedBox(width: 32, height: 32),
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────── video morph card ────────────────────────────────
-
-class _VideoMorphCard extends StatelessWidget {
-  const _VideoMorphCard({
-    required this.panelKey,
-    required this.isMini,
-    required this.miniControls,
-    required this.service,
-    required this.videoOverride,
-    required this.title,
-    required this.nextId,
-    required this.dragging,
-    required this.onMinimize,
-    required this.onExpand,
-    required this.onDismiss,
-    required this.onPrevious,
-    required this.onNext,
-    required this.onTapMini,
-    required this.onMiniVerticalDragUpdate,
-    required this.onMiniVerticalDragEnd,
-    required this.onMiniHorizontalDragUpdate,
-    required this.onMiniHorizontalDragEnd,
-    required this.onExpandedDragUpdate,
-    required this.onExpandedDragEnd,
-  });
-
-  final Key panelKey;
-  final bool isMini, miniControls, dragging;
-  final PlaybackService? service;
-  final Widget? videoOverride;
-  final String title;
-  final String? nextId;
-  final VoidCallback onMinimize, onExpand, onDismiss, onPrevious, onTapMini;
-  final VoidCallback? onNext;
-  final ValueChanged<double> onMiniVerticalDragUpdate, onMiniVerticalDragEnd;
-  final ValueChanged<double> onMiniHorizontalDragUpdate, onMiniHorizontalDragEnd;
-  final ValueChanged<double> onExpandedDragUpdate, onExpandedDragEnd;
-
-  @override
-  Widget build(BuildContext context) {
-    final svc = service;
-
-    Widget card = ClipRRect(
-      borderRadius: isMini ? AppRadius.lgBorder : BorderRadius.zero,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Single keyed video widget reused at every size
-          GestureDetector(
-            key: panelKey,
-            behavior: HitTestBehavior.opaque,
-            onTap: isMini ? onTapMini : null,
-            child: svc == null
-                ? const ColoredBox(
-                    color: AppColors.shortsBackground,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : SharedPlayer(
-                    service: svc,
-                    topInsetAlreadyApplied: true,
-                    videoOverride: videoOverride,
-                    compact: isMini && !dragging,
-                    onMinimize: onMinimize,
-                    onPrevious: onPrevious,
-                    onNext: onNext,
-                    onPanelDragUpdate: isMini ? null : onExpandedDragUpdate,
-                    onPanelDragEnd: isMini ? null : onExpandedDragEnd,
-                  ),
-          ),
-
-          // Mini controls overlay
-          if (isMini && miniControls && svc != null)
-            _MiniControlsOverlay(
-              service: svc,
-              nextId: nextId,
-              onExpand: onExpand,
-              onDismiss: onDismiss,
-              onPrevious: onPrevious,
-              onNext: onNext,
-            ),
-
-          // Red progress line along the bottom edge inside the rounded card
-          if (isMini && (svc?.state.duration.inMilliseconds ?? 0) > 0)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 12,
-              child: _MiniProgressBar(
-                service: svc!,
-                position: svc.state.position,
-                buffered: svc.state.buffered,
-                duration: svc.state.duration,
-              ),
-            ),
-        ],
-      ),
-    );
-
-    // Mini card soft shadow
-    if (isMini) {
-      card = DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: AppRadius.lgBorder,
-          boxShadow: const [
-            BoxShadow(
-              color: AppColors.playerControlBorder,
-              blurRadius: 16,
-              offset: Offset(0, 4),
-            ),
-          ],
+        IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          iconSize: 16,
+          color: Colors.white,
+          icon: Icon(icon),
         ),
-        child: card,
-      );
-    }
-
-    // Wrap with gesture recognizer for mini player swipe/drag
-    if (isMini) {
-      card = Tooltip(
-        message: title,
-        waitDuration: const Duration(milliseconds: 500),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onVerticalDragUpdate: (d) => onMiniVerticalDragUpdate(d.delta.dy),
-          onVerticalDragEnd: (d) => onMiniVerticalDragEnd(d.primaryVelocity ?? 0),
-          onHorizontalDragUpdate: (d) => onMiniHorizontalDragUpdate(d.delta.dx),
-          onHorizontalDragEnd: (d) => onMiniHorizontalDragEnd(d.primaryVelocity ?? 0),
-          child: card,
-        ),
-      );
-    }
-
-    return card;
-  }
-}
-
-// ─────────────────────────── mini controls overlay ───────────────────────────
-
-class _MiniControlsOverlay extends StatelessWidget {
-  const _MiniControlsOverlay({
-    required this.service,
-    required this.nextId,
-    required this.onExpand,
-    required this.onDismiss,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  final PlaybackService service;
-  final String? nextId;
-  final VoidCallback onExpand, onDismiss, onPrevious;
-  final VoidCallback? onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    final playing = service.state.status == PlayerStatus.playing;
-    final buffering =
-        service.state.status == PlayerStatus.loading ||
-        service.state.status == PlayerStatus.buffering;
-    final ended = service.state.status == PlayerStatus.ended;
-    final error = service.state.status == PlayerStatus.error;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onExpand, // Tap on visible controls background opens the watch page
-      child: ColoredBox(
-        color: AppColors.shortsScrim,
-        child: Stack(
-          children: [
-            // Top-left: expand
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                tooltip: 'Expand',
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                constraints: const BoxConstraints(minWidth: AppSizes.iconLg, minHeight: AppSizes.iconLg),
-                iconSize: AppSizes.iconSm,
-                onPressed: onExpand,
-                icon: const Icon(LucideIcons.maximize, color: AppColors.shortsForeground),
-              ),
-            ),
-            // Top-right: close
-            Align(
-              alignment: Alignment.topRight,
-              child: IconButton(
-                tooltip: 'Close player',
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                constraints: const BoxConstraints(minWidth: AppSizes.iconLg, minHeight: AppSizes.iconLg),
-                iconSize: AppSizes.iconSm,
-                onPressed: onDismiss,
-                icon: const Icon(LucideIcons.x, color: AppColors.shortsForeground),
-              ),
-            ),
-            // Centre controls
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
-                    iconSize: AppSizes.icon,
-                    onPressed: onPrevious,
-                    icon: const Icon(LucideIcons.skipBack, color: AppColors.shortsForeground),
-                  ),
-                  if (buffering)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                      child: SizedBox(
-                        width: AppSizes.icon,
-                        height: AppSizes.icon,
-                        child: CircularProgressIndicator(
-                          color: AppColors.shortsForeground,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                    )
-                  else if (error)
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.all(AppSpacing.xs),
-                      constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
-                      iconSize: AppSizes.icon,
-                      onPressed: service.retry,
-                      icon: const Icon(LucideIcons.refreshCw, color: AppColors.shortsForeground),
-                      tooltip: 'Retry',
-                    )
-                  else
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.all(AppSpacing.xs),
-                      constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
-                      iconSize: AppSizes.iconLg,
-                      onPressed: service.togglePlayPause,
-                      icon: Icon(
-                        ended
-                            ? LucideIcons.rotateCcw
-                            : playing
-                            ? LucideIcons.pause
-                            : LucideIcons.play,
-                        color: AppColors.shortsForeground,
-                      ),
-                    ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    constraints: const BoxConstraints(minWidth: AppSizes.chipHeight, minHeight: AppSizes.chipHeight),
-                    iconSize: AppSizes.icon,
-                    onPressed: nextId != null ? onNext : null,
-                    icon: const Icon(LucideIcons.skipForward, color: AppColors.shortsForeground),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }

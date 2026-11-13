@@ -612,10 +612,7 @@ class _ShortPageState extends State<_ShortPage> {
     }
   }
 
-  String _formatTime(Duration value) {
-    final seconds = value.inSeconds;
-    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
-  }
+  String _formatTime(Duration value) => AppFormatters.formatDuration(value);
 
   Timer? feedbackTimer;
   void _feedback(IconData icon) {

@@ -18,7 +18,8 @@ class NetworkFamily {
     client.connectionFactory = (uri, proxyHost, proxyPort) async {
       final host = proxyHost ?? uri.host;
       final port = proxyPort ?? uri.port;
-      var addresses = await InternetAddress.lookup(host, type: preferred);
+      var addresses = await InternetAddress.lookup(host, type: preferred)
+          .timeout(const Duration(seconds: 5));
       if (addresses.isEmpty) {
         throw const SocketException('No address for selected network family');
       }

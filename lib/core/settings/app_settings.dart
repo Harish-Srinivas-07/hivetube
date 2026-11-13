@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../../features/shorts/shorts_screen.dart';
+import '../content/language_profile.dart';
 
 const regions = <String, String>{
+  'AUTO': 'Automatic (no region)',
   'IN': 'India',
   'US': 'United States',
   'GB': 'United Kingdom',
@@ -59,10 +61,11 @@ class AppSettings {
   String get cacheKey {
     final shown = contentLanguages.toList()..sort();
     final hidden = hiddenLanguages.toList()..sort();
-    return '${gl}_${shown.join("-")}_${hidden.join("-")}_${(localRatio * 100).round()}_${strictHome ? "strict" : "lenient"}';
+    return 'classifier${CLASSIFIER_VERSION}_${gl}_${shown.join("-")}_${hidden.join("-")}_${(localRatio * 100).round()}_${strictHome ? "strict" : "lenient"}';
   }
+
   static AppSettings defaults([Locale? _]) =>
-      const AppSettings(gl: 'IN', strictHome: true);
+      const AppSettings(gl: 'AUTO', strictHome: true);
   AppSettings copyWith({
     String? hl,
     String? gl,
@@ -91,9 +94,12 @@ List<String> regionalQueries(String query, AppSettings settings) {
   return adjective == null ? [query] : ['$adjective $query', query];
 }
 
-String homeCacheKey(AppSettings settings) {
-  return 'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}';
+String homeCacheKey(AppSettings settings, {String chip = 'All'}) {
+  return 'home_cache_${settings.cacheKey}_${settings.localContent ? 'local' : 'plain'}_$chip';
 }
+
+String homeSeenKey(AppSettings settings, {String chip = 'All'}) =>
+    'home_seen_v2_${settings.cacheKey}_$chip';
 
 final initialAppSettingsProvider = Provider<AppSettings>(
   (ref) => AppSettings.defaults(PlatformDispatcher.instance.locale),

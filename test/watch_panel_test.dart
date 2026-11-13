@@ -1,9 +1,15 @@
+import 'package:drift/native.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hivetube/core/db/app_db.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
 import 'package:hivetube/core/yt/models.dart';
+import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/watch_info.dart';
 import 'package:hivetube/core/yt/yt_comments.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
@@ -12,16 +18,43 @@ import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
 
+class _FakeMediaPlayerState extends Fake implements PlayerState {
+  @override
+  List<String> get subtitle => const [];
+}
+
+class _FakeMediaPlayerStream extends Fake implements PlayerStream {
+  @override
+  Stream<List<String>> get subtitle => const Stream.empty();
+}
+
+class _FakeMediaPlayer extends Fake implements Player {
+  @override
+  PlayerState get state => _FakeMediaPlayerState();
+  @override
+  PlayerStream get stream => _FakeMediaPlayerStream();
+}
+
 class _MockPlaybackService extends Fake implements PlaybackService {
+  final Player _player = _FakeMediaPlayer();
+  PlayRequest? _request;
   final PlaybackSnapshot _snapshot = PlaybackSnapshot()
     ..status = PlayerStatus.playing
+    ..playing = true
     ..duration = const Duration(minutes: 5)
     ..position = const Duration(minutes: 1);
   bool stopped = false;
+  int toggleCalls = 0;
   final List<VoidCallback> _listeners = [];
 
   @override
   PlaybackSnapshot get state => _snapshot;
+
+  @override
+  Player get player => _player;
+
+  @override
+  PlayRequest? get request => _request;
 
   @override
   void addListener(VoidCallback listener) => _listeners.add(listener);
@@ -34,6 +67,7 @@ class _MockPlaybackService extends Fake implements PlaybackService {
 
   @override
   Future<void> play(PlayRequest value) async {
+    _request = value;
     stopped = false;
     _snapshot.status = PlayerStatus.playing;
   }
@@ -58,6 +92,18 @@ class _MockPlaybackService extends Fake implements PlaybackService {
   Future<void> seek(Duration position) async {
     _snapshot.position = position;
   }
+
+  @override
+  Future<void> togglePlay() async {
+    toggleCalls++;
+    _snapshot.playing = !_snapshot.playing;
+    _snapshot.status = _snapshot.playing
+        ? PlayerStatus.playing
+        : PlayerStatus.paused;
+    for (final listener in _listeners) {
+      listener();
+    }
+  }
 }
 
 class _MockPlaybackController extends PlaybackController {
@@ -67,23 +113,12 @@ class _MockPlaybackController extends PlaybackController {
   PlaybackService? build() => service;
 }
 
-const _dummyInfo = WatchInfo(
-  id: 'vid1',
-  title: 'Test Video Title',
-  channelName: 'Test Channel',
-  channelId: 'UC123',
-  avatar: '',
-  subscribers: '10K',
-  description: 'Desc',
-  likes: '1K',
-  views: '10K views',
-  date: '1 day ago',
-  handle: '@test',
-  commentsToken: 'cToken',
-  related: VideoPage([], null),
-  chapters: [],
-  chips: {},
-);
+class _NoRelated extends RelatedVideosController {
+  _NoRelated() : super('vid1');
+
+  @override
+  Future<List<VideoItem>> build() async => [];
+}
 
 const _dummyComments = CommentPage([], '0 Comments', null, {});
 
@@ -102,16 +137,23 @@ Widget _buildTestApp({
   required void Function(WidgetRef ref) onRef,
   Widget? child,
 }) {
+  final db = AppDb(NativeDatabase.memory());
+  addTearDown(db.close);
   return ProviderScope(
     overrides: [
+      dbProvider.overrideWithValue(db),
       playbackProvider.overrideWith(() => _MockPlaybackController(service)),
       playerUiProvider.overrideWith(_FakeUi.new),
       shortMetadataProvider('vid1').overrideWith((ref) async => null),
-      watchInfoProvider('vid1').overrideWith((ref) async => _dummyInfo),
+      relatedVideosProvider('vid1').overrideWith(_NoRelated.new),
+      watchInfoProvider(
+        'vid1',
+      ).overrideWith((ref) => Completer<WatchInfo>().future),
       watchCommentsProvider(
         'cToken',
       ).overrideWith((ref) async => _dummyComments),
       dislikeCountProvider('vid1').overrideWith((ref) async => 0),
+      historyRepoProvider.overrideWithValue(EmptyHistoryRepo()),
     ],
     child: MaterialApp(
       home: Consumer(
@@ -134,7 +176,9 @@ Widget _buildTestApp({
 }
 
 void main() {
-  testWidgets('mini card appears after play and stays visible', (tester) async {
+  testWidgets('mini card always shows only play and close controls', (
+    tester,
+  ) async {
     final service = _MockPlaybackService();
     late WidgetRef capturedRef;
 
@@ -148,15 +192,23 @@ void main() {
     capturedRef.read(watchPanelExpandProvider.notifier).minimize();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     expect(
-      find.byTooltip('Close player'),
-      findsNothing,
-    ); // Controls hidden initially
+      find.byTooltip('Pause'),
+      findsOneWidget,
+      reason:
+          'progress=${capturedRef.read(watchPanelProgressProvider).value}, '
+          'mode=${capturedRef.read(playerUiProvider).panelMode}',
+    );
+    expect(find.byTooltip('Close player'), findsOneWidget);
+    expect(find.byTooltip('Expand'), findsNothing);
+    expect(find.byTooltip('Previous'), findsNothing);
+    expect(find.byTooltip('Next'), findsNothing);
     expect(find.byType(SharedPlayer), findsOneWidget);
   });
 
-  testWidgets('tap shows controls and they auto-hide after 3 s while playing', (
+  testWidgets('tap mini body expands and play toggles playback', (
     tester,
   ) async {
     final service = _MockPlaybackService();
@@ -169,19 +221,19 @@ void main() {
     capturedRef.read(watchPanelExpandProvider.notifier).minimize();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
-    // Tap on mini card
-    await tester.tap(find.byType(SharedPlayer));
+    await tester.tap(find.byKey(const ValueKey('miniPlayerDragSurface')));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(WatchScreen), findsOneWidget);
 
-    // Controls appear (expand and close buttons)
-    expect(find.byTooltip('Close player'), findsOneWidget);
-    expect(find.byTooltip('Expand'), findsOneWidget);
-
-    // After 3 seconds, controls auto-hide while playing
-    await tester.pump(const Duration(seconds: 3));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byTooltip('Close player'), findsNothing);
+    capturedRef.read(watchPanelExpandProvider.notifier).minimize();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byTooltip('Pause'));
+    await tester.pump();
+    expect(service.toggleCalls, 1);
   });
 
   testWidgets('swipe up expands watch panel', (tester) async {
@@ -197,15 +249,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     // Swipe up on mini player
-    await tester.drag(find.byType(SharedPlayer), const Offset(0, -300));
+    await tester.fling(
+      find.byKey(const ValueKey('miniPlayerDragSurface')),
+      const Offset(0, -300),
+      2000,
+    );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 700));
 
     // Should be expanded: WatchScreen content is visible
     expect(find.byType(WatchScreen), findsOneWidget);
   });
 
-  testWidgets('swipe down closes and stops mini player', (tester) async {
+  testWidgets('mini downward drag snaps without stopping playback', (
+    tester,
+  ) async {
     final service = _MockPlaybackService();
     late WidgetRef capturedRef;
 
@@ -218,15 +276,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     // Swipe down on mini player
-    await tester.drag(find.byType(SharedPlayer), const Offset(0, 200));
+    await tester.drag(
+      find.byKey(const ValueKey('miniPlayerDragSurface')),
+      const Offset(0, 100),
+    );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(capturedRef.read(watchPanelProvider), isNull);
-    expect(service.stopped, isTrue);
+    expect(capturedRef.read(watchPanelProvider), 'vid1');
+    expect(service.stopped, isFalse);
   });
 
-  testWidgets('corner drag snaps between left and right', (tester) async {
+  testWidgets('free drag snaps to all four corners', (tester) async {
     final service = _MockPlaybackService();
     late WidgetRef capturedRef;
 
@@ -238,20 +299,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(
-      capturedRef.read(miniCornerLeftProvider),
-      isFalse,
-    ); // Initially right
+    expect(capturedRef.read(miniCornerProvider), MiniCorner.br);
 
-    // Drag left
-    await tester.fling(find.byType(SharedPlayer), const Offset(-250, 0), 500);
-    await tester.pump();
-    expect(capturedRef.read(miniCornerLeftProvider), isTrue); // Snapped left
-
-    // Drag right
-    await tester.fling(find.byType(SharedPlayer), const Offset(250, 0), 500);
-    await tester.pump();
-    expect(capturedRef.read(miniCornerLeftProvider), isFalse); // Snapped right
+    final dragFinder = find.byKey(const ValueKey('miniPlayerDragSurface'));
+    for (final step in [
+      (const Offset(-600, 0), MiniCorner.bl),
+      (const Offset(0, -500), MiniCorner.tl),
+      (const Offset(600, 0), MiniCorner.tr),
+      (const Offset(0, 500), MiniCorner.br),
+    ]) {
+      await tester.drag(dragFinder, step.$1);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(capturedRef.read(miniCornerProvider), step.$2);
+    }
   });
 
   testWidgets('bottom padding is applied via MiniPlayerInset', (tester) async {
@@ -333,8 +394,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // When expanded, panelProgress is 1.0 (>= 0.5), so nav pill is hidden
-    final progress = capturedRef.read(playerUiProvider).panelProgress;
-    expect(progress, greaterThanOrEqualTo(0.5));
+    expect(
+      capturedRef.read(playerUiProvider).panelMode,
+      PlayerPanelMode.expanded,
+    );
   });
 }

@@ -99,7 +99,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
 
       final chapter = _chapterTitle(position);
       final bubbleText = active
-          ? '${_format(current)} / ${_format(widget.duration)}${chapter != null ? ' • $chapter' : ''}'
+          ? '${_format(current)} / ${_format(widget.duration)}${chapter != null ? ' · $chapter' : ''}'
           : '';
 
       return GestureDetector(

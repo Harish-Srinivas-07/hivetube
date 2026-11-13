@@ -123,7 +123,7 @@ void main() {
         hiddenLanguages: {'hi'},
         strictHome: true,
       );
-      expect(settings.cacheKey.startsWith('IN_'), isTrue);
+      expect(settings.cacheKey, contains('_IN_'));
       expect(settings.cacheKey.contains('en_IN'), isFalse);
     });
 

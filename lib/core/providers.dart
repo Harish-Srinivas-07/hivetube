@@ -64,7 +64,9 @@ final contentFilterProvider = Provider<ContentFilter>((ref) {
   final cache = ref.watch(channelLanguageCacheProvider);
   return ContentFilter(channelCache: cache);
 });
-final discoveryStoreProvider = Provider<DiscoveryStore>((ref) => DiscoveryStore(ref.watch(dbProvider)));
+final discoveryStoreProvider = Provider<DiscoveryStore>(
+  (ref) => DiscoveryStore(ref.watch(dbProvider)),
+);
 final discoveryEngineProvider = FutureProvider<DiscoveryEngine>((ref) async {
   final api = await ref.watch(ytApiProvider.future);
   final probe = await ref.watch(captionProbeProvider.future);
@@ -107,9 +109,7 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       receiveTimeout: const Duration(seconds: 20),
     ),
   );
-  final gl = ref.watch(
-    contentPrefsProvider.select((s) => s.gl),
-  );
+  final gl = ref.watch(contentPrefsProvider.select((s) => s.gl));
   final network = await ref.watch(networkFamilyProvider.future);
   void resetAdapter() {
     dio.httpClientAdapter = IOHttpClientAdapter(
@@ -126,7 +126,7 @@ final innertubeProvider = FutureProvider<InnertubeHttp>((ref) async {
       await rootBundle.loadString('assets/innertube_clients.json'),
     ),
     hl: 'en',
-    gl: gl,
+    gl: gl == 'AUTO' ? '' : gl,
   );
 });
 final visitorDataProvider = FutureProvider<String>((ref) async {
@@ -173,7 +173,9 @@ final subscriptionRepoProvider = Provider<SubscriptionRepo>(
   (ref) => StoredSubscriptionRepo(ref.watch(dbProvider)),
 );
 
-final subscriptionsStreamProvider = StreamProvider<List<SubscriptionRow>>((ref) {
+final subscriptionsStreamProvider = StreamProvider<List<SubscriptionRow>>((
+  ref,
+) {
   final db = ref.watch(dbProvider);
   return db.subscriptionsDao.watchSubscriptions();
 });
@@ -195,9 +197,9 @@ final playlistsStreamProvider = StreamProvider<List<PlaylistRow>>((ref) {
 
 final playlistItemsStreamProvider =
     StreamProvider.family<List<PlaylistItemWithMedia>, int>((ref, playlistId) {
-  final db = ref.watch(dbProvider);
-  return db.playlistsDao.watchPlaylistItems(playlistId);
-});
+      final db = ref.watch(dbProvider);
+      return db.playlistsDao.watchPlaylistItems(playlistId);
+    });
 
 final likedVideosStreamProvider = StreamProvider<List<MediaRow>>((ref) {
   final db = ref.watch(dbProvider);
@@ -219,14 +221,17 @@ final profileStreamProvider = StreamProvider<ProfileRow?>((ref) {
   return db.profileDao.watchProfile();
 });
 
-final subscriptionsFeedServiceProvider = Provider<SubscriptionsFeedService>((ref) {
+final subscriptionsFeedServiceProvider = Provider<SubscriptionsFeedService>((
+  ref,
+) {
   final db = ref.watch(dbProvider);
   final api = ref.watch(ytApiProvider).value;
   final dio = ref.watch(innertubeProvider).value?.dio ?? Dio();
   return SubscriptionsFeedService(
     db: db,
     rss: api?.rss ?? YtRss(dio),
-    browse: api?.browse ?? YtBrowse(InnertubeHttp(dio, InnertubeClients(const {}))),
+    browse:
+        api?.browse ?? YtBrowse(InnertubeHttp(dio, InnertubeClients(const {}))),
   );
 });
 

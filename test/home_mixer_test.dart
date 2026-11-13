@@ -22,7 +22,7 @@ void main() {
   });
 
   test(
-    'paged mixer weights, deduplicates, filters and isolates failures',
+    'paged mixer weights and deduplicates without non-language exclusions',
     () async {
       var secondPage = false;
       final sources = [
@@ -52,23 +52,15 @@ void main() {
         ),
         HomeSource(weight: 2, fetch: (_) async => throw StateError('offline')),
       ];
-      final mixer = HomeMixer(
-        sources,
-        history: [
-          const HistoryEntry(
-            'seen',
-            Duration(seconds: 90),
-            Duration(seconds: 100),
-          ),
-        ],
-        disliked: {'bad'},
-      );
+      final mixer = HomeMixer(sources);
       await mixer.start();
       expect((await mixer.next(10)).map((v) => v.id), [
         'a',
         'b',
         'c',
+        'seen',
         'e',
+        'blocked',
         'd',
       ]);
       expect(secondPage, isTrue);
@@ -79,7 +71,11 @@ void main() {
   test(
     'shelf shuffles, deduplicates, caps at 12 and uses watched only to fill',
     () {
-      final items = List.generate(18, (i) => ShortItem(id: '$i', thumbUrl: ''));
+      final items = List.generate(
+        18,
+        (i) =>
+            ShortItem(id: '$i', thumbUrl: '', title: 'The official video $i'),
+      );
       final shelf = buildShortsShelf(
         [items, items],
         {'0', '1', '2', '3', '4', '5', '6', '7'},

@@ -36,12 +36,14 @@ class InnertubeHttp {
     };
     for (var attempt = 0; ; attempt++) {
       try {
-        final response = await dio.post(
-          '$origin/youtubei/v1/$endpoint?prettyPrint=false${clientName == 'WEB_MUSIC_ANALYTICS' ? '&alt=json' : ''}',
-          data: {'context': context, ...data},
-          options: Options(headers: headers),
-          cancelToken: cancelToken,
-        );
+        final response = await dio
+            .post(
+              '$origin/youtubei/v1/$endpoint?prettyPrint=false${clientName == 'WEB_MUSIC_ANALYTICS' ? '&alt=json' : ''}',
+              data: {'context': context, ...data},
+              options: Options(headers: headers),
+              cancelToken: cancelToken,
+            )
+            .timeout(const Duration(seconds: 8));
         return response.data;
       } on DioException catch (e) {
         if (e.response?.statusCode == 403 &&
@@ -69,7 +71,7 @@ class InnertubeHttp {
 Map<String, dynamic> buildClientContext(
   Map<String, dynamic> client, {
   String hl = 'en',
-  required String gl,
+  required String? gl,
   String? visitorData,
 }) => {
   'client': {
@@ -77,7 +79,7 @@ Map<String, dynamic> buildClientContext(
     'clientVersion': client['clientVersion'],
     if (client['platform'] != null) 'platform': client['platform'],
     'hl': 'en',
-    'gl': gl,
+    if (gl != null && gl.isNotEmpty) 'gl': gl,
     'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
     'visitorData': ?visitorData,
   },

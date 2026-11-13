@@ -14,8 +14,8 @@ abstract final class AppRadius {
 
   // Sheet top-only radius (bottom corners stay square for bottom sheets)
   static const sheetTopBorder = BorderRadius.only(
-    topLeft: Radius.circular(xl),
-    topRight: Radius.circular(xl),
+    topLeft: Radius.circular(lg),
+    topRight: Radius.circular(lg),
   );
 
   // Card thumbnail in grids (top corners only — bottom aligns with text block)

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/playback/playback_service.dart';
-import '../app_menu.dart';
+import '../sheets/app_sheet.dart';
 
 /// Keeps sleep-timer state with the player UI, rather than with an open sheet.
 class PlayerSettingsSession {
@@ -38,10 +38,11 @@ Future<void> showPlayerSettingsMenu(
   BuildContext context, {
   required PlayerSettingsSession session,
   VoidCallback? onLock,
-}) => showAppMenu<void>(
-  context: context,
+}) => showAppSheet<void>(
+  context,
+  fit: true,
   onVideo: true,
-  builder: (_) => _PlayerSettingsView(session: session, onLock: onLock),
+  builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );
 
 class _PlayerSettingsView extends StatefulWidget {
@@ -73,7 +74,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
 
   void _page(String value) => setState(() => page = value);
   Widget _choice(String label, bool selected, VoidCallback action) =>
-      AppMenuRow(
+      AppSheetRow(
         label: label,
         selected: selected,
         onTap: () {
@@ -93,7 +94,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
       shrinkWrap: true,
       children: [
         if (page != 'Settings')
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.chevronLeft,
             label: page,
             onTap: () => _page(
@@ -101,14 +102,14 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             ),
           ),
         if (page == 'Settings') ...[
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.slidersHorizontal,
             label: 'Quality',
             value: currentQuality,
             showChevron: true,
             onTap: () => _page('Quality'),
           ),
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.circlePlay,
             label: 'Playback speed',
             value: '${state.rate}x',
@@ -116,7 +117,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             onTap: () => _page('Playback speed'),
           ),
           if (state.captions.isNotEmpty)
-            AppMenuRow(
+            AppSheetRow(
               icon: LucideIcons.captions,
               label: 'Captions',
               value: state.selectedCaption == null
@@ -126,7 +127,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
               onTap: () => _page('Captions'),
             ),
           if (widget.onLock != null)
-            AppMenuRow(
+            AppSheetRow(
               icon: LucideIcons.lock,
               label: 'Lock screen',
               onTap: () {
@@ -134,7 +135,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
                 widget.onLock!();
               },
             ),
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.settings,
             label: 'More',
             showChevron: true,
@@ -184,7 +185,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
           ],
         ],
         if (page == 'More') ...[
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.timer,
             label: 'Sleep timer',
             value: widget.session.sleepAtEnd
@@ -201,7 +202,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             value: state.loop,
             onChanged: (value) => unawaited(service.setLoop(value)),
           ),
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.info,
             label: 'Stats for nerds',
             subtitle:

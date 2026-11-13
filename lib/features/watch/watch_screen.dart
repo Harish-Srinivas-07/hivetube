@@ -23,7 +23,6 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/common.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_controls.dart';
 import '../../widgets/video_options_menu.dart';
@@ -60,12 +59,14 @@ class WatchScreen extends ConsumerStatefulWidget {
     this.videoOverride,
     this.placeholderVideo = false,
     this.embedded = false,
+    this.deferHeavyContent = false,
     this.onMinimize,
   });
   final String id;
   final Widget? videoOverride;
   final bool placeholderVideo;
   final bool embedded;
+  final bool deferHeavyContent;
   final VoidCallback? onMinimize;
   @override
   ConsumerState<WatchScreen> createState() => _WatchScreenState();
@@ -132,7 +133,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ref.read(watchPanelProvider.notifier).close();
-        ref.read(playerUiProvider.notifier).setPanelProgress(0);
+        ref.read(playerUiProvider.notifier).setPanelMode(PlayerPanelMode.mini);
         unawaited(_start(ref.read(playbackProvider)));
       });
     }
@@ -143,6 +144,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final current = id;
     started = current;
     _activeService = service;
+    if (service.state.videoId == current &&
+        service.state.mode == PlaybackMode.video) {
+      return;
+    }
     final history = await ref.read(historyRepoProvider).recent();
     if (!mounted || current != id) return;
     finished.addAll(
@@ -293,6 +298,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       if (current != null) unawaited(_start(current));
     });
     final ui = ref.watch(playerUiProvider);
+    final heavyContentReady =
+        !widget.deferHeavyContent || ui.panelMode == PlayerPanelMode.expanded;
     final infoState = ref.watch(watchInfoProvider(id));
     final info = infoState.value;
     if (info != null && continuation == null && extra.isEmpty) {
@@ -414,7 +421,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   )
                 : const CircularProgressIndicator(),
           )
-        : _details(info, related);
+        : _details(info, related, heavyContentReady: heavyContentReady, wide: wide);
     return Focus(
       autofocus: true,
       onKeyEvent: (_, event) {
@@ -426,7 +433,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         }
         if (ui.locked || service == null) return KeyEventResult.ignored;
         if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.keyK) {
-          unawaited(service.togglePlayPause());
+          unawaited(service.togglePlay());
         } else if (key == LogicalKeyboardKey.keyJ ||
             key == LogicalKeyboardKey.arrowLeft) {
           final seek = service.state.position - const Duration(seconds: 10);
@@ -511,17 +518,21 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                     children: [
                                       player,
                                       Expanded(
-                                        child: panel == null
-                                            ? details
-                                            : _details(info!, related),
+                                        child: details,
                                       ),
                                     ],
                                   ),
                                 ),
                                 Expanded(
                                   child: panel != null && info != null
-                                      ? _panel(info, related)
-                                      : _relatedList(related),
+                                      ? _panel(
+                                          info,
+                                          related,
+                                          heavyContentReady: heavyContentReady,
+                                        )
+                                      : heavyContentReady
+                                      ? _relatedList(related)
+                                      : const SizedBox.shrink(),
                                 ),
                               ],
                             ),
@@ -552,9 +563,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                               ),
                             ),
                           Expanded(
-                            child: panel != null && info != null
-                                ? _panel(info, related)
-                                : details,
+                            child: details,
                           ),
                         ],
                       ],
@@ -567,37 +576,89 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   void _showChapters(List<WatchChapter> chapters) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            ListTile(
-              title: Text(
-                'Chapters',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            for (final chapter in chapters)
-              ListTile(
-                title: Text(chapter.title),
-                subtitle: Text(
-                  '${chapter.start.inMinutes}:${(chapter.start.inSeconds % 60).toString().padLeft(2, '0')}',
-                ),
-                onTap: () {
-                  unawaited(ref.read(playbackProvider)?.seek(chapter.start));
-                  Navigator.pop(context);
-                },
-              ),
-          ],
-        ),
+    showAppSheet<void>(
+      context,
+      title: 'Chapters',
+      builder: (context, scrollController) => ListView.builder(
+        controller: scrollController,
+        shrinkWrap: true,
+        itemCount: chapters.length,
+        itemBuilder: (context, index) {
+          final chapter = chapters[index];
+          final minutes = chapter.start.inMinutes;
+          final seconds = (chapter.start.inSeconds % 60).toString().padLeft(
+            2,
+            '0',
+          );
+          return AppSheetRow(
+            icon: LucideIcons.playCircle,
+            label: chapter.title,
+            value: '$minutes:$seconds',
+            onTap: () {
+              unawaited(ref.read(playbackProvider)?.seek(chapter.start));
+              Navigator.pop(context);
+            },
+          );
+        },
       ),
     );
   }
 
-  Widget _details(WatchInfo info, List<VideoItem> related) => CustomScrollView(
+  void _openPanel(
+    String name,
+    WatchInfo info,
+    List<VideoItem> related, {
+    required bool heavyContentReady,
+    required bool wide,
+  }) {
+    if (wide) {
+      setState(() => panel = name);
+      return;
+    }
+    showAppSheet<void>(
+      context,
+      title: name,
+      headerAction: name == 'Comments'
+          ? IconButton(
+              tooltip: 'Comment guidelines',
+              icon: const Icon(LucideIcons.info),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (dialogCtx) => AppDialog(
+                  title: 'Comments',
+                  content: const Text(
+                    'Remember to keep comments respectful by following the YouTube Community Guidelines.',
+                  ),
+                  actions: [
+                    AppButton.text(
+                      onPressed: () => Navigator.pop(dialogCtx),
+                      label: 'Close',
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+      initialFraction: 0.6,
+      minFraction: 0.3,
+      maxFraction: 0.95,
+      snapSizes: const [0.6, 0.95],
+      builder: (sheetContext, scrollController) => _panelBody(
+        name,
+        info,
+        related,
+        heavyContentReady: heavyContentReady,
+        scrollController: scrollController,
+      ),
+    );
+  }
+
+  Widget _details(
+    WatchInfo info,
+    List<VideoItem> related, {
+    required bool heavyContentReady,
+    bool wide = false,
+  }) => CustomScrollView(
     controller: scroll,
     slivers: [
       SliverToBoxAdapter(
@@ -613,7 +674,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             children: [
               InkWell(
                 borderRadius: AppRadius.smBorder,
-                onTap: () => setState(() => panel = 'Description'),
+                onTap: () => _openPanel(
+                  'Description',
+                  info,
+                  related,
+                  heavyContentReady: heavyContentReady,
+                  wide: wide,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -663,7 +730,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     onTap: info.channelId.isNotEmpty
                         ? () => context.push('/channel/${info.channelId}')
                         : null,
-                    child: Avatar(name: info.channelName, url: info.avatar),
+                    child: ChannelAvatar(name: info.channelName, url: info.avatar),
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -812,12 +879,18 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     _action(
                       LucideIcons.listVideo,
                       'Queue',
-                      () => setState(() => panel = 'Queue'),
+                      () => _openPanel(
+                        'Queue',
+                        info,
+                        related,
+                        heavyContentReady: heavyContentReady,
+                        wide: wide,
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (info.commentsToken != null) ...[
+              if (heavyContentReady && info.commentsToken != null) ...[
                 const SizedBox(height: AppSpacing.lg),
                 Consumer(
                   builder: (context, ref, _) {
@@ -838,7 +911,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       borderRadius: AppRadius.lgBorder,
                       child: InkWell(
                         borderRadius: AppRadius.lgBorder,
-                        onTap: () => setState(() => panel = 'Comments'),
+                        onTap: () => _openPanel(
+                          'Comments',
+                          info,
+                          related,
+                          heavyContentReady: heavyContentReady,
+                          wide: wide,
+                        ),
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.md),
                           child: Column(
@@ -882,7 +961,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Avatar(
+                                    ChannelAvatar(
                                       name: preview.author,
                                       url: preview.avatar,
                                       size: AppSpacing.logoMark,
@@ -929,9 +1008,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.xs,
                   ),
-                  child: ActionChip(
-                    label: Text(label),
-                    onPressed: () => _selectRelated(info, label),
+                  child: AppChip(
+                    label: label,
+                    selected: relatedFilter == label,
+                    onTap: () => _selectRelated(info, label),
                   ),
                 ),
             ],
@@ -1112,7 +1192,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 ),
               ),
               ListTile(
-                leading: Avatar(
+                leading: ChannelAvatar(
                   name: item.channelName,
                   url: item.channelAvatarUrl,
                 ),
@@ -1147,7 +1227,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       onAddToQueue: () => setState(() => queue.add(item)),
     ),
   );
-  Widget _panel(WatchInfo info, List<VideoItem> related) => Column(
+  Widget _panel(
+    WatchInfo info,
+    List<VideoItem> related, {
+    required bool heavyContentReady,
+  }) => Column(
     children: [
       GestureDetector(
         onVerticalDragEnd: (d) {
@@ -1178,15 +1262,15 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       icon: const Icon(LucideIcons.info),
                       onPressed: () => showDialog<void>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Comments'),
+                        builder: (context) => AppDialog(
+                          title: 'Comments',
                           content: const Text(
                             'Remember to keep comments respectful by following the YouTube Community Guidelines.',
                           ),
                           actions: [
-                            TextButton(
+                            AppButton.text(
                               onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
+                              label: 'Close',
                             ),
                           ],
                         ),
@@ -1203,70 +1287,90 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         ),
       ),
       Expanded(
-        child: switch (panel) {
-          'Description' => ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            children: [
-              Text(info.title, style: Theme.of(context).textTheme.titleLarge),
-              Text(
-                [
-                  info.views,
-                  info.likes,
-                  info.date,
-                ].where((s) => s.isNotEmpty).join(' · '),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              _LinkedDescription(
-                text: info.description,
-                onSeek: (position) =>
-                    ref.read(playbackProvider)?.seek(position),
-              ),
-              for (final c in info.chapters)
-                ListTile(
-                  title: Text(c.title),
-                  subtitle: Text(
-                    '${c.start.inMinutes}:${(c.start.inSeconds % 60).toString().padLeft(2, '0')}',
-                  ),
-                  onTap: () => ref.read(playbackProvider)?.seek(c.start),
-                ),
-              TextButton(
-                onPressed: () => launchUrl(
-                  Uri.parse('https://www.returnyoutubedislike.com/'),
-                ),
-                child: const Text('Dislike data: Return YouTube Dislike'),
-              ),
-            ],
-          ),
-          'Queue' => ListView(
-            children: [
-              ListTile(
-                title: const Text('Now playing'),
-                subtitle: Text(info.title),
-              ),
-              for (final item in queue)
-                ListTile(
-                  title: Text(item.title),
-                  subtitle: Text(item.channelName),
-                  onTap: () {
-                    queue.remove(item);
-                    _open(item.id);
-                  },
-                  trailing: IconButton(
-                    icon: const Icon(LucideIcons.x),
-                    onPressed: () => setState(() => queue.remove(item)),
-                  ),
-                ),
-            ],
-          ),
-          'Comments' =>
-            info.commentsToken == null
-                ? const Center(child: Text('Comments unavailable'))
-                : _Comments(token: info.commentsToken!),
-          _ => const SizedBox.shrink(),
-        },
+        child: _panelBody(
+          panel!,
+          info,
+          related,
+          heavyContentReady: heavyContentReady,
+        ),
       ),
     ],
   );
+
+  Widget _panelBody(
+    String name,
+    WatchInfo info,
+    List<VideoItem> related, {
+    required bool heavyContentReady,
+    ScrollController? scrollController,
+  }) => switch (name) {
+    'Description' when heavyContentReady => ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      children: [
+        Text(info.title, style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          [
+            info.views,
+            info.likes,
+            info.date,
+          ].where((s) => s.isNotEmpty).join(' · '),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _LinkedDescription(
+          text: info.description,
+          onSeek: (position) =>
+              ref.read(playbackProvider)?.seek(position),
+        ),
+        for (final c in info.chapters)
+          ListTile(
+            title: Text(c.title),
+            subtitle: Text(
+              '${c.start.inMinutes}:${(c.start.inSeconds % 60).toString().padLeft(2, '0')}',
+            ),
+            onTap: () => ref.read(playbackProvider)?.seek(c.start),
+          ),
+        TextButton(
+          onPressed: () => launchUrl(
+            Uri.parse('https://www.returnyoutubedislike.com/'),
+          ),
+          child: const Text('Dislike data: Return YouTube Dislike'),
+        ),
+      ],
+    ),
+    'Queue' => ListView(
+      controller: scrollController,
+      children: [
+        ListTile(
+          title: const Text('Now playing'),
+          subtitle: Text(info.title),
+        ),
+        for (final item in queue)
+          ListTile(
+            title: Text(item.title),
+            subtitle: Text(item.channelName),
+            onTap: () {
+              queue.remove(item);
+              _open(item.id);
+            },
+            trailing: IconButton(
+              icon: const Icon(LucideIcons.x),
+              onPressed: () => setState(() => queue.remove(item)),
+            ),
+          ),
+      ],
+    ),
+    'Description' => const Center(child: CircularProgressIndicator()),
+    'Comments' when heavyContentReady =>
+      info.commentsToken == null
+          ? const Center(child: Text('Comments unavailable'))
+          : _Comments(
+              token: info.commentsToken!,
+              scrollController: scrollController,
+            ),
+    'Comments' => const Center(child: CircularProgressIndicator()),
+    _ => const SizedBox.shrink(),
+  };
 }
 
 class _LinkedDescription extends StatefulWidget {
@@ -1341,8 +1445,9 @@ class _LinkedDescriptionState extends State<_LinkedDescription> {
 }
 
 class _Comments extends ConsumerStatefulWidget {
-  const _Comments({required this.token});
+  const _Comments({required this.token, this.scrollController});
   final String token;
+  final ScrollController? scrollController;
   @override
   ConsumerState<_Comments> createState() => _CommentsState();
 }
@@ -1353,22 +1458,27 @@ class _CommentsState extends ConsumerState<_Comments> {
   final replies = <String, List<WatchComment>>{};
   final replyCursors = <String, String?>{};
   final expanded = <String>{};
-  final controller = ScrollController();
+  late final ScrollController controller;
   bool loading = false;
   String selected = 'Top';
   Object? error;
   @override
   void initState() {
     super.initState();
+    controller = widget.scrollController ?? ScrollController();
     controller.addListener(() {
-      if (controller.position.extentAfter < 300) unawaited(_more());
+      if (controller.hasClients && controller.position.extentAfter < 300) {
+        unawaited(_more());
+      }
     });
     unawaited(_fetch(widget.token, replace: true));
   }
 
   @override
   void dispose() {
-    controller.dispose();
+    if (widget.scrollController == null) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -1467,10 +1577,10 @@ class _CommentsState extends ConsumerState<_Comments> {
             for (final value in ['Top', 'Newest'])
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.xs),
-                child: ChoiceChip(
-                  label: Text(value),
+                child: AppChip(
+                  label: value,
                   selected: selected == value,
-                  onSelected: (_) {
+                  onTap: () {
                     final token = current.sorts.entries
                         .where(
                           (entry) => value == 'Top'
@@ -1506,7 +1616,7 @@ class _CommentsState extends ConsumerState<_Comments> {
               return Column(
                 children: [
                   ListTile(
-                    leading: Avatar(name: c.author, url: c.avatar),
+                    leading: ChannelAvatar(name: c.author, url: c.avatar),
                     title: Text(
                       '${c.pinned.isNotEmpty ? '${c.pinned}\n' : ''}${c.author} ${c.verified ? '✓' : ''} · ${c.age}',
                     ),
@@ -1544,7 +1654,7 @@ class _CommentsState extends ConsumerState<_Comments> {
                       Padding(
                         padding: const EdgeInsets.only(left: AppSpacing.xxxl),
                         child: ListTile(
-                          leading: Avatar(name: r.author, url: r.avatar),
+                          leading: ChannelAvatar(name: r.author, url: r.avatar),
                           title: Text('${r.author} · ${r.age}'),
                           subtitle: Text(r.content),
                         ),

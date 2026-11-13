@@ -8,11 +8,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/providers.dart';
 import '../../core/yt/models.dart';
 import '../../core/yt/yt_browse.dart';
+import '../../features/watch/mini_player_inset.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/ui/ui.dart';
-import '../../widgets/variety_video_card.dart';
 
 class ChannelScreen extends ConsumerStatefulWidget {
   const ChannelScreen({super.key, required this.channelId});
@@ -234,15 +234,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                CircleAvatar(
-                                  radius: 36,
-                                  backgroundColor: theme.colorScheme.surfaceContainerHigh,
-                                  backgroundImage: data!.avatarUrl.isNotEmpty
-                                      ? CachedNetworkImageProvider(data!.avatarUrl)
-                                      : null,
-                                  child: data!.avatarUrl.isEmpty
-                                      ? Text(data!.name.isNotEmpty ? data!.name[0] : 'C')
-                                      : null,
+                                ChannelAvatar(
+                                  name: data!.name,
+                                  url: data!.avatarUrl,
+                                  size: 72,
                                 ),
                                 const SizedBox(width: AppSpacing.md),
                                 Expanded(
@@ -286,7 +281,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                                   ),
                               ],
                             ),
-                          const Divider(),
+                          const AppDivider(),
                         ],
                       ),
                     ),
@@ -307,7 +302,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                               if (item is VideoItem) {
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                                  child: VarietyVideoCard(
+                                  child: VideoCard.grid(
                                     video: item,
                                     onTap: () => openWatchPanel(ref, item.id),
                                   ),
@@ -342,6 +337,9 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen> {
                           child: Center(child: CircularProgressIndicator()),
                         ),
                       ),
+                    SliverBottomInset(
+                      extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
+                    ),
                   ],
                 ),
     );

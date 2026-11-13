@@ -11,53 +11,67 @@ import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/settings/app_settings.dart';
 
 void main() {
-  test('context always forces English hl with selected country and visitor', () {
-    final context = buildClientContext(
-      {'clientName': 'WEB', 'clientVersion': '1'},
-      hl: 'ta',
-      gl: 'IN',
-      visitorData: 'v',
-    );
-    expect(context['client'], containsPair('hl', 'en'));
-    expect(context['client'], containsPair('gl', 'IN'));
-    expect(context['client'], containsPair('visitorData', 'v'));
+  test(
+    'context always forces English hl with selected country and visitor',
+    () {
+      final context = buildClientContext(
+        {'clientName': 'WEB', 'clientVersion': '1'},
+        hl: 'ta',
+        gl: 'IN',
+        visitorData: 'v',
+      );
+      expect(context['client'], containsPair('hl', 'en'));
+      expect(context['client'], containsPair('gl', 'IN'));
+      expect(context['client'], containsPair('visitorData', 'v'));
+    },
+  );
+  test('automatic region omits gl from the request context', () {
+    final context = buildClientContext({
+      'clientName': 'WEB',
+      'clientVersion': '1',
+    }, gl: null);
+    expect(context['client'], isNot(contains('gl')));
+    expect(AppSettings.defaults().gl, 'AUTO');
   });
-  test('visitor and Home keys distinguish regions and content languages without hl', () {
-    expect(visitorCacheKey('US'), isNot(visitorCacheKey('IN')));
-    expect(
-      homeCacheKey(const AppSettings(gl: 'US')),
-      isNot(homeCacheKey(const AppSettings(gl: 'IN'))),
-    );
-    expect(homeCacheKey(const AppSettings(gl: 'IN')).contains('en_IN'), isFalse);
-    expect(AppSettings.defaults().cacheKey.contains('en_'), isFalse);
-    expect(AppSettings.defaults().contentLanguages, {
-      'ta',
-      'en',
-    });
-    expect(AppSettings.defaults().hiddenLanguages, {
-      'hi',
-    });
-  });
-  test('regional queries include plain search and respect the region setting', () {
-    expect(regionalQueries('music', const AppSettings(gl: 'IN')), [
-      'indian music',
-      'music',
-    ]);
-    expect(
-      regionalQueries('news today', const AppSettings(gl: 'IN')),
-      ['indian news today', 'news today'],
-    );
-    expect(regionalQueries('music', const AppSettings(gl: 'US')), [
-      'music',
-    ]);
-    expect(
-      regionalQueries(
+  test(
+    'visitor and Home keys distinguish regions and content languages without hl',
+    () {
+      expect(visitorCacheKey('US'), isNot(visitorCacheKey('IN')));
+      expect(
+        homeCacheKey(const AppSettings(gl: 'US')),
+        isNot(homeCacheKey(const AppSettings(gl: 'IN'))),
+      );
+      expect(
+        homeCacheKey(const AppSettings(gl: 'IN')).contains('en_IN'),
+        isFalse,
+      );
+      expect(AppSettings.defaults().cacheKey.contains('en_'), isFalse);
+      expect(AppSettings.defaults().contentLanguages, {'ta', 'en'});
+      expect(AppSettings.defaults().hiddenLanguages, {'hi'});
+      expect(homeCacheKey(AppSettings.defaults()), contains('classifier2'));
+    },
+  );
+  test(
+    'regional queries include plain search and respect the region setting',
+    () {
+      expect(regionalQueries('music', const AppSettings(gl: 'IN')), [
+        'indian music',
         'music',
-        const AppSettings(gl: 'IN', localContent: false),
-      ),
-      ['music'],
-    );
-  });
+      ]);
+      expect(regionalQueries('news today', const AppSettings(gl: 'IN')), [
+        'indian news today',
+        'news today',
+      ]);
+      expect(regionalQueries('music', const AppSettings(gl: 'US')), ['music']);
+      expect(
+        regionalQueries(
+          'music',
+          const AppSettings(gl: 'IN', localContent: false),
+        ),
+        ['music'],
+      );
+    },
+  );
   test('visitor cache reads only the selected region', () async {
     final db = AppDb(NativeDatabase.memory());
     final expiry = DateTime.now()
@@ -74,17 +88,11 @@ void main() {
     final dio = Dio();
     final clients = InnertubeClients({});
     expect(
-      await VisitorService(
-        InnertubeHttp(dio, clients, gl: 'IN'),
-        db,
-      ).get(),
+      await VisitorService(InnertubeHttp(dio, clients, gl: 'IN'), db).get(),
       'india_visitor',
     );
     expect(
-      await VisitorService(
-        InnertubeHttp(dio, clients, gl: 'US'),
-        db,
-      ).get(),
+      await VisitorService(InnertubeHttp(dio, clients, gl: 'US'), db).get(),
       'us_visitor',
     );
     dio.close();

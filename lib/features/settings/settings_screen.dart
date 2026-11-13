@@ -6,33 +6,33 @@ import '../../core/providers.dart';
 import '../home/home_controller.dart';
 import '../home/home_screen.dart';
 import '../home/home_variety.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/glass_surface.dart';
+import '../../widgets/ui/ui.dart';
 import 'content_debug_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final settings = ref.watch(contentPrefsProvider);
     Future<void> clearDatabase() async {
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Clear app database?'),
+        builder: (dialogContext) => AppDialog(
+          title: 'Clear app database?',
           content: const Text(
             'This permanently removes saved settings, watch history, cached feed data, and channel avatars from this device.',
           ),
           actions: [
-            TextButton(
+            AppButton.text(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            FilledButton(
+            AppButton.filled(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Clear database'),
+              label: 'Clear database',
             ),
           ],
         ),
@@ -58,8 +58,8 @@ class SettingsScreen extends ConsumerWidget {
     ) async {
       final chosen = await showDialog<String>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
+        builder: (context) => AppDialog(
+          title: title,
           content: SizedBox(
             width: AppSpacing.searchMaxWidth,
             child: ListView(
@@ -76,6 +76,12 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          actions: [
+            AppButton.text(
+              onPressed: () => Navigator.pop(context),
+              label: 'Cancel',
+            ),
+          ],
         ),
       );
       if (chosen != null) await update(chosen);
@@ -91,8 +97,8 @@ class SettingsScreen extends ConsumerWidget {
         builder: (dialogContext) {
           final draft = selected.toSet();
           return StatefulBuilder(
-            builder: (context, setDialogState) => AlertDialog(
-              title: Text(title),
+            builder: (context, setDialogState) => AppDialog(
+              title: title,
               content: SizedBox(
                 width: AppSpacing.searchMaxWidth,
                 child: ListView(
@@ -115,13 +121,13 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               actions: [
-                TextButton(
+                AppButton.text(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
+                  label: 'Cancel',
                 ),
-                FilledButton(
+                AppButton.filled(
                   onPressed: () => Navigator.pop(dialogContext, draft),
-                  child: const Text('Save'),
+                  label: 'Save',
                 ),
               ],
             ),
@@ -147,14 +153,14 @@ class SettingsScreen extends ConsumerWidget {
       ),
       body: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
-        child: GlassSurface(
+        child: Material(
+          color: theme.colorScheme.surfaceContainer,
           borderRadius: AppRadius.mdBorder,
-          child: Material(
-            color: AppColors.transparent,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                   ListTile(
                     title: const Text('Location'),
                     subtitle: Text(regions[settings.gl] ?? settings.gl),
@@ -297,7 +303,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

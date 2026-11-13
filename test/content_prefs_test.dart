@@ -28,7 +28,7 @@ void main() {
           .update(
             contentLanguages: {'ta', 'en'},
             hiddenLanguages: {'hi'},
-            gl: 'IN',
+            gl: 'AUTO',
             localRatio: .6,
           );
       expect(container.read(contentPrefsProvider).prefsVersion, 0);
@@ -54,7 +54,7 @@ void main() {
 
       final prefs = container.read(contentPrefsProvider);
       expect(prefs.prefsVersion, 1);
-      expect(prefs.hl, 'te');
+      expect(prefs.hl, 'en');
       expect(prefs.gl, 'US');
       expect(prefs.contentLanguages, {'te'});
       expect(prefs.hiddenLanguages, {'hi'});

@@ -1,20 +1,6 @@
-import '../../core/db/history_entry.dart';
 import '../../core/yt/models.dart';
 
-List<VideoItem> mixHome(
-  List<List<VideoItem>> sources,
-  List<int> weights, {
-  List<HistoryEntry> history = const [],
-  Set<String> disliked = const {},
-}) {
-  final watched = history
-      .where(
-        (e) =>
-            e.duration.inMilliseconds > 0 &&
-            e.position.inMilliseconds / e.duration.inMilliseconds >= .9,
-      )
-      .map((e) => e.videoId)
-      .toSet();
+List<VideoItem> mixHome(List<List<VideoItem>> sources, List<int> weights) {
   final indexes = List<int>.filled(sources.length, 0);
   final seen = <String>{};
   final result = <VideoItem>[];
@@ -25,10 +11,7 @@ List<VideoItem> mixHome(
       for (var n = 0; n < weights[i] && indexes[i] < sources[i].length; n++) {
         final item = sources[i][indexes[i]++];
         progressed = true;
-        if (!item.isShort &&
-            !watched.contains(item.id) &&
-            !disliked.contains(item.channelId) &&
-            seen.add(item.id)) {
+        if (!item.isShort && seen.add(item.id)) {
           result.add(item);
         }
       }
@@ -75,18 +58,8 @@ class HomeSource {
 }
 
 class HomeMixer {
-  HomeMixer(
-    this.sources, {
-    List<HistoryEntry> history = const [],
-    this.disliked = const {},
-  }) : watched = {
-         for (final h in history)
-           if (h.duration.inMilliseconds > 0 &&
-               h.position.inMilliseconds / h.duration.inMilliseconds >= .9)
-             h.videoId,
-       };
+  HomeMixer(this.sources);
   final List<HomeSource> sources;
-  final Set<String> watched, disliked;
   final Set<String> _seen = {};
   bool get hasMore => sources.any((s) => s._buffer.isNotEmpty || !s.done);
   void exclude(Iterable<String> ids) => _seen.addAll(ids);
@@ -102,10 +75,7 @@ class HomeMixer {
         for (var n = 0; n < source.weight && result.length < count; n++) {
           if (source._buffer.isEmpty) break;
           final item = source._buffer.removeAt(0);
-          if (!item.isShort &&
-              !watched.contains(item.id) &&
-              !disliked.contains(item.channelId) &&
-              _seen.add(item.id)) {
+          if (!item.isShort && _seen.add(item.id)) {
             result.add(item);
           }
         }

@@ -76,7 +76,9 @@ class ChannelLanguageCache extends ChangeNotifier {
     final database = db;
     if (database == null) return;
     try {
-      final raw = await database.getValue('channel_language_cache_v1');
+      final raw = await database.getValue(
+        'channel_language_cache_v$CLASSIFIER_VERSION',
+      );
       if (raw != null) {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
         final now = DateTime.now();
@@ -98,7 +100,10 @@ class ChannelLanguageCache extends ChangeNotifier {
     if (database == null) return;
     try {
       final encoded = jsonEncode(_cache.map((k, v) => MapEntry(k, v.toJson())));
-      await database.setValue('channel_language_cache_v1', encoded);
+      await database.setValue(
+        'channel_language_cache_v$CLASSIFIER_VERSION',
+        encoded,
+      );
     } catch (_) {}
   }
 

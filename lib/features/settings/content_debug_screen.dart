@@ -6,7 +6,6 @@ import '../../core/content/home_trace.dart';
 import '../../core/providers.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/glass_surface.dart';
 import '../../widgets/ui/ui.dart';
 
 enum TraceFilter { all, kept, dropped, ambiguous }
@@ -112,7 +111,7 @@ class _ContentDebugScreenState extends State<ContentDebugScreen> {
                 ctx,
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
-            const Divider(height: AppSpacing.xl),
+            const AppDivider(),
             _diagRow(
               ctx,
               'Script verdict',
@@ -372,8 +371,10 @@ class _ContentDebugScreenState extends State<ContentDebugScreen> {
                       return InkWell(
                         onTap: () => _showDiagnosticSheet(context, trace),
                         borderRadius: AppRadius.smBorder,
-                        child: GlassSurface(
+                        child: Material(
+                          color: Theme.of(context).colorScheme.surfaceContainer,
                           borderRadius: AppRadius.smBorder,
+                          clipBehavior: Clip.antiAlias,
                           child: Padding(
                             padding: const EdgeInsets.all(AppSpacing.md),
                             child: Column(

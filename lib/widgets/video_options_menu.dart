@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/db/app_db.dart';
 import '../core/providers.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
-import 'app_menu.dart';
+import 'sheets/app_sheet.dart';
 
 /// Content actions can be supplied by the caller; unavailable actions are omitted.
 Future<void> showVideoOptionsMenu(
@@ -20,40 +20,41 @@ Future<void> showVideoOptionsMenu(
   WidgetRef? ref,
   MediaCompanion? media,
 }) async {
-  final action = await showAppMenu<String>(
-    context: context,
+  final action = await showAppSheet<String>(
+    context,
+    fit: true,
     onVideo: onVideo,
-    builder: (sheetContext) => ListView(
+    builder: (sheetContext, _) => ListView(
       shrinkWrap: true,
       children: [
         if (onPlayNext != null)
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.listStart,
             label: 'Play next',
             onTap: () => Navigator.pop(sheetContext, 'next'),
           ),
         if (onAddToQueue != null)
-          AppMenuRow(
+          AppSheetRow(
             icon: LucideIcons.listPlus,
             label: 'Add to queue',
             onTap: () => Navigator.pop(sheetContext, 'queue'),
           ),
-        AppMenuRow(
+        AppSheetRow(
           icon: LucideIcons.bookmark,
           label: 'Save to playlist',
           onTap: () => Navigator.pop(sheetContext, 'save_playlist'),
         ),
-        AppMenuRow(
+        AppSheetRow(
           icon: LucideIcons.clock,
           label: 'Save to Watch Later',
           onTap: () => Navigator.pop(sheetContext, 'watch_later'),
         ),
-        AppMenuRow(
+        AppSheetRow(
           icon: LucideIcons.share,
           label: 'Share',
           onTap: () => Navigator.pop(sheetContext, 'share'),
         ),
-        AppMenuRow(
+        AppSheetRow(
           icon: LucideIcons.copy,
           label: 'Copy link',
           onTap: () => Navigator.pop(sheetContext, 'copy'),

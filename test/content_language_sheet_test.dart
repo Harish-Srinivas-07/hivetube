@@ -184,7 +184,7 @@ void main() {
     final prefs = container.read(contentPrefsProvider);
     expect(prefs.contentLanguages, {'ta', 'en'});
     expect(prefs.hiddenLanguages, {'hi'});
-    expect(prefs.gl, 'IN');
+    expect(prefs.gl, 'AUTO');
     expect(prefs.hl, 'en');
     expect(prefs.localRatio, .6);
     expect(

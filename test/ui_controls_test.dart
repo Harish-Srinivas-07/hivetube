@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:hivetube/theme/app_sizes.dart';
 import 'package:hivetube/theme/app_theme.dart';
+import 'package:hivetube/widgets/content_language_button.dart';
+import 'package:hivetube/widgets/hive_logo.dart';
 import 'package:hivetube/widgets/home_top_bar.dart';
 import 'package:hivetube/widgets/ui/app_controls.dart';
 import 'package:hivetube/widgets/ui/app_sheet.dart';
@@ -21,10 +23,7 @@ void main() {
       var tapped = false;
       await tester.pumpWidget(
         buildApp(
-          AppButton.filled(
-            label: 'Subscribe',
-            onPressed: () => tapped = true,
-          ),
+          AppButton.filled(label: 'Subscribe', onPressed: () => tapped = true),
         ),
       );
 
@@ -39,10 +38,7 @@ void main() {
     testWidgets('renders tonal button with leading icon', (tester) async {
       await tester.pumpWidget(
         buildApp(
-          const AppButton.tonal(
-            label: 'Share',
-            icon: LucideIcons.share2,
-          ),
+          const AppButton.tonal(label: 'Share', icon: LucideIcons.share2),
         ),
       );
 
@@ -62,13 +58,17 @@ void main() {
         ),
       );
 
-      final compactSize = tester.getSize(find.widgetWithText(AppButton, 'Compact'));
+      final compactSize = tester.getSize(
+        find.widgetWithText(AppButton, 'Compact'),
+      );
       final largeSize = tester.getSize(find.widgetWithText(AppButton, 'Large'));
       expect(compactSize.height, AppSizes.buttonCompact);
       expect(largeSize.height, AppSizes.buttonLarge);
     });
 
-    testWidgets('loading button shows progress indicator and ignores tap', (tester) async {
+    testWidgets('loading button shows progress indicator and ignores tap', (
+      tester,
+    ) async {
       var tapped = false;
       await tester.pumpWidget(
         buildApp(
@@ -89,12 +89,7 @@ void main() {
 
     testWidgets('disabled button ignores tap', (tester) async {
       await tester.pumpWidget(
-        buildApp(
-          const AppButton(
-            label: 'Disabled',
-            onPressed: null,
-          ),
-        ),
+        buildApp(const AppButton(label: 'Disabled', onPressed: null)),
       );
 
       expect(find.text('Disabled'), findsOneWidget);
@@ -104,7 +99,9 @@ void main() {
   });
 
   group('AppLikeDislikeSegment tests', () {
-    testWidgets('renders like and dislike counts and dispatches taps', (tester) async {
+    testWidgets('renders like and dislike counts and dispatches taps', (
+      tester,
+    ) async {
       var liked = false;
       var disliked = false;
 
@@ -132,7 +129,9 @@ void main() {
   });
 
   group('AppSubscribedButton tests', () {
-    testWidgets('shows Subscribe when uncompleted and Subscribed when active', (tester) async {
+    testWidgets('shows Subscribe when uncompleted and Subscribed when active', (
+      tester,
+    ) async {
       var changed = false;
 
       await tester.pumpWidget(
@@ -167,11 +166,7 @@ void main() {
       var tapped = false;
       await tester.pumpWidget(
         buildApp(
-          AppChip(
-            label: 'All',
-            selected: true,
-            onTap: () => tapped = true,
-          ),
+          AppChip(label: 'All', selected: true, onTap: () => tapped = true),
         ),
       );
 
@@ -183,7 +178,9 @@ void main() {
       expect(tapped, isTrue);
     });
 
-    testWidgets('AppChipBar renders horizontal chip row with gutter', (tester) async {
+    testWidgets('AppChipBar renders horizontal chip row with gutter', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         buildApp(
           AppChipBar(
@@ -204,58 +201,63 @@ void main() {
   });
 
   group('AppSheetHeader tests', () {
-    testWidgets('renders pinned header with title, drag handle and close button', (tester) async {
-      await tester.pumpWidget(
-        buildApp(
-          const AppSheetHeader(
-            title: 'Comments',
-            showClose: true,
+    testWidgets(
+      'renders pinned header with title, drag handle and close button',
+      (tester) async {
+        await tester.pumpWidget(
+          buildApp(const AppSheetHeader(title: 'Comments', showClose: true)),
+        );
+
+        expect(find.text('Comments'), findsOneWidget);
+        expect(find.byIcon(LucideIcons.x), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'renders back button and hairline divider when scrolled under',
+      (tester) async {
+        var backed = false;
+        await tester.pumpWidget(
+          buildApp(
+            AppSheetHeader(
+              title: 'Options',
+              onBack: () => backed = true,
+              isScrolledUnder: true,
+            ),
           ),
-        ),
-      );
+        );
 
-      expect(find.text('Comments'), findsOneWidget);
-      expect(find.byIcon(LucideIcons.x), findsOneWidget);
-    });
+        expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
+        expect(find.byType(Divider), findsOneWidget);
 
-    testWidgets('renders back button and hairline divider when scrolled under', (tester) async {
-      var backed = false;
-      await tester.pumpWidget(
-        buildApp(
-          AppSheetHeader(
-            title: 'Options',
-            onBack: () => backed = true,
-            isScrolledUnder: true,
-          ),
-        ),
-      );
-
-      expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
-      expect(find.byType(Divider), findsOneWidget);
-
-      await tester.tap(find.byIcon(LucideIcons.arrowLeft));
-      expect(backed, isTrue);
-    });
+        await tester.tap(find.byIcon(LucideIcons.arrowLeft));
+        expect(backed, isTrue);
+      },
+    );
   });
 
   group('HomeTopBar tests', () {
-    testWidgets('Home bar has logo, language button and search; NO cast or notification bell', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeTopBar(),
+    testWidgets(
+      'Home bar has logo, language button and search; NO cast or notification bell',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: AppTheme.dark,
+              home: Scaffold(body: HomeTopBar()),
             ),
           ),
-        ),
-      );
+        );
 
-      // Verify Cast and Bell are absent
-      expect(find.byIcon(LucideIcons.cast), findsNothing);
-      expect(find.byIcon(LucideIcons.bell), findsNothing);
+        // Verify Cast and Bell are absent
+        expect(find.byIcon(LucideIcons.cast), findsNothing);
+        expect(find.byIcon(LucideIcons.bell), findsNothing);
 
-      // Verify Search icon is present
-      expect(find.byIcon(LucideIcons.search), findsOneWidget);
-    });
+        // Verify Search icon is present
+        expect(find.byIcon(LucideIcons.search), findsOneWidget);
+        expect(find.byType(HiveLogo), findsOneWidget);
+        expect(find.byType(ContentLanguageButton), findsOneWidget);
+      },
+    );
   });
 }

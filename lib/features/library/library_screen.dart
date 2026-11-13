@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,13 +8,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:drift/drift.dart' show Value;
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../core/yt/takeout_parser.dart';
+import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -62,8 +61,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final updated = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Edit profile'),
+        builder: (ctx, setDialogState) => AppDialog(
+          title: 'Edit profile',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -93,13 +92,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
           actions: [
-            TextButton(
+            AppButton.text(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            FilledButton(
+            AppButton.filled(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Save'),
+              label: 'Save',
             ),
           ],
         ),
@@ -186,8 +185,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       if (!mounted) return;
       final mode = await showDialog<String>(
         context: context,
-        builder: (dCtx) => AlertDialog(
-          title: const Text('Restore backup'),
+        builder: (dCtx) => AppDialog(
+          title: 'Restore backup',
           content: Text(
             'Found in backup:\n'
             '• ${preview.subscriptionCount} subscriptions\n'
@@ -197,17 +196,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             'Would you like to merge with existing data or replace?',
           ),
           actions: [
-            TextButton(
+            AppButton.text(
               onPressed: () => Navigator.of(dCtx).pop('cancel'),
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            OutlinedButton(
+            AppButton.outlined(
               onPressed: () => Navigator.of(dCtx).pop('replace'),
-              child: const Text('Replace all'),
+              label: 'Replace all',
             ),
-            FilledButton(
+            AppButton.filled(
               onPressed: () => Navigator.of(dCtx).pop('merge'),
-              child: const Text('Merge'),
+              label: 'Merge',
             ),
           ],
         ),
@@ -305,21 +304,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New playlist'),
+      builder: (ctx) => AppDialog(
+        title: 'New playlist',
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(hintText: 'Playlist title...'),
         ),
         actions: [
-          TextButton(
+          AppButton.text(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            label: 'Cancel',
           ),
-          FilledButton(
+          AppButton.filled(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
+            label: 'Create',
           ),
         ],
       ),
@@ -421,7 +420,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 error: (_, _) => const SizedBox(height: AppSizes.listRowHeight),
               ),
             ),
-            const Divider(),
+            const AppDivider(),
 
             // History Section
             Padding(
@@ -458,8 +457,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ),
                   );
                 }
+                final scaler = MediaQuery.textScalerOf(context);
+                final historyHeight = (150 / AppSpacing.thumbnailRatio) +
+                    AppSpacing.xs +
+                    scaler.scale(72);
                 return SizedBox(
-                  height: 164,
+                  height: historyHeight,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(
@@ -494,50 +497,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Stack(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: AppRadius.mdBorder,
-                                      child: SizedBox(
-                                        width: 150,
-                                        height: 84,
-                                        child: CachedNetworkImage(
-                                          imageUrl: thumbUrl,
-                                          fit: BoxFit.cover,
-                                          errorWidget: (_, _, _) => Container(
-                                            color: theme
-                                                .colorScheme
-                                                .surfaceContainerHigh,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    if (dur > 0)
-                                      Positioned(
-                                        bottom: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              const BorderRadius.vertical(
-                                                bottom: Radius.circular(
-                                                  AppRadius.md,
-                                                ),
-                                              ),
-                                          child: LinearProgressIndicator(
-                                            value: progress,
-                                            minHeight:
-                                                AppSizes.progressBarHeight,
-                                            backgroundColor:
-                                                AppColors.thumbnailBadge,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  Colors.red,
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                                ThumbnailWithDuration(
+                                  url: thumbUrl,
+                                  progress: progress,
+                                  borderRadius: AppRadius.mdBorder,
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
                                 Text(
@@ -549,7 +512,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                                 Text(
@@ -559,6 +523,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 12,
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ),
@@ -576,7 +541,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               error: (_, _) =>
                   const SizedBox(height: AppSizes.horizontalThumbCardHeight),
             ),
-            const Divider(),
+            const AppDivider(),
 
             // Playlists Section
             Padding(
@@ -662,7 +627,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               loading: () => const SizedBox(),
               error: (_, _) => const SizedBox(),
             ),
-            const Divider(),
+            const AppDivider(),
 
             // Downloads Placeholder
             ListTile(
@@ -699,7 +664,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
               onTap: () => context.push('/settings'),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            SizedBox(
+              height: MediaQuery.paddingOf(context).bottom +
+                  MiniPlayerInset.of(context) +
+                  AppSpacing.xl,
+            ),
           ],
         ),
       ),

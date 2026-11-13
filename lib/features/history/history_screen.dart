@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
+import '../watch/mini_player_inset.dart';
+import '../../widgets/ui/ui.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -83,19 +83,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Future<void> _clearAllHistory() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        title: const Text('Clear watch history?'),
+      builder: (dCtx) => AppDialog(
+        title: 'Clear watch history?',
         content: const Text(
           'This will clear your watch history from this device.',
         ),
         actions: [
-          TextButton(
+          AppButton.text(
             onPressed: () => Navigator.of(dCtx).pop(false),
-            child: const Text('Cancel'),
+            label: 'Cancel',
           ),
-          FilledButton(
+          AppButton.filled(
             onPressed: () => Navigator.of(dCtx).pop(true),
-            child: const Text('Clear history'),
+            label: 'Clear history',
           ),
         ],
       ),
@@ -142,8 +142,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               decoration: InputDecoration(
                 hintText: 'Search history...',
                 prefixIcon: const Icon(LucideIcons.search, size: AppSizes.iconMd),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                border: const OutlineInputBorder(
+                  borderRadius: AppRadius.lgBorder,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
@@ -190,6 +190,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 }
 
                 return ListView.builder(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom +
+                        MiniPlayerInset.of(context) +
+                        AppSpacing.lg,
+                  ),
                   itemCount: entries.length,
                   itemBuilder: (ctx, index) {
                     final entry = entries[index];
@@ -266,44 +271,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Thumbnail with watched progress bar
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: SizedBox(
-                      width: 120,
-                      height: 68,
-                      child: CachedNetworkImage(
-                        imageUrl: thumbUrl,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => Container(
-                          color: theme.colorScheme.surfaceContainerHigh,
-                          child: const Icon(LucideIcons.video, size: AppSizes.icon),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (durMs > 0)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(AppRadius.md),
-                        ),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: AppSizes.progressBarHeight,
-                          backgroundColor: AppColors.thumbnailBadge,
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.red,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+              // Thumbnail with watched progress bar using stored title (no raw ID)
+              SizedBox(
+                width: 120,
+                child: ThumbnailWithDuration(
+                  thumbnailKey: ValueKey('historyThumb_$title'),
+                  progressKey: ValueKey('watchedProgress:${item.history.videoId}'),
+                  url: thumbUrl,
+                  progress: progress,
+                  borderRadius: AppRadius.mdBorder,
+                ),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -315,7 +292,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
@@ -324,13 +302,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      '${_formatDuration(posMs ~/ 1000)} / ${_formatDuration(durMs ~/ 1000)}',
-                      style: theme.textTheme.labelSmall?.copyWith(
+                      '${AppFormatters.formatDurationSeconds(posMs ~/ 1000)} / ${AppFormatters.formatDurationSeconds(durMs ~/ 1000)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -338,7 +318,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(LucideIcons.x, size: AppSizes.iconSm),
+                icon: const Icon(LucideIcons.x, size: AppSizes.icon),
                 onPressed: () {
                   ref
                       .read(dbProvider)
@@ -393,13 +373,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       groups.add(_HistoryGroup(title: 'Earlier', items: earlierItems));
     }
     return groups;
-  }
-
-  String _formatDuration(int seconds) {
-    if (seconds <= 0) return '0:00';
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
   }
 }
 

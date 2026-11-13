@@ -19,7 +19,7 @@ class ContentLanguageButton extends ConsumerWidget {
         !prefs.contentLanguages.containsAll({'ta', 'en'}) ||
         prefs.hiddenLanguages.length != 1 ||
         !prefs.hiddenLanguages.contains('hi') ||
-        prefs.gl != 'IN' ||
+        prefs.gl != 'AUTO' ||
         prefs.localRatio != .6;
     final colors = Theme.of(context).colorScheme;
     return Tooltip(
