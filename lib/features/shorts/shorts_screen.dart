@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
+import '../../core/playback/audio_handler.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
@@ -295,6 +296,32 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     );
   }
 
+  void _updateActiveShortMetadata(ShortItem item) {
+    final handler = ref.read(audioHandlerProvider);
+    if (handler == null) return;
+    final meta = ref.read(shortMetadataProvider(item.id)).value;
+    final title = (item.title?.trim().isNotEmpty ?? false)
+        ? item.title!.trim()
+        : ((meta?.title?.trim().isNotEmpty ?? false)
+            ? meta!.title!.trim()
+            : 'Short');
+    final channel = (item.channelName?.trim().isNotEmpty ?? false)
+        ? item.channelName!.trim()
+        : ((meta?.channelName?.trim().isNotEmpty ?? false)
+            ? meta!.channelName!.trim()
+            : 'YouTube Short');
+    final thumb = item.thumbUrl.isNotEmpty
+        ? item.thumbUrl
+        : (meta?.thumbUrl ?? '');
+    final artUri = thumb.isNotEmpty ? Uri.tryParse(thumb) : null;
+    handler.setShortMetadata(
+      id: item.id,
+      title: title,
+      channel: channel,
+      artUri: artUri,
+    );
+  }
+
   void _playCurrent(PlaybackService? service) {
     if (!visible ||
         service == null ||
@@ -302,8 +329,10 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
         currentIndex >= items.length) {
       return;
     }
-    final id = items[currentIndex].id;
+    final item = items[currentIndex];
+    final id = item.id;
     active = service;
+    _updateActiveShortMetadata(item);
     final pageGeneration = ++playbackGeneration;
     if (activeId == id && service.request?.videoId == id) {
       unawaited(_resumeShort(service, id, pageGeneration));
@@ -336,6 +365,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     await service.setLoop(true);
     await service.playShort(id);
     if (_isCurrentPlayback(id, pageGeneration)) {
+      _updateActiveShortMetadata(items[currentIndex]);
       _prefetchNext(service, pageGeneration);
     }
   }
@@ -455,6 +485,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                             onPageChanged: (index) {
                               setState(() => currentIndex = index);
                               if (index < items.length) {
+                                _updateActiveShortMetadata(items[index]);
                                 _playCurrent(service);
                               } else {
                                 _cancelShortPreloads();

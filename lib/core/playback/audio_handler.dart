@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../streams/stream_selector.dart';
 import 'playback_service.dart';
 
 final audioHandlerProvider =
@@ -37,22 +38,58 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  void setMetadata(String id, String title, String channel) {
-    if (_service?.request?.videoId != id) return;
+  void setMetadata(String id, String title, String channel, {Uri? artUri}) {
+    if (_service?.request?.videoId != id && _service?.state.videoId != id) return;
     final previous = mediaItem.valueOrNull;
-    final displayTitle = title.isEmpty ? 'HiveTube' : title;
+    final isShort = _service?.state.mode == PlaybackMode.short;
+    final displayTitle = title.trim().isNotEmpty
+        ? title.trim()
+        : (isShort ? 'Short' : 'HiveTube');
+    final displayChannel = channel.trim().isNotEmpty
+        ? channel.trim()
+        : (isShort ? 'YouTube Short' : '');
     if (previous?.id == id &&
         previous?.title == displayTitle &&
-        previous?.artist == channel &&
-        previous?.duration == _service!.state.duration) {
+        previous?.artist == displayChannel &&
+        previous?.artUri == artUri &&
+        previous?.duration == _service?.state.duration) {
       return;
     }
     mediaItem.add(
       MediaItem(
         id: id,
         title: displayTitle,
-        artist: channel,
-        duration: _service!.state.duration,
+        artist: displayChannel.isNotEmpty ? displayChannel : null,
+        artUri: artUri,
+        duration: _service?.state.duration,
+      ),
+    );
+  }
+
+  void setShortMetadata({
+    required String id,
+    required String title,
+    required String channel,
+    Uri? artUri,
+  }) {
+    final displayTitle = title.trim().isNotEmpty ? title.trim() : 'Short';
+    final displayChannel =
+        channel.trim().isNotEmpty ? channel.trim() : 'YouTube Short';
+    final previous = mediaItem.valueOrNull;
+    if (previous?.id == id &&
+        previous?.title == displayTitle &&
+        previous?.artist == displayChannel &&
+        previous?.artUri == artUri &&
+        previous?.duration == _service?.state.duration) {
+      return;
+    }
+    mediaItem.add(
+      MediaItem(
+        id: id,
+        title: displayTitle,
+        artist: displayChannel,
+        artUri: artUri,
+        duration: _service?.state.duration,
       ),
     );
   }
@@ -62,11 +99,26 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
     if (service == null) return;
     final state = service.state;
     final request = service.request;
-    if (request != null && mediaItem.valueOrNull?.id != request.videoId) {
+    final currentItem = mediaItem.valueOrNull;
+    if (request != null && currentItem?.id != request.videoId) {
+      final isShort = state.mode == PlaybackMode.short;
       mediaItem.add(
         MediaItem(
           id: request.videoId,
-          title: 'HiveTube',
+          title: isShort ? 'Short' : 'HiveTube',
+          artist: isShort ? 'YouTube Short' : null,
+          duration: state.duration,
+        ),
+      );
+    } else if (currentItem != null &&
+        currentItem.duration != state.duration &&
+        state.duration != Duration.zero) {
+      mediaItem.add(
+        MediaItem(
+          id: currentItem.id,
+          title: currentItem.title,
+          artist: currentItem.artist,
+          artUri: currentItem.artUri,
           duration: state.duration,
         ),
       );
