@@ -119,12 +119,17 @@ abstract final class AppTheme {
           borderRadius: AppRadius.pillBorder,
           borderSide: BorderSide.none,
         ),
-        focusedBorder: OutlineInputBorder(
+        focusedBorder: const OutlineInputBorder(
           borderRadius: AppRadius.pillBorder,
-          borderSide: BorderSide(
-            color: AppColors.primary,
-            width: AppSpacing.borderWidth,
-          ),
+          borderSide: BorderSide.none,
+        ),
+        errorBorder: const OutlineInputBorder(
+          borderRadius: AppRadius.pillBorder,
+          borderSide: BorderSide.none,
+        ),
+        disabledBorder: const OutlineInputBorder(
+          borderRadius: AppRadius.pillBorder,
+          borderSide: BorderSide.none,
         ),
         hintStyle: AppTextStyles.body.copyWith(color: colors.textSecondary),
       ),

@@ -829,108 +829,161 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
     );
 
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.sm),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Row(
-                  children: [
-                    IconButton(
+        child: Column(
+          children: [
+            SizedBox(
+              key: const ValueKey('searchTopBar'),
+              height: AppSizes.appBarHeight,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: AppSizes.touchMin,
+                    height: AppSizes.touchMin,
+                    child: IconButton(
                       tooltip: MaterialLocalizations.of(
                         context,
                       ).backButtonTooltip,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: AppSizes.touchMin,
+                        height: AppSizes.touchMin,
+                      ),
                       onPressed: () => Navigator.of(context).maybePop(),
                       icon: const Icon(LucideIcons.arrowLeft),
                     ),
-                    Expanded(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: AppSpacing.searchMaxWidth,
-                          ),
-                          child: SizedBox(
-                            height: AppSpacing.searchHeight,
-                            child: TextField(
-                              key: const ValueKey('searchQueryField'),
-                              controller: input,
-                              focusNode: searchFocus,
-                              autofocus: true,
-                              style: AppTextStyles.settingsTitle,
-                              textInputAction: TextInputAction.search,
-                              onChanged: queryChanged,
-                              onSubmitted: (query) => search(query),
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                                hintText: 'Search',
-                                prefixIcon: const Icon(
-                                  LucideIcons.search,
-                                  size: AppSizes.iconSm,
-                                ),
-                                prefixIconConstraints: const BoxConstraints(
-                                  minWidth: AppSizes.touchMin,
-                                ),
-                                suffixIcon: input.text.isEmpty
-                                    ? null
-                                    : IconButton(
-                                        tooltip: 'Clear search',
-                                        onPressed: () {
-                                          input.clear();
-                                          queryChanged('');
-                                          searchFocus.requestFocus();
-                                        },
-                                        icon: const Icon(Icons.close),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: AppSpacing.searchMaxWidth,
+                        ),
+                        child: SizedBox(
+                          height: AppSpacing.searchHeight,
+                          child: TextField(
+                            key: const ValueKey('searchQueryField'),
+                            controller: input,
+                            focusNode: searchFocus,
+                            autofocus: true,
+                            cursorColor: colorScheme.primary,
+                            textAlignVertical: TextAlignVertical.center,
+                            style: AppTextStyles.settingsTitle.copyWith(
+                              color: colorScheme.onSurface,
+                            ),
+                            textInputAction: TextInputAction.search,
+                            onChanged: queryChanged,
+                            onSubmitted: (query) {
+                              FocusScope.of(context).unfocus();
+                              search(query);
+                            },
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: colorScheme.surfaceContainerHighest,
+                              hintText: 'Search',
+                              hintStyle: AppTextStyles.settingsTitle.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              prefixIcon: const Icon(
+                                LucideIcons.search,
+                                size: AppSizes.iconSm,
+                              ),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: AppSizes.touchMin,
+                                minHeight: AppSpacing.searchHeight,
+                              ),
+                              suffixIcon: input.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'Clear search',
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width:
+                                                AppSizes.touchMin -
+                                                AppSpacing.sm,
+                                            height: AppSpacing.searchHeight,
+                                          ),
+                                      onPressed: () {
+                                        input.clear();
+                                        queryChanged('');
+                                        searchFocus.requestFocus();
+                                      },
+                                      icon: const Icon(
+                                        Icons.close,
+                                        size: AppSizes.iconSm,
                                       ),
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
-                                ),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
+                                    ),
+                              suffixIconConstraints:
+                                  const BoxConstraints.tightFor(
+                                    width: AppSizes.touchMin - AppSpacing.sm,
+                                    height: AppSpacing.searchHeight,
+                                  ),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.lg,
+                                vertical: AppSpacing.none,
+                              ),
+                              border: const OutlineInputBorder(
+                                borderRadius: AppRadius.pillBorder,
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: const OutlineInputBorder(
+                                borderRadius: AppRadius.pillBorder,
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: const OutlineInputBorder(
+                                borderRadius: AppRadius.pillBorder,
+                                borderSide: BorderSide.none,
+                              ),
+                              errorBorder: const OutlineInputBorder(
+                                borderRadius: AppRadius.pillBorder,
+                                borderSide: BorderSide.none,
+                              ),
+                              disabledBorder: const OutlineInputBorder(
+                                borderRadius: AppRadius.pillBorder,
+                                borderSide: BorderSide.none,
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.sm),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                ],
               ),
-              if (isResultsMode && visibleFilters.isNotEmpty)
-                AppChipBar(
-                  children: [
-                    for (final chip in visibleFilters)
-                      AppChip(
-                        label: chip.label,
-                        selected: chip.type == SearchFilterType.all
-                            ? activeFilterParam == null
-                            : activeFilterParam == chip.params,
-                        onTap: () {
-                          if (chip.type == SearchFilterType.all) {
-                            search(activeQuery);
-                            return;
-                          }
-                          final isSelected = activeFilterParam == chip.params;
-                          search(
-                            activeQuery,
-                            filterParam: isSelected ? null : chip.params,
-                          );
-                        },
-                      ),
-                  ],
-                ),
-              Expanded(child: isResultsMode ? resultsList : typingList),
-            ],
-          ),
+            ),
+            if (isResultsMode && visibleFilters.isNotEmpty)
+              AppChipBar(
+                children: [
+                  for (final chip in visibleFilters)
+                    AppChip(
+                      label: chip.label,
+                      selected: chip.type == SearchFilterType.all
+                          ? activeFilterParam == null
+                          : activeFilterParam == chip.params,
+                      onTap: () {
+                        if (chip.type == SearchFilterType.all) {
+                          search(activeQuery);
+                          return;
+                        }
+                        final isSelected = activeFilterParam == chip.params;
+                        search(
+                          activeQuery,
+                          filterParam: isSelected ? null : chip.params,
+                        );
+                      },
+                    ),
+                ],
+              ),
+            Expanded(child: isResultsMode ? resultsList : typingList),
+          ],
         ),
       ),
     );

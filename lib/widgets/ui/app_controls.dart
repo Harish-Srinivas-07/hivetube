@@ -119,6 +119,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.variant = AppButtonVariant.filled,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
@@ -130,6 +131,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
   }) : variant = AppButtonVariant.filled;
@@ -140,6 +142,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
   }) : variant = AppButtonVariant.tonal;
@@ -150,6 +153,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
   }) : variant = AppButtonVariant.destructive;
@@ -160,6 +164,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
   }) : variant = AppButtonVariant.text;
@@ -170,6 +175,7 @@ class AppButton extends StatefulWidget {
     this.onPressed,
     this.icon,
     this.trailingIcon,
+    this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
   }) : variant = AppButtonVariant.outlined;
@@ -178,6 +184,7 @@ class AppButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
   final IconData? trailingIcon;
+  final double horizontalPadding;
   final AppButtonVariant variant;
   final AppButtonSize size;
   final bool isLoading;
@@ -290,7 +297,9 @@ class _AppButtonState extends State<AppButton> {
               borderRadius: AppRadius.pillBorder,
               child: Container(
                 height: _height,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.horizontalPadding,
+                ),
                 alignment: Alignment.center,
                 child: content,
               ),
