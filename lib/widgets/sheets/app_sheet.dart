@@ -241,8 +241,12 @@ Future<T?> showAppSheet<T>(
   final sheetBg = backgroundColor ?? cs.surface;
   final callerMiniInset = MiniPlayerInset.of(context);
   final callerBottomSafeArea = MediaQuery.viewPaddingOf(context).bottom;
+  final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
   final effectiveInitial = fraction ?? (fit ? 0.6 : initialFraction);
-  final effectiveMaximum = maxFraction.clamp(minFraction, 1.0);
+  final heightLimit = landscape ? AppSpacing.sheetMaxHeightFactor : 1.0;
+  final effectiveMaximum = maxFraction
+      .clamp(minFraction, math.max(minFraction, heightLimit))
+      .toDouble();
   final effectiveSnapSizes = snapSizes ?? [0.6, effectiveMaximum];
 
   return showModalBottomSheet<T>(
@@ -307,10 +311,9 @@ Future<T?> showAppSheet<T>(
         content = DraggableScrollableSheet(
           snap: true,
           snapSizes: effectiveSnapSizes,
-          initialChildSize: effectiveInitial.clamp(
-            minFraction,
-            effectiveMaximum,
-          ),
+          initialChildSize: effectiveInitial
+              .clamp(minFraction, effectiveMaximum)
+              .toDouble(),
           minChildSize: minFraction,
           maxChildSize: effectiveMaximum,
           expand: expand,
@@ -344,7 +347,13 @@ Future<T?> showAppSheet<T>(
           padding: EdgeInsets.only(
             bottom: math.max(mq.viewInsets.bottom, callerBottomSafeArea),
           ),
-          child: Align(alignment: Alignment.bottomCenter, child: content),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              width: math.min(mq.size.width, AppSizes.sheetMaxWidth),
+              child: content,
+            ),
+          ),
         ),
       );
     },

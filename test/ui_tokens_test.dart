@@ -40,7 +40,7 @@ void main() {
       expect(AppSizes.sheetHeaderHeight, 56.0);
       expect(AppSizes.sheetHandleWidth, 32.0);
       expect(AppSizes.sheetHandleHeight, 4.0);
-      expect(AppSizes.sheetMaxWidth, 640.0);
+      expect(AppSizes.sheetMaxWidth, 480.0);
       expect(AppSizes.snackbarMaxWidth, 560.0);
       expect(AppSizes.iconSm, 20.0);
       expect(AppSizes.iconInline, 18.0);

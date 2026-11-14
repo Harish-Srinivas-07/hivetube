@@ -50,7 +50,7 @@ abstract final class AppSizes {
   static const double sheetHeaderHeight = 56;
   static const double sheetHandleWidth = 32;
   static const double sheetHandleHeight = 4;
-  static const double sheetMaxWidth = 640;
+  static const double sheetMaxWidth = 480;
   static const double sheetCardMaxWidth = 480;
   static const double snackbarMaxWidth = 560;
   static const double miniPlayerHeightFraction =

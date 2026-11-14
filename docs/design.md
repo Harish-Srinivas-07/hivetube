@@ -179,6 +179,7 @@ Library quick row (History, Playlists...): leading icon 24, title 15->use videoT
 
 ### 4.13 BottomSheet (options menu, select dialogs)
 Top radius 16, bg surface (dark: #212121), drag handle 32x4 radius 2 onSurfaceVariant@40% centered top pad 8. Rows 56 high: icon 24 + 24 gap + label settingsTitle. Selection list: radio on right. No elevation, scrim black@50%.
+Sheet max width 480, centered, bottom-anchored.
 Video options: Add to queue, Save to playlist, Save to watch later, Download, Share, Not interested.
 
 ### 4.14 Dialog / Snackbar
