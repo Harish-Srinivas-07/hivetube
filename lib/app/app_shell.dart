@@ -39,7 +39,6 @@ class AppShell extends ConsumerWidget {
     final hasUnreadSubs = ref.watch(hasUnreadUploadsProvider).value ?? false;
     final wide =
         MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
-    final home = navigationShell.currentIndex == 0;
     final shorts = navigationShell.currentIndex == 1;
 
     // Entering Shorts: stop playback and close the mini panel
@@ -94,9 +93,7 @@ class AppShell extends ConsumerWidget {
         Scaffold(
           backgroundColor: shorts
               ? AppColors.shortsBackground
-              : home
-              ? AppColors.transparent
-              : null,
+              : Theme.of(context).colorScheme.surface,
           extendBody: true,
           body: shorts
               ? Row(

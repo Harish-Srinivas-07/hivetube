@@ -21,6 +21,7 @@ class HiveLogo extends StatelessWidget {
         Text(
           'HiveTube',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
             fontFamily: 'Manrope',
             fontWeight: FontWeight.w800,
             fontVariations: const [FontVariation('wght', 800)],

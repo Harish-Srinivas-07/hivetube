@@ -87,7 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Listener(
       onPointerDown: (_) => ref.read(homeProvider.notifier).interact(),
       child: Scaffold(
-        backgroundColor: AppColors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         body: Column(
           children: [
             _ChipRow(
