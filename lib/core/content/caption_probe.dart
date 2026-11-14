@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:developer' as dev;
+
 import '../innertube/innertube_http.dart';
 import 'channel_language_cache.dart';
 
@@ -11,7 +13,12 @@ class CaptionProbeService {
   final Map<String, String?> _asrVideoLangCache = {};
 
   /// Probes the spoken language from the ASR caption track.
-  Future<String?> probeVideo(String videoId, {String? channelId, String? channelName, bool asrOnly = false}) async {
+  Future<String?> probeVideo(
+    String videoId, {
+    String? channelId,
+    String? channelName,
+    bool asrOnly = false,
+  }) async {
     final cache = asrOnly ? _asrVideoLangCache : _videoLangCache;
     if (cache.containsKey(videoId)) {
       return cache[videoId];
@@ -19,7 +26,10 @@ class CaptionProbeService {
 
     // Check if channel is already classified
     if (!asrOnly && channelId != null) {
-      final classified = channelCache.getClassifiedLanguage(channelId, channelName: channelName);
+      final classified = channelCache.getClassifiedLanguage(
+        channelId,
+        channelName: channelName,
+      );
       if (classified != null) {
         cache[videoId] = classified;
         return classified;
@@ -27,13 +37,12 @@ class CaptionProbeService {
     }
 
     try {
-      final res = await http.post('player', {
-        'videoId': videoId,
-      }, clientName: 'ANDROID').timeout(
-        const Duration(milliseconds: 1500),
-      );
+      final res = await http
+          .post('player', {'videoId': videoId}, clientName: 'VISIONOS')
+          .timeout(const Duration(milliseconds: 1500));
 
-      final captions = res['captions']?['playerCaptionsTracklistRenderer']?['captionTracks'];
+      final captions =
+          res['captions']?['playerCaptionsTracklistRenderer']?['captionTracks'];
       if (captions is List) {
         // Look for asr caption first, then any caption track
         String? asrLang;
@@ -43,11 +52,11 @@ class CaptionProbeService {
             final code = track['languageCode'] as String?;
             final kind = track['kind'] as String?;
             if (code != null && code.isNotEmpty) {
-            if (kind == 'asr') {
+              if (kind == 'asr') {
                 asrLang = code;
                 break;
               }
-            if (!asrOnly) anyLang ??= code;
+              if (!asrOnly) anyLang ??= code;
             }
           }
         }
@@ -56,13 +65,23 @@ class CaptionProbeService {
         if (lang != null) {
           cache[videoId] = lang;
           if (channelId != null) {
-            channelCache.vote(channelId, lang, channelName: channelName, weight: 2);
+            channelCache.vote(
+              channelId,
+              lang,
+              channelName: channelName,
+              weight: 2,
+            );
           }
           return lang;
         }
       }
-    } catch (_) {
-      // Timeout or error
+    } catch (error, stackTrace) {
+      dev.log(
+        'VISIONOS caption probe failed for $videoId',
+        name: 'CaptionProbeService',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
 
     if (channelId != null) {
@@ -102,4 +121,3 @@ class CaptionProbeService {
     return results;
   }
 }
-

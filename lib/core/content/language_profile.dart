@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 import 'dart:math';
 import 'asset_loader_vm.dart' if (dart.library.ui) 'asset_loader_flutter.dart';
@@ -197,10 +198,19 @@ class LanguageProfileRegistry {
       } else {
         _loadFromFilesystem();
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to load language profiles from Flutter assets; trying filesystem fallback',
+        name: 'LanguageProfileRegistry',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _loadFromFilesystem();
     }
     _loaded = _profiles.isNotEmpty;
+    if (!_loaded) {
+      throw StateError('No language profiles could be loaded');
+    }
   }
 
   void _loadFromFilesystem() {
@@ -214,7 +224,14 @@ class LanguageProfileRegistry {
               jsonDecode(content) as Map<String, dynamic>,
             );
             _profiles[profile.code] = profile;
-          } catch (_) {}
+          } catch (error, stackTrace) {
+            dev.log(
+              'Failed to parse language profile ${file.path}',
+              name: 'LanguageProfileRegistry',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
         }
       }
     }

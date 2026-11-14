@@ -78,6 +78,14 @@ Map<String, dynamic> buildClientContext(
     'clientName': client['clientName'],
     'clientVersion': client['clientVersion'],
     if (client['platform'] != null) 'platform': client['platform'],
+    for (final key in [
+      'clientScreen',
+      'deviceMake',
+      'deviceModel',
+      'osName',
+      'osVersion',
+    ])
+      if (client[key] != null) key: client[key],
     'hl': 'en',
     if (gl != null && gl.isNotEmpty && gl != 'AUTO') 'gl': gl,
     'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,

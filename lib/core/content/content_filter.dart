@@ -220,17 +220,6 @@ class ContentFilter {
             int order,
           })
         >[];
-    final unknowns =
-        <
-          ({
-            VideoItem item,
-            double score,
-            bool seen,
-            DateTime? publishedAt,
-            int tie,
-            int order,
-          })
-        >[];
     var order = 0;
 
     for (final item in items) {
@@ -272,79 +261,6 @@ class ContentFilter {
           publishedAt: item.publishedAt,
           tie: rng.nextInt(1 << 31),
           order: order++,
-        ));
-      } else if (!hiddenLanguages.contains(res.finalLanguage) &&
-          (res.finalLanguage == 'unknown' || res.reason.contains('unknown'))) {
-        final text = '${item.title} ${item.channelName}';
-        var score = 0.0;
-        if (shownLanguages.contains('en')) {
-          score += registry.englishWordRatio(text);
-        }
-        for (final lang in shownLanguages) {
-          if (lang == 'en') continue;
-          score += registry.scoreLexicon(text, lang) * 0.1;
-          final profile = registry.get(lang);
-          if (profile != null) {
-            final lower = item.channelName.toLowerCase();
-            if (lower.contains(profile.englishName.toLowerCase()) ||
-                lower.contains(profile.nativeName.toLowerCase())) {
-              score += 0.5;
-            }
-          }
-        }
-        unknowns.add((
-          item: item,
-          score: score,
-          seen: seen.contains(item.id),
-          publishedAt: item.publishedAt,
-          tie: rng.nextInt(1 << 31),
-          order: order++,
-        ));
-      }
-    }
-
-    const minKept = 20;
-    if (strictHome && ranked.length < minKept && unknowns.isNotEmpty) {
-      unknowns.sort((a, b) {
-        if (a.seen != b.seen) return a.seen ? 1 : -1;
-        final scoreCmp = b.score.compareTo(a.score);
-        if (scoreCmp != 0) return scoreCmp;
-        final aDate = a.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bDate = b.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final dateCmp = bDate.compareTo(aDate);
-        if (dateCmp != 0) return dateCmp;
-        final tieCmp = a.tie.compareTo(b.tie);
-        return tieCmp != 0 ? tieCmp : a.order.compareTo(b.order);
-      });
-
-      final candidates = ranked.isEmpty
-          ? unknowns
-          : unknowns.where((u) => u.score > 0).toList();
-      final needed = minKept - ranked.length;
-      for (final u in candidates.take(needed)) {
-        HomeTraceStore.instance.record(
-          HomeTraceItem(
-            id: u.item.id,
-            title: u.item.title,
-            channelName: u.item.channelName,
-            source: source,
-            scriptVerdict: null,
-            lexiconVerdict: null,
-            channelVoteVerdict: null,
-            probeVerdict: null,
-            finalLanguage: 'unknown',
-            kept: true,
-            reason: 'fallback_unknown (score=${u.score.toStringAsFixed(2)})',
-            matchedWords: const [],
-            isAmbiguous: true,
-          ),
-        );
-        ranked.add((
-          item: u.item,
-          seen: u.seen,
-          publishedAt: u.publishedAt,
-          tie: u.tie,
-          order: u.order,
         ));
       }
     }

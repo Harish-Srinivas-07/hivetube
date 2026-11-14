@@ -693,7 +693,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.lg,
-            AppSpacing.lg,
+            AppSpacing.md,
             AppSpacing.lg,
             AppSpacing.sm,
           ),
@@ -753,7 +753,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
                   InkWell(
@@ -841,7 +841,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -930,7 +930,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 ),
               ),
               if (heavyContentReady && info.commentsToken != null) ...[
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
                 Consumer(
                   builder: (context, ref, _) {
                     final comments = ref
@@ -1034,7 +1034,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 48,
+          height: 56,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),

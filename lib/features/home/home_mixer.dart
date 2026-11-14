@@ -1,4 +1,5 @@
 import 'dart:developer' as dev;
+import 'dart:async';
 import '../../core/yt/models.dart';
 
 List<VideoItem> mixHome(List<List<VideoItem>> sources, List<int> weights) {
@@ -28,6 +29,8 @@ class HomeSource {
   final Future<VideoPage> Function(String? cursor) fetch;
   final List<VideoItem> Function(List<VideoItem>)? transform;
   final List<VideoItem> _buffer = [];
+  int fetchedCount = 0;
+  int filteredCount = 0;
   bool done = false;
   bool _started = false;
   String? _cursor;
@@ -46,16 +49,25 @@ class HomeSource {
         final page = await fetch(_cursor);
         final oldCursor = _cursor;
         _cursor = page.continuation;
+        fetchedCount += page.items.length;
         final transformed = transform?.call(page.items) ?? page.items;
+        filteredCount += transformed.length;
         _buffer.addAll(transformed);
-        dev.log('[HomeSource] page=$pages items=${page.items.length} kept=${transformed.length} buffer=${_buffer.length}');
+        dev.log(
+          '[HomeSource] page=$pages items=${page.items.length} kept=${transformed.length} buffer=${_buffer.length}',
+        );
         if (_cursor == null || (_started && _cursor == oldCursor)) done = true;
         _started = true;
         pages++;
       } while (_buffer.length < 20 && !done && pages <= 3);
-    } catch (e) {
-      dev.log('[HomeSource] error: $e');
-      error = e;
+    } catch (error, stackTrace) {
+      dev.log(
+        '[HomeSource] fetch failed',
+        name: 'HomeMixer',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      this.error = error;
       done = true;
     }
   }
@@ -67,14 +79,39 @@ class HomeMixer {
   final Set<String> _seen = {};
   bool get hasMore => sources.any((s) => s._buffer.isNotEmpty || !s.done);
   void exclude(Iterable<String> ids) => _seen.addAll(ids);
-  Future<void> start() => Future.wait(sources.map((s) => s.ensure()));
+  Future<void> start() async {
+    // Start every source together, but don't make the first screen wait for
+    // the slowest source (RSS subscriptions can be numerous or unavailable).
+    for (final source in sources) {
+      unawaited(source.ensure());
+    }
+  }
 
-  Future<List<VideoItem>> next(int count) async {
+  Future<List<VideoItem>> next(
+    int count, {
+    Duration waitTimeout = const Duration(seconds: 8),
+  }) async {
     final result = <VideoItem>[];
-    var stalled = 0;
-    while (result.length < count && hasMore && stalled < 3) {
-      final before = result.length;
-      await Future.wait(sources.map((s) => s.ensure()));
+    final stopwatch = Stopwatch()..start();
+    while (result.length < count && hasMore) {
+      final ready = sources.any((source) => source._buffer.isNotEmpty);
+      if (!ready) {
+        final pending = sources
+            .where((source) => !source.done)
+            .map((source) => source.ensure())
+            .toList();
+        if (pending.isEmpty) break;
+        final remaining = waitTimeout - stopwatch.elapsed;
+        if (remaining <= Duration.zero) break;
+        await Future.any<void>([
+          Future.any<void>(pending),
+          Future<void>.delayed(remaining),
+        ]);
+        if (!sources.any((source) => source._buffer.isNotEmpty) &&
+            stopwatch.elapsed >= waitTimeout) {
+          break;
+        }
+      }
       for (final source in sources) {
         for (var n = 0; n < source.weight && result.length < count; n++) {
           if (source._buffer.isEmpty) break;
@@ -84,7 +121,6 @@ class HomeMixer {
           }
         }
       }
-      stalled = result.length == before ? stalled + 1 : 0;
     }
     return result;
   }

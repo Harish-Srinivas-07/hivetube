@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import '../db/app_db.dart';
 import 'language_profile.dart';
 
@@ -92,7 +93,14 @@ class ChannelLanguageCache extends ChangeNotifier {
           }
         }
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to load channel-language votes',
+        name: 'ChannelLanguageCache',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _saveToDb() async {
@@ -104,7 +112,14 @@ class ChannelLanguageCache extends ChangeNotifier {
         'channel_language_cache_v$CLASSIFIER_VERSION',
         encoded,
       );
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to persist channel-language votes',
+        name: 'ChannelLanguageCache',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   /// Returns the classified language if $\ge 2$ votes agree, or null.

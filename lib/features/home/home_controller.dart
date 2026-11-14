@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -239,8 +240,13 @@ class HomeController extends AsyncNotifier<HomeData> {
           );
         }
       }
-    } catch (_) {
-      /* Preserve cached content. */
+    } catch (error, stackTrace) {
+      dev.log(
+        'Background Home refresh failed',
+        name: 'HomeController',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -273,7 +279,14 @@ class HomeController extends AsyncNotifier<HomeData> {
                   .toList();
               if (fetched != null) cached = (fetched: fetched, items: entries);
             }
-          } catch (_) {}
+          } catch (error, stackTrace) {
+            dev.log(
+              'Failed to read RSS cache for channel $id',
+              name: 'HomeController',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
         }
         if (cached == null ||
             now.difference(cached.fetched) >= const Duration(minutes: 30)) {
@@ -292,12 +305,49 @@ class HomeController extends AsyncNotifier<HomeData> {
                     'items': cached.items.map((e) => e.toJson()).toList(),
                   }),
                 );
-          } catch (_) {
+          } catch (error, stackTrace) {
+            dev.log(
+              'RSS refresh failed for channel $id',
+              name: 'HomeController',
+              error: error,
+              stackTrace: stackTrace,
+            );
             if (!token.isCancelled) {
               errors.add('Subscriptions');
               cached = (fetched: now, items: cached?.items ?? <VideoItem>[]);
               _rssCache[id] = cached;
             }
+          }
+        }
+        if (cached != null && cached.items.isEmpty && !token.isCancelled) {
+          try {
+            dev.log(
+              'RSS had no entries for $id; falling back to the Y7 channel videos tab',
+              name: 'HomeController',
+            );
+            final fallback = await api.browse.channelVideos(
+              id,
+              cancelToken: token,
+            );
+            cached = (fetched: now, items: fallback.items);
+            _rssCache[id] = cached;
+            await ref
+                .read(dbProvider)
+                .setValue(
+                  'home_rss_cache_$id',
+                  jsonEncode({
+                    'fetched': now.toIso8601String(),
+                    'items': cached.items.map((e) => e.toJson()).toList(),
+                  }),
+                );
+          } catch (error, stackTrace) {
+            dev.log(
+              'Y7 channel videos fallback failed for $id',
+              name: 'HomeController',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            if (!token.isCancelled) errors.add('Subscriptions');
           }
         }
         if (cached != null) {
@@ -349,6 +399,107 @@ class HomeController extends AsyncNotifier<HomeData> {
         .toList();
   }
 
+  Future<void> _finishShortsLoad({
+    required String chip,
+    required CancelToken token,
+    required Future<List<List<ShortItem>>> pagesFuture,
+    required Set<String> watched,
+    required Set<String> preferred,
+    required Set<String> hidden,
+    required SeenVideos seen,
+    required AppSettings settings,
+    required HomeData initial,
+  }) async {
+    try {
+      // Let the initial HomeData return before even immediately available
+      // Shorts results attempt to update the notifier.
+      await Future<void>.delayed(Duration.zero);
+      final pages = await pagesFuture;
+      final unique = <String, ShortItem>{};
+      for (final item in pages.expand((page) => page)) {
+        unique.putIfAbsent(item.id, () => item);
+      }
+      final candidates = unique.values.take(48).toList();
+      final api = await ref.read(ytApiProvider.future);
+      final metadata = List<ShortItem>.filled(
+        candidates.length,
+        const ShortItem(id: '', thumbUrl: ''),
+        growable: false,
+      );
+      var cursor = 0;
+      Future<void> worker() async {
+        while (cursor < candidates.length && !token.isCancelled) {
+          final index = cursor++;
+          final item = candidates[index];
+          try {
+            final meta = await api.next.ownerMetadata(
+              item.id,
+              cancelToken: token,
+            );
+            metadata[index] = ShortItem(
+              id: item.id,
+              thumbUrl: item.thumbUrl,
+              title: item.title ?? meta?.title,
+              channelId: meta?.channelId,
+              channelName: meta?.channelName,
+              channelAvatarUrl: meta?.channelAvatarUrl,
+            );
+          } catch (error, stackTrace) {
+            dev.log(
+              'Shorts metadata failed for ${item.id}',
+              name: 'HomeController',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            metadata[index] = item;
+          }
+        }
+      }
+
+      // Metadata is only used to refine the optional Shorts shelf. Keep it
+      // bounded and off the critical path that displays regular Home videos.
+      await Future.wait(List.generate(3, (_) => worker()));
+      if (token.isCancelled) return;
+      final shorts = buildShortsShelf(
+        [metadata],
+        watched,
+        random: Random(_seed),
+        preferred: preferred,
+        hidden: hidden,
+        seen: seen.ids,
+      );
+      seen.mark(shorts.map((item) => item.id), DateTime.now());
+      await ref
+          .read(dbProvider)
+          .setValue(homeSeenKey(settings, chip: chip), seen.encode());
+      final current = _sessionDataByChip[chip] ?? initial;
+      final result = current.copy(
+        shorts: shorts,
+        errors: pages.every((page) => page.isEmpty)
+            ? [...current.errors, 'Shorts']
+            : current.errors,
+      );
+      _sessionDataByChip[chip] = result;
+      await ref
+          .read(dbProvider)
+          .setValue(
+            homeCacheKey(settings, chip: chip),
+            HomeCache(result.videos, result.shorts, DateTime.now()).encode(),
+          );
+      if (identical(token, _token) &&
+          (state.value == null || state.value?.chip == chip)) {
+        state = AsyncData(result);
+      }
+    } catch (error, stackTrace) {
+      dev.log(
+        'Background Shorts load failed for $chip',
+        name: 'HomeController',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   Future<HomeData> _fetch(String chip, CancelToken token) async {
     if (!token.isCancelled) _tokensByChip[chip] = token;
     final api = await ref.read(ytApiProvider.future);
@@ -381,19 +532,40 @@ class HomeController extends AsyncNotifier<HomeData> {
     final random = Random(_seed);
     final refreshExcluded = Set<String>.of(_refreshExcluded);
     List<VideoItem> Function(List<VideoItem>) rankFor(String source) =>
-        (items) => filter
-            .filterVideos(
-              items,
-              shownLanguages: preferred,
-              hiddenLanguages: hidden,
-              strictHome: strictHome,
-              seen: seen.ids,
-              random: random,
-              source: source,
-            )
-            .items
-            .where((item) => !refreshExcluded.contains(item.id))
-            .toList();
+        (items) {
+          final ranked = filter
+              .filterVideos(
+                items,
+                shownLanguages: preferred,
+                hiddenLanguages: hidden,
+                strictHome: strictHome,
+                seen: seen.ids,
+                random: random,
+                source: source,
+              )
+              .items
+              .where((item) => !refreshExcluded.contains(item.id))
+              .toList();
+          if (!strictHome) return ranked;
+
+          // Keep ambiguous Latin-script candidates in the internal mixer long
+          // enough for the ASR caption probe to classify them. The final strict
+          // filter still decides whether they reach the visible feed.
+          final included = ranked.map((item) => item.id).toSet();
+          ranked.addAll(
+            items.where(
+              (item) =>
+                  !refreshExcluded.contains(item.id) &&
+                  !included.contains(item.id) &&
+                  filter.isAmbiguous(
+                    title: item.title,
+                    channelId: item.channelId,
+                    channelName: item.channelName,
+                  ),
+            ),
+          );
+          return ranked;
+        };
     final uploadFuture = _subscriptions(api, channels.toList(), token, errors);
     final historyMediaById = {
       for (final row in historyMedia) row.history.videoId: row.media,
@@ -645,7 +817,14 @@ class HomeController extends AsyncNotifier<HomeData> {
                       .items;
                   candidates = [...candidates, ...topped];
                   items = trendingWithSeenFallback(candidates, seen);
-                } catch (_) {}
+                } catch (error, stackTrace) {
+                  dev.log(
+                    'Trending top-up query failed: $q',
+                    name: 'HomeController',
+                    error: error,
+                    stackTrace: stackTrace,
+                  );
+                }
               }
             }
             return VideoPage(items.take(5).toList(), null);
@@ -668,38 +847,23 @@ class HomeController extends AsyncNotifier<HomeData> {
     final startFuture = mixer.start();
     final chartsFuture = chip == 'All' && settings.gl != 'AUTO'
         ? api.charts.trending(settings.gl, cancelToken: token).catchError((
-            Object _,
+            Object error,
+            StackTrace stackTrace,
           ) {
+            dev.log(
+              'Home trending charts fetch failed',
+              name: 'HomeController',
+              error: error,
+              stackTrace: stackTrace,
+            );
             errors.add('Trending');
             return <VideoItem>[];
           })
         : Future.value(<VideoItem>[]);
-    // Recent owner lookups supplement channel names found in the subscription feed.
-    final ownerFuture = chip == 'All'
-        ? Future.wait(
-            history.take(2).map((h) async {
-              try {
-                return (await api.next.ownerMetadata(
-                      h.videoId,
-                      cancelToken: token,
-                    ))?.channelName ??
-                    '';
-              } catch (_) {
-                return '';
-              }
-            }),
-          )
-        : Future.value(<String>[]);
-    final uploads = await uploadFuture;
-    final owners = await ownerFuture;
     final queries = chip == 'All'
         ? shortsQueries(
             chip: chip,
-            channels: [
-              ...history.take(30).map((h) => h.channelName),
-              ...owners,
-              ...uploads.map((v) => v.channelName),
-            ],
+            channels: history.take(30).map((h) => h.channelName).toList(),
             localRatio: settings.localRatio,
             shownLanguages: settings.contentLanguages,
             hasHistory: history.isNotEmpty,
@@ -708,7 +872,6 @@ class HomeController extends AsyncNotifier<HomeData> {
             random: random,
           )
         : <String>[];
-    var successes = 0;
     Future<List<ShortItem>> loadShorts(String query) async {
       final items = <ShortItem>[];
       String? cursor;
@@ -729,9 +892,14 @@ class HomeController extends AsyncNotifier<HomeData> {
       queries.map((query) async {
         try {
           final result = await loadShorts(query);
-          successes++;
           return result;
-        } catch (_) {
+        } catch (error, stackTrace) {
+          dev.log(
+            'Home Shorts query failed: $query',
+            name: 'HomeController',
+            error: error,
+            stackTrace: stackTrace,
+          );
           return <ShortItem>[];
         }
       }),
@@ -776,56 +944,14 @@ class HomeController extends AsyncNotifier<HomeData> {
     var refillTries = 0;
     while (videos.length < 24 && mixer.hasMore && refillTries < 3) {
       refillTries++;
-      final more = await mixer.next(24 - videos.length);
+      final more = await mixer.next(
+        24 - videos.length,
+        waitTimeout: const Duration(seconds: 2),
+      );
       if (more.isEmpty) break;
       videos.addAll(more);
     }
     videos = mixByPublishedAge(videos, random: random);
-    final shortPages = await shortFuture;
-    if (successes == 0 && queries.isNotEmpty) errors.add('Shorts');
-    final dedupedShorts = <String, ShortItem>{};
-    for (final item in shortPages.expand((page) => page)) {
-      dedupedShorts.putIfAbsent(item.id, () => item);
-    }
-    final candidates = dedupedShorts.values.take(48).toList();
-    final candidateMetadata = List<ShortItem>.filled(
-      candidates.length,
-      const ShortItem(id: '', thumbUrl: ''),
-      growable: false,
-    );
-    var metaCursor = 0;
-    Future<void> metadataWorker() async {
-      while (metaCursor < candidates.length) {
-        final index = metaCursor++;
-        final item = candidates[index];
-        try {
-          final meta = await api.next.ownerMetadata(
-            item.id,
-            cancelToken: token,
-          );
-          candidateMetadata[index] = ShortItem(
-            id: item.id,
-            thumbUrl: item.thumbUrl,
-            title: item.title ?? meta?.title,
-            channelId: meta?.channelId,
-            channelName: meta?.channelName,
-            channelAvatarUrl: meta?.channelAvatarUrl,
-          );
-        } catch (_) {
-          candidateMetadata[index] = item;
-        }
-      }
-    }
-
-    await Future.wait(List.generate(3, (_) => metadataWorker()));
-    final freshShorts = buildShortsShelf(
-      [candidateMetadata],
-      watched,
-      random: random,
-      preferred: preferred,
-      hidden: hidden,
-      seen: seen.ids,
-    );
     final rankedTrending = filter
         .filterVideos(
           await chartsFuture,
@@ -839,29 +965,27 @@ class HomeController extends AsyncNotifier<HomeData> {
         .items
         .where((item) => !refreshExcluded.contains(item.id));
     final trending = trendingWithSeenFallback(rankedTrending, seen);
+    dev.log(
+      'Home stages: fetched=${sources.fold<int>(0, (n, s) => n + s.fetchedCount)} '
+      'after_filter=${sources.fold<int>(0, (n, s) => n + s.filteredCount)} '
+      'shown=${videos.length} trending=${trending.length} chip=$chip',
+      name: 'HomeController',
+    );
     if (token.isCancelled) throw StateError('Home request cancelled');
     for (final source in sources) {
       if (source.error != null) errors.add('Feed');
     }
-    if (videos.isEmpty &&
-        freshShorts.isEmpty &&
-        trending.isEmpty &&
-        errors.isNotEmpty) {
+    if (videos.isEmpty && trending.isEmpty && errors.isNotEmpty) {
       throw StateError('Could not load Home');
     }
     if (!token.isCancelled) {
       _mixersByChip[chip] = mixer;
       if (identical(token, _token)) _mixer = mixer;
     }
-    seen.mark([
-      ...videos.map((v) => v.id),
-      ...freshShorts.map((v) => v.id),
-      ...trending.map((v) => v.id),
-    ], now);
+    seen.mark([...videos.map((v) => v.id), ...trending.map((v) => v.id)], now);
     await db.setValue(homeSeenKey(settings, chip: chip), seen.encode());
     final result = HomeData(
       videos: videos,
-      shorts: freshShorts,
       chip: chip,
       trending: chip == 'All' ? trending : const [],
       continuations: mixer.hasMore ? const {'mixer': 'more'} : const {},
@@ -870,8 +994,23 @@ class HomeController extends AsyncNotifier<HomeData> {
     if (!token.isCancelled) _sessionDataByChip[chip] = result;
     await db.setValue(
       homeCacheKey(settings, chip: chip),
-      HomeCache(videos, freshShorts, DateTime.now()).encode(),
+      HomeCache(videos, const [], DateTime.now()).encode(),
     );
+    if (queries.isNotEmpty) {
+      unawaited(
+        _finishShortsLoad(
+          chip: chip,
+          token: token,
+          pagesFuture: shortFuture,
+          watched: watched,
+          preferred: preferred,
+          hidden: hidden,
+          seen: seen,
+          settings: settings,
+          initial: result,
+        ),
+      );
+    }
     return result;
   }
 
@@ -966,7 +1105,13 @@ class HomeController extends AsyncNotifier<HomeData> {
         homeSeenKey(ref.read(contentPrefsProvider), chip: current.chip),
         seen.encode(),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'Home pagination failed',
+        name: 'HomeController',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (generation == _generation) {
         state = AsyncData(
           current.copy(

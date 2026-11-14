@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:developer' as dev;
 import 'package:media_kit/media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,7 +56,8 @@ Future<void> main() async {
     await db.deleteValuesStartingWith('visitor_data_');
     await db.deleteValuesStartingWith('home_cache_');
     await db.setValue('settings_hl_en_migrated', 'true');
-    final nextVersion = ((int.tryParse(savedPrefsVersion ?? '') ?? 0) + 1).toString();
+    final nextVersion = ((int.tryParse(savedPrefsVersion ?? '') ?? 0) + 1)
+        .toString();
     await db.setValue('settings_prefs_version', nextVersion);
   }
 
@@ -83,8 +85,13 @@ Future<void> main() async {
       await db.getValue(homeCacheKey(settings)),
       DateTime.now(),
     );
-  } catch (_) {
-    /* Start without a cache. */
+  } catch (error, stackTrace) {
+    dev.log(
+      'Failed to load initial Home cache; starting without cached items',
+      name: 'HiveTube',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
   runApp(
     ProviderScope(

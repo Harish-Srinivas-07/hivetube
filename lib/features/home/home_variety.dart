@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:math';
 
 import '../../core/content/channel_language_cache.dart';
@@ -244,7 +245,13 @@ class SeenVideos {
       final recent = entries.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       return SeenVideos(Map.fromEntries(recent.take(400)));
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to decode seen-video state; starting with an empty set',
+        name: 'SeenVideos',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return SeenVideos({});
     }
   }

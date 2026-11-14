@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import '../../core/content/language_profile.dart';
 import '../../core/yt/models.dart';
 
@@ -30,7 +31,13 @@ class HomeCache {
           .toList();
       if (videos.isEmpty && shorts.isEmpty) return null;
       return HomeCache(videos, shorts, saved);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to decode cached Home feed',
+        name: 'HomeCache',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

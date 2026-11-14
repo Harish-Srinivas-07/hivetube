@@ -338,6 +338,37 @@ void main() {
   });
 
   group('Guard Test: Raw Unfiltered Feeds Never Reach Home', () {
+    test('Strict Home does not fill its quota with unknown languages', () {
+      final filter = ContentFilter(
+        channelCache: ChannelLanguageCache(AppDb(NativeDatabase.memory())),
+      );
+      const unknown = VideoItem(id: 'unknown', title: 'Qzv blarn');
+
+      expect(
+        filter
+            .filterVideos(
+              [unknown],
+              shownLanguages: {'ta', 'en'},
+              hiddenLanguages: {'hi'},
+              strictHome: true,
+            )
+            .items,
+        isEmpty,
+      );
+      expect(
+        filter
+            .filterVideos(
+              [unknown],
+              shownLanguages: {'ta', 'en'},
+              hiddenLanguages: {'hi'},
+              strictHome: true,
+              probeResults: const {'unknown': 'ta'},
+            )
+            .items,
+        [unknown],
+      );
+    });
+
     test('FilterVideos removes all non-shown items strictly', () {
       final cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
       final filter = ContentFilter(channelCache: cache);

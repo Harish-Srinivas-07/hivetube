@@ -1,3 +1,5 @@
+import 'dart:developer' as dev;
+
 import 'package:dio/dio.dart';
 import 'package:xml/xml.dart';
 import 'models.dart';
@@ -67,7 +69,14 @@ class YtRss {
         );
         final items = parseRss(response.data ?? '');
         if (items.isNotEmpty) return items;
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        dev.log(
+          'RSS playlist feed failed for $channelId; trying channel feed',
+          name: 'YtRss',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
 
     try {
@@ -78,7 +87,13 @@ class YtRss {
         cancelToken: cancelToken,
       );
       return parseRss(response.data ?? '');
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'RSS channel feed failed for $channelId',
+        name: 'YtRss',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return const [];
     }
   }

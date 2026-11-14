@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
+import '../../services/search_suggestions.dart';
 import '../../features/home/home_variety.dart';
 import '../../features/watch/mini_player_inset.dart';
 import '../../features/watch/watch_panel.dart';
@@ -28,21 +29,28 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final input = TextEditingController();
   final scroll = ScrollController();
-  Timer? debounce;
-  List<String> suggestions = [];
+  late final YoutubeSearchSuggestionSource suggestionSource;
+  late final SearchSuggestionController suggestionController;
   List<SearchResultItem> results = [];
   List<SearchFilterChip> filterChips = [];
   String? activeFilterParam;
   String? continuation;
   String activeQuery = '';
-  bool loadingSuggestions = false,
-      searching = false,
-      loadingMore = false,
-      showHidden = false;
+  bool searching = false, loadingMore = false, showHidden = false;
+
+  List<String> get suggestions => suggestionController.suggestions;
+  bool get loadingSuggestions => suggestionController.isLoading;
 
   @override
   void initState() {
     super.initState();
+    final prefs = ref.read(contentPrefsProvider);
+    suggestionSource = YoutubeSearchSuggestionSource(
+      hl: 'en',
+      gl: prefs.gl == 'AUTO' ? '' : prefs.gl,
+    );
+    suggestionController = SearchSuggestionController(source: suggestionSource)
+      ..addListener(_onSuggestionsChanged);
     scroll.addListener(() {
       if (scroll.position.extentAfter < 400) unawaited(loadMore());
     });
@@ -56,16 +64,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
-    debounce?.cancel();
+    suggestionController
+      ..removeListener(_onSuggestionsChanged)
+      ..dispose();
+    suggestionSource.dispose();
     input.dispose();
     scroll.dispose();
     super.dispose();
   }
 
+  void _onSuggestionsChanged() {
+    if (mounted) setState(() {});
+  }
+
   void queryChanged(String value) {
-    debounce?.cancel();
+    suggestionController.updateQuery(value);
     setState(() {
-      suggestions = [];
       results = [];
       filterChips = [];
       activeFilterParam = null;
@@ -73,41 +87,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       activeQuery = '';
       showHidden = false;
     });
-    final query = value.trim();
-    if (query.isEmpty) return;
-    debounce = Timer(const Duration(milliseconds: 250), () {
-      unawaited(loadSuggestions(query));
-    });
-  }
-
-  Future<void> loadSuggestions(String query) async {
-    setState(() => loadingSuggestions = true);
-    try {
-      final api = await ref.read(ytApiProvider.future);
-      final values = await api.search.suggestions(query);
-      if (!mounted || input.text.trim() != query) return;
-      setState(() => suggestions = values);
-    } catch (_) {
-      if (mounted && input.text.trim() == query) {
-        setState(() => suggestions = []);
-      }
-    } finally {
-      if (mounted && input.text.trim() == query) {
-        setState(() => loadingSuggestions = false);
-      }
-    }
   }
 
   Future<void> search(String query, {String? filterParam}) async {
     final normalized = query.trim();
     if (normalized.isEmpty) return;
     FocusScope.of(context).unfocus();
-    debounce?.cancel();
+    suggestionController.updateQuery('');
     setState(() {
       input.text = normalized;
       activeQuery = normalized;
       activeFilterParam = filterParam;
-      suggestions = [];
       results = [];
       continuation = null;
       searching = true;
@@ -381,6 +371,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           title: Text(suggestion),
                           onTap: () => search(suggestion),
                         ),
+                    if (activeQuery.isEmpty &&
+                        input.text.trim().isNotEmpty &&
+                        !loadingSuggestions &&
+                        suggestions.isEmpty)
+                      ListTile(
+                        key: const ValueKey('searchTypedQueryFallback'),
+                        leading: const Icon(LucideIcons.search),
+                        title: Text('Search for “${input.text.trim()}”'),
+                        onTap: () => search(input.text),
+                      ),
 
                     // Loading
                     if (searching) ...[

@@ -139,6 +139,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   Offset _snapFrom = Offset.zero;
   Offset _snapTarget = Offset.zero;
   Size? _lastBounds;
+  bool _hasInitialMiniPosition = false;
   bool _panelActive = false;
   bool _skipHistory = false;
   bool _keepMini = false;
@@ -459,7 +460,11 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
             final miniInset = miniHeight + AppSpacing.sm * 2;
             if (_lastBounds != bounds.biggest) {
               _lastBounds = bounds.biggest;
-              _miniPos.value = anchors[miniCorner]!;
+              final corner = _hasInitialMiniPosition
+                  ? miniCorner
+                  : MiniCorner.br;
+              _miniPos.value = anchors[corner]!;
+              _hasInitialMiniPosition = true;
             }
 
             final expandedTopLeft = Offset(
@@ -616,14 +621,14 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                           -velocity.dy / bounds.maxHeight,
                                         );
                                       } else {
-                                        final projected =
-                                            _miniPos.value + velocity * .12;
                                         final targetEntry = anchors.entries
                                             .reduce((a, b) {
-                                              final da = (a.value - projected)
-                                                  .distanceSquared;
-                                              final db = (b.value - projected)
-                                                  .distanceSquared;
+                                              final da =
+                                                  (_miniPos.value - a.value)
+                                                      .distanceSquared;
+                                              final db =
+                                                  (_miniPos.value - b.value)
+                                                      .distanceSquared;
                                               return da <= db ? a : b;
                                             });
                                         ref

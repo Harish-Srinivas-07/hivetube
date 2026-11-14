@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/content/channel_language_cache.dart';
@@ -59,13 +60,35 @@ void main() {
         'b',
         'c',
         'seen',
-        'e',
         'blocked',
         'd',
+        'e',
       ]);
       expect(secondPage, isTrue);
       expect(sources.last.error, isNotNull);
       expect(mixer.hasMore, isFalse);
+    },
+  );
+  test(
+    'feed returns ready search results while RSS is still loading',
+    () async {
+      final rss = Completer<VideoPage>();
+      final mixer = HomeMixer([
+        HomeSource(weight: 2, fetch: (_) => rss.future),
+        HomeSource(
+          weight: 1,
+          fetch: (_) async => VideoPage([video('search-result')], null),
+        ),
+      ]);
+
+      await mixer.start();
+      final result = await mixer.next(
+        1,
+        waitTimeout: const Duration(milliseconds: 100),
+      );
+
+      expect(result.map((item) => item.id), ['search-result']);
+      rss.complete(VideoPage([video('subscription-result')], null));
     },
   );
   test(
