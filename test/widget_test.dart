@@ -6,6 +6,7 @@ import 'package:hivetube/app/router.dart';
 import 'package:hivetube/main.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
+import 'package:hivetube/theme/app_spacing.dart';
 
 void main() {
   for (final width in [400.0, 1200.0]) {
@@ -40,8 +41,8 @@ void main() {
       } else {
         final bar = tester.getRect(nav);
         expect(bar.center.dx, closeTo(width / 2, 0.1));
-        expect(bar.width, closeTo(width, 0.1));
-        expect(bar.bottom, closeTo(800, 0.1));
+        expect(bar.width, lessThan(width));
+        expect(bar.bottom, closeTo(800 - AppSpacing.sm, 0.1));
         expect(find.byTooltip('Home'), findsOneWidget);
         expect(find.byTooltip('Shorts'), findsOneWidget);
         expect(find.byTooltip('Subscriptions'), findsOneWidget);

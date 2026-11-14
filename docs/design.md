@@ -93,7 +93,7 @@ Rules:
 
 ## 3. GLOBAL LAYOUT
 - Root tabs (bottom nav, 4): Home, Shorts, Subscriptions, Library. Search is an icon in the top bar. Settings via Library.
-- Bottom nav: flat bar, bg=background, no top border, no glass/blur, 56 + safe area. Item: icon 24 + label 11. Selected = onSurface filled icon, unselected = onSurfaceVariant outline icon. Selection change = icon swap, no animation beyond fade.
+- Bottom nav: centered floating pill, side inset 16, bottom inset safeArea + 8. Use the shared GlassSurface with a subtle border and shadow. Selected tab has a red pill indicator with white icon and label; other tabs use onSurfaceVariant. Drag horizontally across the pill to select tabs. On Shorts, use the translucent white glass fill and border while keeping the red indicator. Hide the pill while the watch panel is expanded.
 - Mini player: floating, draggable, width 55% of screen, 16:9, radius 12, flat (no shadow, no border). Snaps to the 4 corners (default bottom-right), clears the bottom nav and safe area. Tap or swipe up expands the watch panel. Controls: play/pause top-left, close top-right, each 40x40 on a black@60% circle, icon 16 white. 2px primary progress line on the bottom edge. Position persists for the session. Swipe is blocked while dragging.
 - Scroll bottom padding on every root screen = bottomNav + safeArea + lg. The floating mini player does not add bottom padding. Applied ONCE (use SliverBottomInset; do not add an extra spacer).
 - Status bar: transparent, icon brightness follows theme. Watch fullscreen hides system UI.
@@ -353,7 +353,7 @@ Never: blank screen, text-only "No videos found" without layout, multiple stacke
 - Large lists must paginate (history 50/page, search/continuations, subscriptions merged lazily).
 
 ## 8. ANTI-PATTERNS (grep = 0)
-BoxShadow | elevation: (non-zero) | Card( | GlassSurface | BackdropFilter | ImageFilter.blur | ShaderMask | Divider( in feeds/settings | BorderSide (except outlined AppButton, text field focus none) | gradient (except shorts/player scrim) | fontSize: (inline) | Color(0x / Colors. (inline) | EdgeInsets with raw numbers (use AppSpacing) | SizedBox(height: <number>) raw | borderRadius: BorderRadius.circular(<number>) raw
+BoxShadow | elevation: (non-zero) | Card( | GlassSurface (allowed only in lib/widgets/floating_nav.dart; mark `// allowed: floating nav`) | BackdropFilter / ImageFilter.blur (GlassSurface implementation only) | ShaderMask | Divider( in feeds/settings | BorderSide (except outlined AppButton, text field focus none) | gradient (except shorts/player scrim) | fontSize: (inline) | Color(0x / Colors. (inline) | EdgeInsets with raw numbers (use AppSpacing) | SizedBox(height: <number>) raw | borderRadius: BorderRadius.circular(<number>) raw
 Behavior bans: staggered list entrance animation, bouncing/elastic curves, parallax, auto-playing previews in Home feed, blocking spinners on first load, snackbar for non-actionable info, multiple error rows, emoji in UI chrome.
 
 ## 9. USECASE -> COMPONENT QUICK MAP

@@ -175,12 +175,12 @@ class AppShell extends ConsumerWidget {
                 ),
         ),
 
-        // ── Flat bottom navigation (phone) ───────────────────────────────────
+        // ── Floating bottom nav pill (phone) ─────────────────────────────────
         if (!wide)
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
             child: ValueListenableBuilder<double>(
               valueListenable: ref.watch(watchPanelProgressProvider),
               builder: (context, progress, _) {
@@ -192,23 +192,24 @@ class AppShell extends ConsumerWidget {
                   child: AnimatedOpacity(
                     opacity: navVisible ? 1 : 0,
                     duration: AppMotion.base,
-                    child: ColoredBox(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                      child: SafeArea(
-                        top: false,
-                        child: FloatingNav(
-                          items: [
-                            for (final item in _destinations)
-                              FloatingNavItem(
-                                item.label,
-                                item.icon,
-                                activeIcon: item.activeIcon,
-                              ),
-                          ],
-                          currentIndex: navigationShell.currentIndex,
-                          onSelected: select,
-                          onDragSelected: select,
-                        ),
+                    child: Center(
+                      child: FloatingNav(
+                        key: const ValueKey('bottomNavPill'),
+                        items: [
+                          for (final item in _destinations)
+                            FloatingNavItem(
+                              item.label,
+                              item.icon,
+                              activeIcon: item.activeIcon,
+                              showBadge:
+                                  item.label == 'Subscriptions' &&
+                                  hasUnreadSubs,
+                            ),
+                        ],
+                        currentIndex: navigationShell.currentIndex,
+                        onSelected: (index) => select(index),
+                        onDragSelected: (index) => select(index),
+                        inverted: shorts,
                       ),
                     ),
                   ),

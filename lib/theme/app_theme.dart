@@ -6,6 +6,43 @@ import 'app_sizes.dart';
 import 'app_text_styles.dart';
 import 'app_spacing.dart';
 
+class HiveGlass extends ThemeExtension<HiveGlass> {
+  const HiveGlass({
+    required this.blurSigma,
+    required this.glassFill,
+    required this.glassBorder,
+    required this.glow,
+  });
+
+  final double blurSigma;
+  final Color glassFill;
+  final Color glassBorder;
+  final Gradient glow;
+
+  @override
+  HiveGlass copyWith({
+    double? blurSigma,
+    Color? glassFill,
+    Color? glassBorder,
+    Gradient? glow,
+  }) => HiveGlass(
+    blurSigma: blurSigma ?? this.blurSigma,
+    glassFill: glassFill ?? this.glassFill,
+    glassBorder: glassBorder ?? this.glassBorder,
+    glow: glow ?? this.glow,
+  );
+
+  @override
+  HiveGlass lerp(covariant HiveGlass? other, double t) => other == null
+      ? this
+      : HiveGlass(
+          blurSigma: blurSigma + (other.blurSigma - blurSigma) * t,
+          glassFill: Color.lerp(glassFill, other.glassFill, t)!,
+          glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
+          glow: Gradient.lerp(glow, other.glow, t)!,
+        );
+}
+
 abstract final class AppTheme {
   static final light = _build(AppColors.light, Brightness.light);
   static final dark = _build(AppColors.dark, Brightness.dark);
@@ -37,6 +74,18 @@ abstract final class AppTheme {
     ).apply(bodyColor: colors.textPrimary, displayColor: colors.textPrimary);
     return ThemeData(
       useMaterial3: true,
+      extensions: [
+        HiveGlass(
+          blurSigma: AppSpacing.glassBlur,
+          glassFill: colors.glassFill,
+          glassBorder: colors.glassBorder,
+          glow: RadialGradient(
+            center: Alignment.topCenter,
+            radius: AppSpacing.glowRadius,
+            colors: [colors.glowTop, AppColors.transparent],
+          ),
+        ),
+      ],
       brightness: brightness,
       colorScheme: scheme,
       textTheme: text,
