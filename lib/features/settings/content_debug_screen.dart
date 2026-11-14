@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../core/content/home_trace.dart';
 import '../../core/providers.dart';
-import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 
 enum TraceFilter { all, kept, dropped, ambiguous }
 
 class ContentDebugScreen extends StatefulWidget {
   const ContentDebugScreen({super.key});
-
   @override
   State<ContentDebugScreen> createState() => _ContentDebugScreenState();
 }
@@ -36,134 +36,39 @@ class _ContentDebugScreenState extends State<ContentDebugScreen> {
     if (mounted) setState(() {});
   }
 
-  void _showDiagnosticSheet(BuildContext context, HomeTraceItem item) {
-    final colors = Theme.of(context).colorScheme;
+  void _showDiagnosticSheet(HomeTraceItem item) {
+    final details = <String, String>{
+      'Status': item.kept ? 'Kept' : 'Dropped',
+      'Language': item.finalLanguage.toUpperCase(),
+      'Source': item.source,
+      'Channel': item.channelName,
+      'Script verdict': item.scriptVerdict ?? 'None (Latin / neutral)',
+      'Lexicon hits': item.lexiconVerdict == null
+          ? 'None'
+          : '${item.lexiconVerdict} (${item.matchedWords.join(", ")})',
+      'Channel votes': item.channelVoteVerdict ?? 'No prior votes',
+      'Probe result': item.probeVerdict ?? 'Not probed / timed out',
+      'Final verdict': item.finalLanguage.toUpperCase(),
+      'Filter reason': item.reason,
+      'Ambiguous Latin': item.isAmbiguous ? 'Yes' : 'No',
+    };
     showAppSheet<void>(
       context,
-      fit: true,
       title: 'Diagnostic Details',
-      builder: (ctx, _) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: item.kept
-                        ? colors.primaryContainer
-                        : colors.errorContainer,
-                    borderRadius: AppRadius.xsBorder,
-                  ),
-                  child: Text(
-                    item.kept ? 'KEPT' : 'DROPPED',
-                    style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                      color: item.kept
-                          ? colors.onPrimaryContainer
-                          : colors.onErrorContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest,
-                    borderRadius: AppRadius.xsBorder,
-                  ),
-                  child: Text(
-                    item.finalLanguage.toUpperCase(),
-                    style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  item.source,
-                  style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              item.title,
-              style: Theme.of(
-                ctx,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Channel: ${item.channelName}',
-              style: Theme.of(
-                ctx,
-              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            const AppDivider(),
-            _diagRow(
-              ctx,
-              'Script verdict',
-              item.scriptVerdict ?? 'None (Latin / neutral)',
-            ),
-            _diagRow(
-              ctx,
-              'Lexicon hits',
-              item.lexiconVerdict == null
-                  ? 'None'
-                  : '${item.lexiconVerdict} (${item.matchedWords.join(", ")})',
-            ),
-            _diagRow(
-              ctx,
-              'Channel votes',
-              item.channelVoteVerdict ?? 'No prior votes',
-            ),
-            _diagRow(
-              ctx,
-              'Probe result',
-              item.probeVerdict ?? 'Not probed / timed out',
-            ),
-            _diagRow(ctx, 'Final verdict', item.finalLanguage.toUpperCase()),
-            _diagRow(ctx, 'Filter reason', item.reason),
-            _diagRow(ctx, 'Ambiguous Latin', item.isAmbiguous ? 'Yes' : 'No'),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _diagRow(BuildContext context, String label, String value) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx, controller) => ListView(
+        controller: controller,
         children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
+          ListTile(title: Text(item.title, style: AppTextStyles.settingsTitle)),
+          for (final entry in details.entries)
+            ListTile(
+              title: Text(entry.key, style: AppTextStyles.settingsTitle),
+              subtitle: Text(
+                entry.value,
+                style: AppTextStyles.settingsSub.copyWith(
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.bodySmall),
-          ),
         ],
       ),
     );
@@ -171,33 +76,32 @@ class _ContentDebugScreenState extends State<ContentDebugScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final allTraces = HomeTraceStore.instance.traces.reversed.take(60).toList();
+    final traces = HomeTraceStore.instance.traces.reversed.take(60).toList();
     final colors = Theme.of(context).colorScheme;
-
-    // Compute summary stats
-    final total = allTraces.length;
-    final keptCount = allTraces.where((t) => t.kept).length;
-    final droppedCount = allTraces.where((t) => !t.kept).length;
-    final byLang = <String, int>{};
-    var mismatchCount = 0;
-    for (final t in allTraces) {
-      byLang.update(t.finalLanguage, (c) => c + 1, ifAbsent: () => 1);
-      if (!t.kept &&
-          t.probeVerdict != null &&
-          t.probeVerdict != t.finalLanguage) {
-        mismatchCount++;
+    final filtered = traces
+        .where(
+          (t) => switch (_activeFilter) {
+            TraceFilter.all => true,
+            TraceFilter.kept => t.kept,
+            TraceFilter.dropped => !t.kept,
+            TraceFilter.ambiguous => t.isAmbiguous,
+          },
+        )
+        .toList();
+    final languages = <String, int>{};
+    var mismatches = 0;
+    for (final trace in traces) {
+      languages.update(
+        trace.finalLanguage,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+      if (!trace.kept &&
+          trace.probeVerdict != null &&
+          trace.probeVerdict != trace.finalLanguage) {
+        mismatches++;
       }
     }
-
-    final filteredTraces = allTraces.where((t) {
-      return switch (_activeFilter) {
-        TraceFilter.all => true,
-        TraceFilter.kept => t.kept,
-        TraceFilter.dropped => !t.kept,
-        TraceFilter.ambiguous => t.isAmbiguous,
-      };
-    }).toList();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Content Debug - Home Trace'),
@@ -238,289 +142,76 @@ class _ContentDebugScreenState extends State<ContentDebugScreen> {
             ).read(discoveryStoreProvider).topTerms('ta', limit: 20),
             builder: (context, snapshot) {
               final terms = snapshot.data;
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.xs,
-                ),
-                color: colors.secondaryContainer.withAlpha(70),
-                child: Text(
+              return ListTile(
+                title: Text(
                   terms?.isEmpty != false
                       ? 'Mined Tamil terms: none verified yet'
                       : 'Mined Tamil terms (review): ${terms!.map((e) => '${e.term} ×${e.seenCount}').join(', ')}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: AppTextStyles.settingsSub,
                 ),
               );
             },
           ),
-          // Summary row
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
+          ListTile(
+            title: Text(
+              'Total: ${traces.length} · Kept: ${traces.where((t) => t.kept).length} · Dropped: ${traces.where((t) => !t.kept).length}',
+              style: AppTextStyles.settingsTitle,
             ),
-            color: colors.surfaceContainerHighest.withAlpha(80),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Total: $total',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Text(
-                      'Kept: $keptCount',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Text(
-                      'Dropped: $droppedCount',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: colors.error,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (mismatchCount > 0)
-                      Text(
-                        'Mismatches: $mismatchCount',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.labelMedium?.copyWith(color: colors.error),
-                      ),
-                  ],
-                ),
-                if (byLang.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'Languages: ${byLang.entries.map((e) => "${e.key}: ${e.value}").join(", ")}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ],
+            subtitle: Text(
+              'Mismatches: $mismatches · Languages: ${languages.entries.map((e) => '${e.key}: ${e.value}').join(', ')}',
+              style: AppTextStyles.settingsSub.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
           ),
-
-          // Filter chips
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.xs,
-            ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Row(
               children: [
-                AppChip(
-                  label: 'All',
-                  selected: _activeFilter == TraceFilter.all,
-                  onTap: () => setState(() => _activeFilter = TraceFilter.all),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                AppChip(
-                  label: 'Kept',
-                  selected: _activeFilter == TraceFilter.kept,
-                  onTap: () => setState(() => _activeFilter = TraceFilter.kept),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                AppChip(
-                  label: 'Dropped',
-                  selected: _activeFilter == TraceFilter.dropped,
-                  onTap: () =>
-                      setState(() => _activeFilter = TraceFilter.dropped),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                AppChip(
-                  label: 'Ambiguous',
-                  selected: _activeFilter == TraceFilter.ambiguous,
-                  onTap: () =>
-                      setState(() => _activeFilter = TraceFilter.ambiguous),
-                ),
+                for (final filter in TraceFilter.values)
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.sm),
+                    child: AppChip(
+                      label: switch (filter) {
+                        TraceFilter.all => 'All',
+                        TraceFilter.kept => 'Kept',
+                        TraceFilter.dropped => 'Dropped',
+                        TraceFilter.ambiguous => 'Ambiguous',
+                      },
+                      selected: _activeFilter == filter,
+                      onTap: () => setState(() => _activeFilter = filter),
+                    ),
+                  ),
               ],
             ),
           ),
-
-          // Trace list
           Expanded(
-            child: filteredTraces.isEmpty
+            child: filtered.isEmpty
                 ? Center(
                     child: Text(
                       'No trace items match filter.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: AppTextStyles.body.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
                     ),
                   )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    itemCount: filteredTraces.length,
-                    separatorBuilder: (context, _) =>
-                        const SizedBox(height: AppSpacing.sm),
+                : ListView.builder(
+                    itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final trace = filteredTraces[index];
-                      return InkWell(
-                        onTap: () => _showDiagnosticSheet(context, trace),
-                        borderRadius: AppRadius.smBorder,
-                        child: Material(
-                          color: Theme.of(context).colorScheme.surfaceContainer,
-                          borderRadius: AppRadius.smBorder,
-                          clipBehavior: Clip.antiAlias,
-                          child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.sm,
-                                        vertical: AppSpacing.xs,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: trace.kept
-                                            ? colors.primaryContainer
-                                            : colors.errorContainer,
-                                        borderRadius: AppRadius.xsBorder,
-                                      ),
-                                      child: Text(
-                                        trace.kept ? 'KEPT' : 'DROPPED',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: trace.kept
-                                                  ? colors.onPrimaryContainer
-                                                  : colors.onErrorContainer,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.sm),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.sm,
-                                        vertical: AppSpacing.xs,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: colors.surfaceContainerHighest,
-                                        borderRadius: AppRadius.xsBorder,
-                                      ),
-                                      child: Text(
-                                        trace.finalLanguage.toUpperCase(),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                    ),
-                                    if (trace.isAmbiguous) ...[
-                                      const SizedBox(width: AppSpacing.xs),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: AppSpacing.xs,
-                                          vertical: AppSpacing.xxs,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: colors.tertiaryContainer,
-                                          borderRadius: AppRadius.xsBorder,
-                                        ),
-                                        child: Text(
-                                          'AMBIGUOUS',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .labelSmall
-                                              ?.copyWith(
-                                                color:
-                                                    colors.onTertiaryContainer,
-                                                fontSize: 10,
-                                              ),
-                                        ),
-                                      ),
-                                    ],
-                                    const Spacer(),
-                                    Text(
-                                      trace.source,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: AppSpacing.xs),
-                                Text(
-                                  trace.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
-                                Text(
-                                  trace.channelName,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                ),
-                                const SizedBox(height: AppSpacing.xs),
-                                Wrap(
-                                  spacing: AppSpacing.sm,
-                                  runSpacing: AppSpacing.xs,
-                                  children: [
-                                    if (trace.scriptVerdict != null)
-                                      Text(
-                                        'script: ${trace.scriptVerdict}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelSmall,
-                                      ),
-                                    if (trace.lexiconVerdict != null)
-                                      Text(
-                                        'lex: ${trace.lexiconVerdict}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelSmall,
-                                      ),
-                                    if (trace.channelVoteVerdict != null)
-                                      Text(
-                                        'channelVotes: ${trace.channelVoteVerdict}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelSmall,
-                                      ),
-                                    if (trace.probeVerdict != null)
-                                      Text(
-                                        'probe: ${trace.probeVerdict}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.labelSmall,
-                                      ),
-                                    Text(
-                                      'reason: ${trace.reason}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(color: colors.outline),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                      final trace = filtered[index];
+                      return ListTile(
+                        onTap: () => _showDiagnosticSheet(trace),
+                        title: Text(
+                          trace.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.settingsTitle,
+                        ),
+                        subtitle: Text(
+                          '${trace.channelName} · ${trace.kept ? 'KEPT' : 'DROPPED'} · ${trace.finalLanguage.toUpperCase()} · ${trace.source}${trace.isAmbiguous ? ' · AMBIGUOUS' : ''}\n${trace.reason}',
+                          style: AppTextStyles.settingsSub.copyWith(
+                            color: colors.onSurfaceVariant,
                           ),
                         ),
                       );

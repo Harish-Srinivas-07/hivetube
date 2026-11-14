@@ -1,15 +1,24 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../core/db/app_db.dart';
+import '../../core/providers.dart';
+import '../../core/yt/models.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
-import '../../core/db/app_db.dart';
-import '../../core/providers.dart';
+import '../../theme/app_text_styles.dart';
+import '../../widgets/common/common.dart';
+import '../playlist/save_to_playlist_sheet.dart';
+import '../../widgets/sheets/app_sheet.dart';
+import '../../widgets/ui/app_feedback.dart';
+import '../../widgets/ui/app_controls.dart';
 import '../watch/mini_player_inset.dart';
-import '../../widgets/ui/ui.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -19,9 +28,260 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  static const _pageSize = 50;
+
+  final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  final List<HistoryItemWithMedia> _items = [];
   String _query = '';
+  bool _searchOpen = false;
   bool _historyPaused = false;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  String? _loadError;
   final Set<String> _metadataBackfills = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    unawaited(_loadSettings());
+    unawaited(_loadFirstPage());
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    final value = await ref.read(dbProvider).getValue('history_paused');
+    if (mounted) setState(() => _historyPaused = value == 'true');
+  }
+
+  Future<void> _loadFirstPage({bool refresh = false}) async {
+    if (!refresh && _items.isEmpty && mounted) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
+    try {
+      final page = await ref
+          .read(dbProvider)
+          .historyDao
+          .getHistory(limit: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page);
+        _hasMore = page.length == _pageSize;
+        _loadError = null;
+        _loading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[History] load failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _loadError = error.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _loadError != null) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(dbProvider)
+          .historyDao
+          .getHistory(limit: _pageSize, offset: _items.length);
+      if (!mounted) return;
+      setState(() {
+        final knownIds = _items.map((item) => item.history.id).toSet();
+        _items.addAll(
+          page.where((item) => !knownIds.contains(item.history.id)),
+        );
+        _hasMore = page.length == _pageSize;
+        _loadingMore = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[History] load more failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _loadError = error.toString();
+          _loadingMore = false;
+        });
+      }
+    }
+  }
+
+  void _retryLoadMore() {
+    setState(() => _loadError = null);
+    unawaited(_loadMore());
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.extentAfter < AppSpacing.xxxl) {
+      unawaited(_loadMore());
+    }
+  }
+
+  Future<void> _togglePauseHistory() async {
+    final next = !_historyPaused;
+    await ref.read(dbProvider).setValue('history_paused', next.toString());
+    if (mounted) setState(() => _historyPaused = next);
+  }
+
+  Future<void> _clearAllHistory() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: 'Clear watch history?',
+        content: const Text('This removes watch history from this device.'),
+        actions: [
+          AppButton.text(
+            label: 'Cancel',
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          AppButton.text(
+            label: 'Clear',
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      await ref.read(dbProvider).historyDao.clearHistory();
+      if (!mounted) return;
+      setState(() {
+        _items.clear();
+        _hasMore = false;
+        _loadError = null;
+      });
+      AppSnackbar.show(context, 'History cleared');
+    } catch (error, stackTrace) {
+      debugPrint('[History] clear failed: $error\n$stackTrace');
+      if (mounted) setState(() => _loadError = error.toString());
+    }
+  }
+
+  Future<void> _showTopMenu() async {
+    final action = await showAppSheet<String>(
+      context,
+      fit: true,
+      builder: (sheetContext, _) => ListView(
+        shrinkWrap: true,
+        children: [
+          AppSheetRow(
+            icon: LucideIcons.trash2,
+            label: 'Clear all history',
+            onTap: () => Navigator.of(sheetContext).pop('clear'),
+          ),
+          AppSheetRow(
+            icon: _historyPaused ? LucideIcons.play : LucideIcons.pause,
+            label: _historyPaused ? 'Resume history' : 'Pause history',
+            onTap: () => Navigator.of(sheetContext).pop('pause'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'clear') await _clearAllHistory();
+    if (action == 'pause') await _togglePauseHistory();
+  }
+
+  Future<void> _showItemMenu(HistoryItemWithMedia item) async {
+    final videoId = item.history.videoId;
+    final action = await showAppSheet<String>(
+      context,
+      fit: true,
+      builder: (sheetContext, _) => ListView(
+        shrinkWrap: true,
+        children: [
+          AppSheetRow(
+            icon: LucideIcons.trash2,
+            label: 'Remove from history',
+            onTap: () => Navigator.of(sheetContext).pop('remove'),
+          ),
+          AppSheetRow(
+            icon: LucideIcons.listPlus,
+            label: 'Save to playlist',
+            onTap: () => Navigator.of(sheetContext).pop('playlist'),
+          ),
+          AppSheetRow(
+            icon: LucideIcons.share,
+            label: 'Share',
+            onTap: () => Navigator.of(sheetContext).pop('share'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'remove':
+        await _removeItem(item);
+        break;
+      case 'playlist':
+        await showSaveToPlaylistSheet(context, videoId: videoId);
+        break;
+      case 'share':
+        unawaited(
+          SharePlus.instance.share(
+            ShareParams(
+              uri: Uri.https('www.youtube.com', '/watch', {'v': videoId}),
+            ),
+          ),
+        );
+        break;
+    }
+  }
+
+  Future<void> _removeItem(HistoryItemWithMedia item) async {
+    final db = ref.read(dbProvider);
+    await db.historyDao.deleteHistoryItem(item.history.id);
+    if (!mounted) return;
+    setState(
+      () => _items.removeWhere((row) => row.history.id == item.history.id),
+    );
+    AppSnackbar.show(
+      context,
+      'Removed from history',
+      actionLabel: 'Undo',
+      onAction: () => unawaited(_restoreItem(item)),
+    );
+  }
+
+  Future<void> _restoreItem(HistoryItemWithMedia item) async {
+    await ref.read(dbProvider).historyDao.restoreHistoryItem(item.history);
+    await _reloadLoadedItems();
+  }
+
+  Future<void> _reloadLoadedItems() async {
+    final count = _items.length;
+    final limit = count < _pageSize ? _pageSize : count;
+    final page = await ref.read(dbProvider).historyDao.getHistory(limit: limit);
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(page);
+      _hasMore = page.length == limit;
+    });
+  }
 
   Future<void> _backfillMetadata(String videoId) async {
     if (!_metadataBackfills.add(videoId)) return;
@@ -39,7 +299,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             : 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
         durationSec: info.durationSec,
       );
-    } catch (_) {
+      if (mounted) await _reloadLoadedItems();
+    } catch (error, stackTrace) {
+      debugPrint('[History] metadata backfill failed: $error\n$stackTrace');
       await db.historyDao.updateMediaMetadata(
         videoId: videoId,
         title: 'Untitled video',
@@ -47,337 +309,297 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         channelName: '',
         thumbUrl: '',
       );
+      if (mounted) await _reloadLoadedItems();
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final db = ref.read(dbProvider);
-    final paused = await db.getValue('history_paused');
-    if (mounted) {
-      setState(() => _historyPaused = paused == 'true');
+  void _toggleSearch() {
+    setState(() => _searchOpen = !_searchOpen);
+    if (_searchOpen) {
+      _searchFocusNode.requestFocus();
+    } else {
+      _searchController.clear();
+      setState(() => _query = '');
+      _searchFocusNode.unfocus();
     }
   }
 
-  Future<void> _togglePauseHistory() async {
-    final db = ref.read(dbProvider);
-    final next = !_historyPaused;
-    await db.setValue('history_paused', next.toString());
-    setState(() => _historyPaused = next);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            next ? 'Watch history paused' : 'Watch history resumed',
-          ),
-        ),
-      );
-    }
+  List<HistoryItemWithMedia> get _filteredItems {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return _items;
+    return _items.where((item) {
+      final title = item.media?.title.toLowerCase() ?? '';
+      final channel = item.media?.channelName.toLowerCase() ?? '';
+      return title.contains(query) || channel.contains(query);
+    }).toList();
   }
 
-  Future<void> _clearAllHistory() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dCtx) => AppDialog(
-        title: 'Clear watch history?',
-        content: const Text(
-          'This will clear your watch history from this device.',
-        ),
-        actions: [
-          AppButton.text(
-            onPressed: () => Navigator.of(dCtx).pop(false),
-            label: 'Cancel',
-          ),
-          AppButton.filled(
-            onPressed: () => Navigator.of(dCtx).pop(true),
-            label: 'Clear history',
-          ),
-        ],
+  List<({String? header, HistoryItemWithMedia? item})> _groupItems(
+    List<HistoryItemWithMedia> items,
+  ) {
+    final result = <({String? header, HistoryItemWithMedia? item})>[];
+    DateTime? lastDay;
+    for (final item in items) {
+      final at = DateTime.fromMillisecondsSinceEpoch(item.history.at);
+      final day = DateTime(at.year, at.month, at.day);
+      if (day != lastDay) {
+        result.add((header: _dayLabel(day), item: null));
+        lastDay = day;
+      }
+      result.add((header: null, item: item));
+    }
+    return result;
+  }
+
+  String _dayLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (date == today) return 'Today';
+    if (date == today.subtract(const Duration(days: 1))) return 'Yesterday';
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final weekday = weekdays[date.weekday - 1];
+    final shortDate = MaterialLocalizations.of(
+      context,
+    ).formatShortMonthDay(date);
+    return '$weekday, $shortDate';
+  }
+
+  VideoItem _toVideo(HistoryItemWithMedia item) {
+    final media = item.media;
+    final videoId = item.history.videoId;
+    final title = media?.title.isNotEmpty == true && media?.title != videoId
+        ? media!.title
+        : 'Untitled video';
+    if (title == 'Untitled video' || media?.channelName.isEmpty != false) {
+      unawaited(_backfillMetadata(videoId));
+    }
+    return VideoItem(
+      id: videoId,
+      title: title,
+      channelId: media?.channelId ?? '',
+      channelName: media?.channelName ?? '',
+      thumbUrl:
+          media?.thumbUrl ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+      durationText: AppFormatters.formatDurationSeconds(
+        item.history.durationMs ~/ 1000,
+      ),
+      publishedText: MaterialLocalizations.of(context).formatShortMonthDay(
+        DateTime.fromMillisecondsSinceEpoch(item.history.at),
       ),
     );
+  }
 
-    if (confirm == true) {
-      await ref.read(dbProvider).historyDao.clearHistory();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Watch history cleared')),
-        );
-      }
-    }
+  Widget _buildRow(HistoryItemWithMedia item) {
+    final progress = item.history.durationMs > 0
+        ? item.history.positionMs / item.history.durationMs
+        : 0.0;
+    return RepaintBoundary(
+      key: ValueKey(item.history.videoId),
+      child: Dismissible(
+        key: ValueKey('history:${item.history.id}'),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          padding: const EdgeInsets.only(right: AppSpacing.lg),
+          child: Icon(
+            LucideIcons.trash2,
+            size: AppSizes.icon,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        onDismissed: (_) => unawaited(_removeItem(item)),
+        child: VideoCard.compact(
+          video: _toVideo(item),
+          progress: item.history.positionMs > 0 ? progress : null,
+          onTap: () => context.push('/watch/${item.history.videoId}'),
+          trailing: SizedBox.square(
+            dimension: AppSizes.buttonIcon,
+            child: IconButton(
+              tooltip: 'More options',
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(
+                width: AppSizes.buttonIcon,
+                height: AppSizes.buttonIcon,
+              ),
+              icon: const Icon(LucideIcons.ellipsis, size: AppSizes.iconSm),
+              onPressed: () => _showItemMenu(item),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final historyAsync = ref.watch(historyStreamProvider);
-    final theme = Theme.of(context);
+    final items = _filteredItems;
+    final grouped = _groupItems(items);
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom +
+        MiniPlayerInset.of(context) +
+        AppSpacing.lg;
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(LucideIcons.arrowLeft),
+          onPressed: () => context.pop(),
+        ),
         title: const Text('History'),
         actions: [
           IconButton(
-            icon: Icon(
-              _historyPaused ? LucideIcons.play : LucideIcons.pause,
-            ),
-            tooltip: _historyPaused ? 'Resume history' : 'Pause history',
-            onPressed: _togglePauseHistory,
+            tooltip: 'Search history',
+            icon: const Icon(LucideIcons.search),
+            onPressed: _toggleSearch,
           ),
           IconButton(
-            icon: const Icon(LucideIcons.trash2),
-            tooltip: 'Clear history',
-            onPressed: _clearAllHistory,
+            tooltip: 'History options',
+            icon: const Icon(LucideIcons.ellipsis),
+            onPressed: _showTopMenu,
           ),
         ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search history...',
-                prefixIcon: const Icon(LucideIcons.search, size: AppSizes.iconMd),
-                border: const OutlineInputBorder(
-                  borderRadius: AppRadius.lgBorder,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.sm,
-                ),
+          if (_searchOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.xs,
+                AppSpacing.md,
+                AppSpacing.sm,
               ),
-              onChanged: (val) =>
-                  setState(() => _query = val.trim().toLowerCase()),
-            ),
-          ),
-          Expanded(
-            child: historyAsync.when(
-              data: (items) {
-                final filtered = items.where((i) {
-                  if (_query.isEmpty) return true;
-                  final title = i.media?.title.toLowerCase() ?? '';
-                  final channel = i.media?.channelName.toLowerCase() ?? '';
-                  return title.contains(_query) || channel.contains(_query);
-                }).toList();
-
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _query.isEmpty
-                          ? 'No watch history'
-                          : 'No matching history items',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+              child: SizedBox(
+                height: AppSpacing.searchHeight,
+                child: ClipRRect(
+                  borderRadius: AppRadius.pillBorder,
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
+                    onChanged: (value) => setState(() => _query = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search history',
+                      prefixIcon: const Icon(LucideIcons.search),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(LucideIcons.x),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _query = '');
+                              },
+                            ),
+                      filled: true,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
                       ),
                     ),
-                  );
-                }
-
-                final groups = _groupByDay(filtered);
-                final entries = <({
-                  String? group,
-                  HistoryItemWithMedia? item,
-                })>[];
-                for (final group in groups) {
-                  entries.add((group: group.title, item: null));
-                  for (final item in group.items) {
-                    entries.add((group: null, item: item));
-                  }
-                }
-
-                return ListView.builder(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.paddingOf(context).bottom +
-                        MiniPlayerInset.of(context) +
-                        AppSpacing.lg,
                   ),
-                  itemCount: entries.length,
-                  itemBuilder: (ctx, index) {
-                    final entry = entries[index];
-                    if (entry.item != null) {
-                      return _buildHistoryRow(entry.item!, theme);
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.xs,
-                      ),
-                      child: Text(
-                        entry.group!,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+                ),
+              ),
             ),
+          Expanded(
+            child: _loading && _items.isEmpty
+                ? HistorySkeleton(bottomPadding: bottomInset)
+                : RefreshIndicator(
+                    onRefresh: () => _loadFirstPage(refresh: true),
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        if (_historyPaused)
+                          SliverToBoxAdapter(
+                            child: InlineBanner(
+                              message: 'Watch history is paused',
+                              actionLabel: 'Turn on',
+                              onAction: _togglePauseHistory,
+                            ),
+                          ),
+                        if (_loadError != null && _items.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: ErrorRetry(
+                              message: 'Could not load watch history',
+                              onRetry: () => _loadFirstPage(refresh: true),
+                            ),
+                          )
+                        else if (items.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: EmptyState(
+                              icon: LucideIcons.clock3,
+                              title: _query.isEmpty
+                                  ? 'No watch history'
+                                  : 'No matching history',
+                              message: _query.isEmpty
+                                  ? 'Videos you watch will appear here'
+                                  : 'Try a different title or channel',
+                            ),
+                          )
+                        else
+                          SliverList.builder(
+                            itemCount: grouped.length,
+                            itemBuilder: (context, index) {
+                              final entry = grouped[index];
+                              if (entry.item != null) {
+                                return _buildRow(entry.item!);
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  AppSpacing.md,
+                                  AppSpacing.lg,
+                                  AppSpacing.md,
+                                  AppSpacing.sm,
+                                ),
+                                child: Text(
+                                  entry.header!,
+                                  style: AppTextStyles.sectionTitle,
+                                ),
+                              );
+                            },
+                          ),
+                        if (_loadError != null && _items.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: ErrorRetry(
+                              message: 'Could not load more history',
+                              onRetry: _retryLoadMore,
+                            ),
+                          )
+                        else if (_loadingMore)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.lg),
+                              child: Center(
+                                child: SizedBox.square(
+                                  dimension: AppSizes.icon,
+                                  child: const CircularProgressIndicator(
+                                    strokeWidth: AppSpacing.borderWidth * 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: bottomInset),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildHistoryRow(HistoryItemWithMedia item, ThemeData theme) {
-    final media = item.media;
-    if (media == null ||
-        media.title.isEmpty ||
-        media.title == item.history.videoId) {
-      unawaited(_backfillMetadata(item.history.videoId));
-    }
-    final title = media?.title.isNotEmpty == true &&
-            media?.title != item.history.videoId
-        ? media!.title
-        : 'Untitled video';
-    final channel = media?.channelName.isNotEmpty == true
-        ? media!.channelName
-        : 'Unknown channel';
-    final thumbUrl = media?.thumbUrl ??
-        'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
-
-    final posMs = item.history.positionMs;
-    final durMs = item.history.durationMs;
-    final progress = durMs > 0 ? (posMs / durMs).clamp(0.0, 1.0) : 0.0;
-
-    return Dismissible(
-      key: ValueKey('hist_${item.history.id}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        color: theme.colorScheme.error,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: AppSpacing.lg),
-        child: Icon(LucideIcons.trash2, color: theme.colorScheme.onError),
-      ),
-      onDismissed: (_) {
-        ref.read(dbProvider).historyDao.deleteHistoryItem(item.history.id);
-      },
-      child: InkWell(
-        onTap: () => context.push('/watch/${item.history.videoId}'),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.xs,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Thumbnail with watched progress bar using stored title (no raw ID)
-              SizedBox(
-                width: 120,
-                child: ThumbnailWithDuration(
-                  thumbnailKey: ValueKey('historyThumb_$title'),
-                  progressKey: ValueKey('watchedProgress:${item.history.videoId}'),
-                  url: thumbUrl,
-                  progress: progress,
-                  borderRadius: AppRadius.mdBorder,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      channel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      '${AppFormatters.formatDurationSeconds(posMs ~/ 1000)} / ${AppFormatters.formatDurationSeconds(durMs ~/ 1000)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(LucideIcons.x, size: AppSizes.icon),
-                onPressed: () {
-                  ref
-                      .read(dbProvider)
-                      .historyDao
-                      .deleteHistoryItem(item.history.id);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<_HistoryGroup> _groupByDay(List<HistoryItemWithMedia> items) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final weekAgo = today.subtract(const Duration(days: 7));
-
-    final todayItems = <HistoryItemWithMedia>[];
-    final yesterdayItems = <HistoryItemWithMedia>[];
-    final weekItems = <HistoryItemWithMedia>[];
-    final earlierItems = <HistoryItemWithMedia>[];
-
-    for (final item in items) {
-      final date = DateTime.fromMillisecondsSinceEpoch(item.history.at);
-      final itemDay = DateTime(date.year, date.month, date.day);
-
-      if (itemDay == today) {
-        todayItems.add(item);
-      } else if (itemDay == yesterday) {
-        yesterdayItems.add(item);
-      } else if (itemDay.isAfter(weekAgo)) {
-        weekItems.add(item);
-      } else {
-        earlierItems.add(item);
-      }
-    }
-
-    final groups = <_HistoryGroup>[];
-    if (todayItems.isNotEmpty) {
-      groups.add(_HistoryGroup(title: 'Today', items: todayItems));
-    }
-    if (yesterdayItems.isNotEmpty) {
-      groups.add(_HistoryGroup(title: 'Yesterday', items: yesterdayItems));
-    }
-    if (weekItems.isNotEmpty) {
-      groups.add(_HistoryGroup(title: 'This Week', items: weekItems));
-    }
-    if (earlierItems.isNotEmpty) {
-      groups.add(_HistoryGroup(title: 'Earlier', items: earlierItems));
-    }
-    return groups;
-  }
-}
-
-class _HistoryGroup {
-  const _HistoryGroup({required this.title, required this.items});
-  final String title;
-  final List<HistoryItemWithMedia> items;
 }

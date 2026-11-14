@@ -9,6 +9,7 @@ import '../core/db/app_db.dart';
 import '../core/providers.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
 import 'sheets/app_sheet.dart';
+import 'ui/app_feedback.dart';
 
 /// Content actions can be supplied by the caller; unavailable actions are omitted.
 Future<void> showVideoOptionsMenu(
@@ -76,9 +77,7 @@ Future<void> showVideoOptionsMenu(
         final wl = await db.playlistsDao.getOrCreateWatchLater();
         await db.playlistsDao.addPlaylistItem(wl.id, videoId, mediaItem: media);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Saved to Watch Later')),
-          );
+          AppSnackbar.show(context, 'Saved to Watch Later');
         }
       }
     case 'share':
@@ -98,9 +97,7 @@ Future<void> showVideoOptionsMenu(
         ),
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Link copied')));
+        AppSnackbar.show(context, 'Link copied');
       }
   }
 }

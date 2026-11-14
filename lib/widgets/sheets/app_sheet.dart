@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -7,10 +8,11 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../ui/app_controls.dart';
 
-/// Pinned sheet header with centered handle, 56-high title row, and optional back/action buttons.
+/// Bottom sheet header with centered handle and optional title/actions.
 class AppSheetHeader extends StatelessWidget {
   const AppSheetHeader({
     super.key,
@@ -29,77 +31,73 @@ class AppSheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
     final hasHeaderRow =
         title != null || action != null || onBack != null || showClose;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Top 12 padding with 4x32 centered handle
         Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.md, bottom: AppSpacing.xs),
+          padding: const EdgeInsets.only(
+            top: AppSpacing.sm,
+            bottom: AppSpacing.sm,
+          ),
           child: Center(
             child: Container(
               width: AppSizes.sheetHandleWidth,
               height: AppSizes.sheetHandleHeight,
               decoration: BoxDecoration(
-                color: cs.outlineVariant,
-                borderRadius: AppRadius.pillBorder,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(AppRadius.sheetHandle),
               ),
             ),
           ),
         ),
         if (hasHeaderRow) ...[
-          // 56-high title row with 16 gutters
-          SizedBox(
-            height: AppSizes.sheetHeaderHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: Row(
-                children: [
-                  if (onBack != null) ...[
-                    AppIconButton(
-                      icon: LucideIcons.arrowLeft,
-                      onPressed: onBack,
-                      tonal: false,
-                      size: AppSizes.iconSm,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                  ],
-                  if (title != null)
-                    Expanded(
-                      child: Text(
-                        title!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-                  if (action != null)
-                    action!
-                  else if (showClose)
-                    AppIconButton(
-                      icon: LucideIcons.x,
-                      onPressed: () => Navigator.of(context).pop(),
-                      tonal: false,
-                      size: AppSizes.iconSm,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                if (onBack != null) ...[
+                  AppIconButton(
+                    icon: LucideIcons.arrowLeft,
+                    onPressed: onBack,
+                    tonal: false,
+                    size: AppSizes.iconSm,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
                 ],
-              ),
+                if (title != null)
+                  Expanded(
+                    child: Text(
+                      title!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.settingsTitle.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                if (action != null)
+                  action!
+                else if (showClose)
+                  AppIconButton(
+                    icon: LucideIcons.x,
+                    onPressed: () => Navigator.of(context).pop(),
+                    tonal: false,
+                    size: AppSizes.iconSm,
+                  ),
+              ],
             ),
           ),
-          if (isScrolledUnder)
-            Divider(
-              height: AppSpacing.borderWidth,
-              thickness: AppSpacing.borderWidth,
-              color: cs.outlineVariant.withAlpha(50),
-            ),
         ] else
           const SizedBox(height: AppSpacing.xs),
       ],
@@ -132,79 +130,103 @@ class AppSheetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final effectiveColor = enabled ? cs.onSurface : cs.onSurface.withAlpha(97);
-
-    return ListTile(
-      enabled: enabled,
-      minLeadingWidth: AppSpacing.xl,
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      leading: icon == null
-          ? null
-          : Icon(icon, color: effectiveColor, size: AppSizes.icon),
-      title: Text(
-        label,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: effectiveColor,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-        ),
-      ),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-      trailing: selected
-          ? Icon(LucideIcons.check, size: AppSizes.iconSm, color: cs.primary)
-          : (value != null || showChevron)
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (value != null && value!.isNotEmpty)
-                      Flexible(
-                        child: Text(
-                          value!,
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: AppSizes.settingsRowHeight,
+      child: Opacity(
+        opacity: enabled ? 1 : AppColors.disabledOpacity,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: cs.onSurface, size: AppSizes.icon),
+                  const SizedBox(width: AppSpacing.xl),
+                ],
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.settingsTitle.copyWith(
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      if (subtitle != null)
+                        Text(
+                          subtitle!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
+                          style: AppTextStyles.settingsSub.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
                         ),
-                      ),
-                    if (showChevron) ...[
-                      const SizedBox(width: AppSpacing.xs),
-                      Icon(
-                        LucideIcons.chevronRight,
-                        size: AppSizes.iconSm,
-                        color: cs.onSurfaceVariant,
-                      ),
                     ],
-                  ],
-                )
-              : null,
-      onTap: enabled ? onTap : null,
+                  ),
+                ),
+                if (selected)
+                  Icon(
+                    LucideIcons.check,
+                    size: AppSizes.icon,
+                    color: cs.onSurface,
+                  )
+                else if (value != null || showChevron)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (value != null && value!.isNotEmpty)
+                        Flexible(
+                          child: Text(
+                            value!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.settingsSub.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      if (showChevron) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        Icon(
+                          LucideIcons.chevronRight,
+                          size: AppSizes.iconSm,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ],
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Unified modal bottom sheet launcher with max 480 width, centered tablet/landscape card,
-/// safe area and mini-player insets, and dismissibility.
+/// Unified bottom-anchored modal sheet.
 Future<T?> showAppSheet<T>(
   BuildContext context, {
-  required Widget Function(BuildContext context, ScrollController? scrollController) builder,
+  required Widget Function(
+    BuildContext context,
+    ScrollController? scrollController,
+  )
+  builder,
   String? title,
   Widget? headerAction,
   VoidCallback? onBack,
   bool showClose = true,
   bool fit = false,
   double? fraction,
-  double initialFraction = 0.5,
+  double initialFraction = 0.6,
   double minFraction = 0.25,
-  double maxFraction = 0.85,
+  double maxFraction = 1,
   List<double>? snapSizes,
   bool expand = false,
   bool isScrollControlled = true,
@@ -218,46 +240,49 @@ Future<T?> showAppSheet<T>(
   final cs = inheritedTheme.colorScheme;
   final sheetBg = backgroundColor ?? cs.surface;
   final callerMiniInset = MiniPlayerInset.of(context);
-
-  final effectiveInitial = fraction ?? (fit ? 0.85 : initialFraction);
-  final effectiveSnapSizes = snapSizes ?? [0.5, maxFraction.clamp(0.5, 0.95)];
+  final callerBottomSafeArea = MediaQuery.viewPaddingOf(context).bottom;
+  final effectiveInitial = fraction ?? (fit ? 0.6 : initialFraction);
+  final effectiveMaximum = maxFraction.clamp(minFraction, 1.0);
+  final effectiveSnapSizes = snapSizes ?? [0.6, effectiveMaximum];
 
   return showModalBottomSheet<T>(
     context: context,
-    isScrollControlled: isScrollControlled,
-    useSafeArea: useSafeArea,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    useSafeArea: false,
     isDismissible: isDismissible,
     enableDrag: enableDrag,
     showDragHandle: false,
     barrierColor: AppColors.scrim50,
     backgroundColor: AppColors.transparent,
+    elevation: 0,
+    constraints: const BoxConstraints(maxWidth: double.infinity),
     builder: (modalContext) {
       final mq = MediaQuery.of(modalContext);
-      final isWide = mq.size.width >= 600 || onVideo;
-      final bottomInset = math.max(mq.viewInsets.bottom, mq.padding.bottom) + callerMiniInset;
-
-      final effectiveBg = onVideo ? const Color(0xFF212121) : sheetBg;
-      // Card borderRadius: all-around 20 on video floating card, 16 on landscape, top-16 on mobile
-      final borderRadius = onVideo
-          ? BorderRadius.circular(20)
-          : (isWide ? AppRadius.lgBorder : AppRadius.sheetTopBorder);
+      final effectiveBg = inheritedTheme.brightness == Brightness.dark
+          ? AppColors.videoSheet
+          : sheetBg;
+      final borderRadius = AppRadius.sheetTopBorder;
 
       Widget content;
 
       if (fit) {
         content = Material(
+          key: const ValueKey('appSheetSurface'),
           color: effectiveBg,
           borderRadius: borderRadius,
           clipBehavior: Clip.antiAlias,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: mq.size.height * 0.85,
+              maxHeight: mq.size.height * AppSpacing.sheetMaxHeightFactor,
             ),
             child: SafeArea(
               top: false,
               bottom: false,
               child: Padding(
-                padding: EdgeInsets.only(bottom: onVideo ? AppSpacing.sm : bottomInset),
+                padding: EdgeInsets.only(
+                  bottom: AppSpacing.sm + callerMiniInset,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -282,17 +307,23 @@ Future<T?> showAppSheet<T>(
         content = DraggableScrollableSheet(
           snap: true,
           snapSizes: effectiveSnapSizes,
-          initialChildSize: effectiveInitial.clamp(minFraction, maxFraction),
+          initialChildSize: effectiveInitial.clamp(
+            minFraction,
+            effectiveMaximum,
+          ),
           minChildSize: minFraction,
-          maxChildSize: maxFraction.clamp(minFraction, 0.95),
+          maxChildSize: effectiveMaximum,
           expand: expand,
           builder: (sheetContext, scrollController) {
             return Material(
+              key: const ValueKey('appSheetSurface'),
               color: effectiveBg,
               borderRadius: borderRadius,
               clipBehavior: Clip.antiAlias,
               child: Padding(
-                padding: EdgeInsets.only(bottom: onVideo ? AppSpacing.sm : bottomInset),
+                padding: EdgeInsets.only(
+                  bottom: AppSpacing.sm + callerMiniInset,
+                ),
                 child: _DraggableSheetBody(
                   title: title,
                   headerAction: headerAction,
@@ -307,21 +338,15 @@ Future<T?> showAppSheet<T>(
         );
       }
 
-      // Constrain width to 480 max and center horizontally on tablet / landscape / video
-      final framed = Center(
+      return Theme(
+        data: inheritedTheme,
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: onVideo ? 24.0 : 0.0,
-            vertical: onVideo ? 16.0 : 0.0,
+          padding: EdgeInsets.only(
+            bottom: math.max(mq.viewInsets.bottom, callerBottomSafeArea),
           ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppSizes.sheetCardMaxWidth),
-            child: content,
-          ),
+          child: Align(alignment: Alignment.bottomCenter, child: content),
         ),
       );
-
-      return Theme(data: inheritedTheme, child: framed);
     },
   );
 }
@@ -363,7 +388,8 @@ class _DraggableSheetBodyState extends State<_DraggableSheetBody> {
   }
 
   void _onScroll() {
-    final scrolled = widget.scrollController.hasClients &&
+    final scrolled =
+        widget.scrollController.hasClients &&
         widget.scrollController.offset > 0;
     if (scrolled != _isScrolledUnder) {
       if (mounted) setState(() => _isScrolledUnder = scrolled);
@@ -381,9 +407,7 @@ class _DraggableSheetBodyState extends State<_DraggableSheetBody> {
           showClose: widget.showClose,
           isScrolledUnder: _isScrolledUnder,
         ),
-        Expanded(
-          child: widget.builder(context, widget.scrollController),
-        ),
+        Expanded(child: widget.builder(context, widget.scrollController)),
       ],
     );
   }
@@ -449,7 +473,8 @@ class AppDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final miniInset = MiniPlayerInset.of(context);
-    final effectiveInsetPadding = insetPadding ??
+    final effectiveInsetPadding =
+        insetPadding ??
         EdgeInsets.fromLTRB(
           AppSpacing.xl,
           AppSpacing.xl,
@@ -498,4 +523,3 @@ class AppDialog extends StatelessWidget {
     );
   }
 }
-

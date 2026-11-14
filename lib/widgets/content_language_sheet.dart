@@ -72,9 +72,7 @@ Future<void> showContentLanguageSheet(
                     trailing: entry.key == region
                         ? Icon(
                             LucideIcons.check,
-                            color: Theme.of(
-                              pickerContext,
-                            ).colorScheme.primary,
+                            color: Theme.of(pickerContext).colorScheme.primary,
                           )
                         : null,
                     onTap: () => Navigator.pop(pickerContext, entry.key),
@@ -113,9 +111,7 @@ Future<void> showContentLanguageSheet(
             Expanded(
               child: ListView(
                 controller: scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 children: [
                   Text(
                     'Languages',
@@ -137,8 +133,9 @@ Future<void> showContentLanguageSheet(
                       child: Text(
                         'Keep at least one language shown. English was restored.',
                         key: const ValueKey('contentLanguageHint'),
-                        style: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(color: colors.primary),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: colors.primary),
                       ),
                     ),
                   Padding(
@@ -149,11 +146,12 @@ Future<void> showContentLanguageSheet(
                     ),
                     child: Text(
                       'Other covers Latin-script languages such as Spanish and French. They are recognized from query bias and language keywords only.',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: colors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                  const Divider(),
+                  const SizedBox(height: AppSpacing.sm),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     'Region',
@@ -166,12 +164,9 @@ Future<void> showContentLanguageSheet(
                     trailing: const Icon(LucideIcons.chevronRight),
                     onTap: chooseRegion,
                   ),
-                  const Divider(),
                   const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    'Mix',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('Mix', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.sm),
                   Row(
                     children: [
@@ -199,8 +194,9 @@ Future<void> showContentLanguageSheet(
                     padding: const EdgeInsets.only(top: AppSpacing.xs),
                     child: Text(
                       'Local topics ${(localRatio * 100).round()}% · Global ${(100 - localRatio * 100).round()}%',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: colors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],

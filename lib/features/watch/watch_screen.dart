@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:share_plus/share_plus.dart';
@@ -23,6 +22,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import 'mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_controls.dart';
 import '../../widgets/video_options_menu.dart';
@@ -432,7 +433,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   )
                 : const CircularProgressIndicator(),
           )
-        : _details(info, related, heavyContentReady: heavyContentReady, wide: wide);
+        : _details(
+            info,
+            related,
+            heavyContentReady: heavyContentReady,
+            wide: wide,
+          );
     return Focus(
       autofocus: true,
       onKeyEvent: (_, event) {
@@ -528,9 +534,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                   child: Column(
                                     children: [
                                       player,
-                                      Expanded(
-                                        child: details,
-                                      ),
+                                      Expanded(child: details),
                                     ],
                                   ),
                                 ),
@@ -586,7 +590,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                       onTap: () => setState(() => panel = null),
                                       behavior: HitTestBehavior.opaque,
                                       child: const ColoredBox(
-                                        color: Colors.black38,
+                                        color: AppColors.scrim50,
                                         child: SizedBox.expand(),
                                       ),
                                     ),
@@ -597,22 +601,26 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                     offset: panel != null
                                         ? Offset.zero
                                         : const Offset(0, 1),
-                                    duration:
-                                        const Duration(milliseconds: 250),
+                                    duration: const Duration(milliseconds: 250),
                                     curve: Curves.easeOutCubic,
                                     child: IgnorePointer(
                                       ignoring: panel == null,
-                                      child: (panel != null || _lastPanel != null) &&
+                                      child:
+                                          (panel != null ||
+                                                  _lastPanel != null) &&
                                               info != null
                                           ? Material(
-                                              color: Theme.of(context)
-                                                  .scaffoldBackgroundColor,
+                                              color: Theme.of(
+                                                context,
+                                              ).scaffoldBackgroundColor,
                                               borderRadius:
                                                   const BorderRadius.vertical(
-                                                top: Radius.circular(16),
-                                              ),
+                                                    top: Radius.circular(
+                                                      AppRadius.lg,
+                                                    ),
+                                                  ),
                                               clipBehavior: Clip.antiAlias,
-                                              elevation: 8,
+                                              elevation: 0,
                                               child: _panel(
                                                 info,
                                                 related,
@@ -692,9 +700,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
             AppSpacing.md,
-            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.md,
             AppSpacing.sm,
           ),
           child: Column(
@@ -716,39 +724,36 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       info.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                      ),
+                      style: AppTextStyles.watchTitle,
                     ),
                     const SizedBox(height: AppSpacing.xs),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: [
-                              if (info.handle.isNotEmpty) info.handle,
-                              if (info.likes.isNotEmpty)
-                                '${_compactMetric(info.likes)} likes',
-                              if (info.views.isNotEmpty)
-                                '${_compactMetric(info.views)} views',
-                              if (info.date.isNotEmpty) info.date,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            [
+                              if (info.views.isNotEmpty) info.views,
+                              if (info.date.isNotEmpty)
+                                info.date.replaceFirst(
+                                  RegExp(
+                                    r'^(Published|Premiered|Streamed live on)\s+',
+                                    caseSensitive: false,
+                                  ),
+                                  '',
+                                ),
                             ].join(' · '),
-                          ),
-                          TextSpan(
-                            text: ' · more',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontWeight: FontWeight.w700,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.meta.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text('...more', style: AppTextStyles.bodyStrong),
+                      ],
                     ),
                   ],
                 ),
@@ -761,7 +766,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     onTap: info.channelId.isNotEmpty
                         ? () => context.push('/channel/${info.channelId}')
                         : null,
-                    child: ChannelAvatar(name: info.channelName, url: info.avatar),
+                    child: ChannelAvatar(
+                      name: info.channelName,
+                      url: info.avatar,
+                      size: AppSizes.avatar,
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -776,27 +785,25 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                             info.channelName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            style: AppTextStyles.bodyStrong,
                           ),
                           if (info.subscribers.isNotEmpty)
                             Text(
                               info.subscribers,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
+                              style: AppTextStyles.meta.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                             ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  FilledButton(
+                  AppSubscribedButton(
                     onPressed: info.channelId.isEmpty
                         ? null
                         : () async {
@@ -812,32 +819,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 );
                             if (mounted) setState(() => subscribed = value);
                           },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: subscribed
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest
-                          : Theme.of(context).colorScheme.onSurface,
-                      foregroundColor: subscribed
-                          ? Theme.of(context).colorScheme.onSurface
-                          : Theme.of(context).colorScheme.surface,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg,
-                      ),
-                      minimumSize: const Size(0, AppSpacing.topButton),
-                      shape: const StadiumBorder(),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (subscribed) ...[
-                          const Icon(LucideIcons.bell, size: 16),
-                          const SizedBox(width: AppSpacing.xs),
-                        ],
-                        Text(subscribed ? 'Subscribed' : 'Subscribe'),
-                      ],
-                    ),
+                    isSubscribed: subscribed,
                   ),
                 ],
               ),
@@ -947,9 +929,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       color: Theme.of(
                         context,
                       ).colorScheme.surfaceContainerHighest,
-                      borderRadius: AppRadius.lgBorder,
+                      borderRadius: AppRadius.mdBorder,
                       child: InkWell(
-                        borderRadius: AppRadius.lgBorder,
+                        borderRadius: AppRadius.mdBorder,
                         onTap: () => _openPanel(
                           'Comments',
                           info,
@@ -966,23 +948,17 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 children: [
                                   Text(
                                     'Comments',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                    style: AppTextStyles.bodyStrong,
                                   ),
                                   if (count.isNotEmpty) ...[
                                     const SizedBox(width: AppSpacing.sm),
                                     Text(
                                       _compactNumber(count),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                          ),
+                                      style: AppTextStyles.meta.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
                                   ],
                                   const Spacer(),
@@ -1011,10 +987,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                         preview.content,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(height: 1.25),
+                                        style: AppTextStyles.body,
                                       ),
                                     ),
                                   ],
@@ -1034,10 +1007,15 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 56,
+          height: AppSizes.chipHeight + AppSpacing.md + AppSpacing.sm,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.sm,
+            ),
             children: [
               for (final label in [
                 'All',
@@ -1056,14 +1034,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           ),
         ),
       ),
+      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
       SliverList.builder(
         itemCount: related.length,
         itemBuilder: (context, index) => _video(related[index]),
       ),
-      SliverToBoxAdapter(
-        child: SizedBox(
-          height: MediaQuery.paddingOf(context).bottom + AppSpacing.xxl,
-        ),
+      SliverBottomInset(
+        extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
       ),
     ],
   );
@@ -1109,16 +1086,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     return '${scaled >= 10 || scaled == scaled.roundToDouble() ? scaled.toStringAsFixed(0) : scaled.toStringAsFixed(1)}$suffix';
   }
 
-  String _compactMetric(String value) {
-    final match = RegExp(
-      r'^(\d[\d,]*)\s+(views|likes)$',
-      caseSensitive: false,
-    ).firstMatch(value.trim());
-    return match == null
-        ? value
-        : '${_compactNumber(match.group(1)!)} ${match.group(2)}';
-  }
-
   Widget _reactionGroup(WatchInfo info) {
     final dislikes = ref.watch(dislikeCountProvider(id)).value;
     final dislikeText = dislikes != null ? _compactNumber('$dislikes') : '';
@@ -1162,11 +1129,14 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   Widget _action(IconData icon, String label, VoidCallback action) {
-    return AppButton(
-      label: label,
-      icon: icon,
-      variant: AppButtonVariant.tonal,
-      onPressed: action,
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.sm),
+      child: AppButton(
+        label: label,
+        icon: icon,
+        variant: AppButtonVariant.tonal,
+        onPressed: action,
+      ),
     );
   }
 
@@ -1175,87 +1145,15 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   ).showSnackBar(const SnackBar(content: Text('Coming soon')));
   Widget _relatedList(List<VideoItem> related) => ListView.builder(
     itemCount: related.length,
-    itemBuilder: (context, i) => _video(related[i], compact: true),
+    itemBuilder: (context, i) => _video(related[i]),
   );
-  Widget _video(VideoItem item, {bool compact = false}) => InkWell(
-    onTap: () => _open(item.id),
-    child: compact
-        ? ListTile(
-            leading: ClipRRect(
-              borderRadius: AppRadius.smBorder,
-              child: SizedBox(
-                width: 130,
-                child: AspectRatio(
-                  aspectRatio: AppSpacing.thumbnailRatio,
-                  child: CachedNetworkImage(
-                    imageUrl: item.thumbUrl,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, _, _) =>
-                        const ColoredBox(color: AppColors.shortsBackground),
-                  ),
-                ),
-              ),
-            ),
-            title: Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            subtitle: Text(
-              [
-                item.channelName,
-                item.viewsText,
-              ].where((s) => s.isNotEmpty).join(' · '),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            trailing: _menu(item),
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: ClipRRect(
-                  borderRadius: AppRadius.mdBorder,
-                  child: AspectRatio(
-                    aspectRatio: AppSpacing.thumbnailRatio,
-                    child: CachedNetworkImage(
-                      imageUrl: item.thumbUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) =>
-                          const ColoredBox(color: AppColors.shortsBackground),
-                    ),
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: ChannelAvatar(
-                  name: item.channelName,
-                  url: item.channelAvatarUrl,
-                ),
-                title: Text(
-                  item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                subtitle: Text(
-                  [
-                    item.channelName,
-                    item.viewsText,
-                    item.publishedText,
-                  ].where((s) => s.isNotEmpty).join(' · '),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                trailing: _menu(item),
-              ),
-            ],
-          ),
+  Widget _video(VideoItem item) => RepaintBoundary(
+    key: ValueKey(item.id),
+    child: VideoCard.feed(
+      video: item,
+      onTap: () => _open(item.id),
+      trailing: _menu(item),
+    ),
   );
   Widget _menu(VideoItem item) => IconButton(
     tooltip: 'More options',
@@ -1364,8 +1262,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         const SizedBox(height: AppSpacing.lg),
         _LinkedDescription(
           text: info.description,
-          onSeek: (position) =>
-              ref.read(playbackProvider)?.seek(position),
+          onSeek: (position) => ref.read(playbackProvider)?.seek(position),
         ),
         for (final c in info.chapters)
           ListTile(
@@ -1376,9 +1273,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             onTap: () => ref.read(playbackProvider)?.seek(c.start),
           ),
         TextButton(
-          onPressed: () => launchUrl(
-            Uri.parse('https://www.returnyoutubedislike.com/'),
-          ),
+          onPressed: () =>
+              launchUrl(Uri.parse('https://www.returnyoutubedislike.com/')),
           child: const Text('Dislike data: Return YouTube Dislike'),
         ),
       ],
@@ -1386,10 +1282,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     'Queue' => ListView(
       controller: scrollController,
       children: [
-        ListTile(
-          title: const Text('Now playing'),
-          subtitle: Text(info.title),
-        ),
+        ListTile(title: const Text('Now playing'), subtitle: Text(info.title)),
         for (final item in queue)
           ListTile(
             title: Text(item.title),

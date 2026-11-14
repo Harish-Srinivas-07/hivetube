@@ -3,9 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/settings/app_settings.dart';
-import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
-import 'glass_surface.dart';
 import 'content_language_sheet.dart';
 
 class ContentLanguageButton extends ConsumerWidget {
@@ -58,11 +56,11 @@ class ContentLanguageButton extends ConsumerWidget {
       child: Semantics(
         button: true,
         label: 'Content language',
-        child: GestureDetector(
-          key: const ValueKey('contentLanguageButton'),
-          onTap: () => showContentLanguageSheet(context, ref),
-          child: GlassSurface(
-            borderRadius: AppRadius.pillBorder,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            key: const ValueKey('contentLanguageButton'),
+            onTap: () => showContentLanguageSheet(context, ref),
             child: SizedBox(
               width: AppSpacing.topButton,
               height: AppSpacing.topButton,
@@ -72,8 +70,8 @@ class ContentLanguageButton extends ConsumerWidget {
                   Icon(LucideIcons.languages, color: colors.onSurface),
                   if (changed)
                     Positioned(
-                      top: 7,
-                      right: 7,
+                      top: AppSpacing.xs + AppSpacing.xxs,
+                      right: AppSpacing.xs + AppSpacing.xxs,
                       child: DecoratedBox(
                         key: const ValueKey('contentLanguageChangedDot'),
                         decoration: BoxDecoration(

@@ -11,7 +11,7 @@ void main() {
     test('AppSpacing follows 4-pt grid tokens', () {
       expect(AppSpacing.xxs, 2.0);
       expect(AppSpacing.xs, 4.0);
-      expect(AppSpacing.iconGap, 6.0);
+      expect(AppSpacing.iconGap, 8.0);
       expect(AppSpacing.sm, 8.0);
       expect(AppSpacing.md, 12.0);
       expect(AppSpacing.lg, 16.0);
@@ -31,22 +31,22 @@ void main() {
 
     test('AppSizes defines accessibility minimums and control standards', () {
       expect(AppSizes.touchMin, greaterThanOrEqualTo(48.0));
-      expect(AppSizes.chipHeight, 36.0);
+      expect(AppSizes.chipHeight, 32.0);
       expect(AppSizes.chipHeightCompact, 32.0);
-      expect(AppSizes.buttonHeight, 44.0);
-      expect(AppSizes.buttonCompact, 36.0);
-      expect(AppSizes.buttonStandard, 40.0);
-      expect(AppSizes.buttonLarge, 48.0);
+      expect(AppSizes.buttonHeight, 36.0);
+      expect(AppSizes.buttonCompact, 32.0);
+      expect(AppSizes.buttonStandard, 36.0);
+      expect(AppSizes.buttonLarge, 40.0);
       expect(AppSizes.sheetHeaderHeight, 56.0);
       expect(AppSizes.sheetHandleWidth, 32.0);
       expect(AppSizes.sheetHandleHeight, 4.0);
       expect(AppSizes.sheetMaxWidth, 640.0);
       expect(AppSizes.snackbarMaxWidth, 560.0);
-      expect(AppSizes.iconSm, 18.0);
+      expect(AppSizes.iconSm, 20.0);
       expect(AppSizes.iconInline, 18.0);
       expect(AppSizes.icon, 24.0);
       expect(AppSizes.iconLg, 32.0);
-      expect(AppSizes.avatar, 40.0);
+      expect(AppSizes.avatar, 36.0);
     });
 
     test('AppMotion durations follow consistent progression', () {
@@ -83,9 +83,9 @@ void main() {
       expect(
         violations,
         isEmpty,
-        reason: 'Screens should use AppRadius tokens instead of raw BorderRadius.circular literals:\n${violations.join('\n')}',
+        reason:
+            'Screens should use AppRadius tokens instead of raw BorderRadius.circular literals:\n${violations.join('\n')}',
       );
     });
   });
 }
-

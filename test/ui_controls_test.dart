@@ -213,27 +213,26 @@ void main() {
       },
     );
 
-    testWidgets(
-      'renders back button and hairline divider when scrolled under',
-      (tester) async {
-        var backed = false;
-        await tester.pumpWidget(
-          buildApp(
-            AppSheetHeader(
-              title: 'Options',
-              onBack: () => backed = true,
-              isScrolledUnder: true,
-            ),
+    testWidgets('renders back button without a divider when scrolled under', (
+      tester,
+    ) async {
+      var backed = false;
+      await tester.pumpWidget(
+        buildApp(
+          AppSheetHeader(
+            title: 'Options',
+            onBack: () => backed = true,
+            isScrolledUnder: true,
           ),
-        );
+        ),
+      );
 
-        expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
-        expect(find.byType(Divider), findsOneWidget);
+      expect(find.byIcon(LucideIcons.arrowLeft), findsOneWidget);
+      expect(find.byType(Divider), findsNothing);
 
-        await tester.tap(find.byIcon(LucideIcons.arrowLeft));
-        expect(backed, isTrue);
-      },
-    );
+      await tester.tap(find.byIcon(LucideIcons.arrowLeft));
+      expect(backed, isTrue);
+    });
   });
 
   group('HomeTopBar tests', () {

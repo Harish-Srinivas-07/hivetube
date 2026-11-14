@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import '../core/playback/playback_service.dart';
 import '../core/playback/player_ui_state.dart';
@@ -9,7 +8,6 @@ import '../features/watch/mini_player_inset.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_theme.dart';
 import '../widgets/home_top_bar.dart';
 import '../widgets/floating_nav.dart';
 import '../core/providers.dart';
@@ -18,10 +16,22 @@ class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
   final StatefulNavigationShell navigationShell;
   static const _destinations = [
-    (label: 'Home', icon: LucideIcons.home),
-    (label: 'Shorts', icon: LucideIcons.playSquare),
-    (label: 'Subscriptions', icon: LucideIcons.clapperboard),
-    (label: 'You', icon: LucideIcons.user),
+    (label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home),
+    (
+      label: 'Shorts',
+      icon: Icons.play_arrow_outlined,
+      activeIcon: Icons.play_arrow,
+    ),
+    (
+      label: 'Subscriptions',
+      icon: Icons.subscriptions_outlined,
+      activeIcon: Icons.subscriptions,
+    ),
+    (
+      label: 'Library',
+      icon: Icons.video_library_outlined,
+      activeIcon: Icons.video_library,
+    ),
   ];
 
   @override
@@ -80,28 +90,6 @@ class AppShell extends ConsumerWidget {
 
     return Stack(
       children: [
-        // ── Home background glow ─────────────────────────────────────────────
-        if (home)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  height:
-                      MediaQuery.sizeOf(context).height *
-                      AppSpacing.glowHeightFactor,
-                  width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: Theme.of(context).extension<HiveGlass>()!.glow,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
         // ── Main scaffold ────────────────────────────────────────────────────
         Scaffold(
           backgroundColor: shorts
@@ -122,7 +110,7 @@ class AppShell extends ConsumerWidget {
                           destinations: [
                             for (final item in _destinations)
                               NavigationRailDestination(
-                                icon: Icon(item.icon),
+                                icon: Icon(item.activeIcon),
                                 label: Text(item.label),
                               ),
                           ],
@@ -163,14 +151,13 @@ class AppShell extends ConsumerWidget {
                                                   item.label ==
                                                           'Subscriptions' &&
                                                       hasUnreadSubs
-                                                  ? const Badge(
+                                                  ? Badge(
                                                       smallSize: 8,
                                                       child: Icon(
-                                                        LucideIcons
-                                                            .clapperboard,
+                                                        item.activeIcon,
                                                       ),
                                                     )
-                                                  : Icon(item.icon),
+                                                  : Icon(item.activeIcon),
                                               label: Text(item.label),
                                             ),
                                         ],
@@ -191,12 +178,12 @@ class AppShell extends ConsumerWidget {
                 ),
         ),
 
-        // ── Floating bottom nav pill (phone) ─────────────────────────────────
+        // ── Flat bottom navigation (phone) ───────────────────────────────────
         if (!wide)
           Positioned(
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: ValueListenableBuilder<double>(
               valueListenable: ref.watch(watchPanelProgressProvider),
               builder: (context, progress, _) {
@@ -208,23 +195,23 @@ class AppShell extends ConsumerWidget {
                   child: AnimatedOpacity(
                     opacity: navVisible ? 1 : 0,
                     duration: AppMotion.base,
-                    child: Center(
-                      child: FloatingNav(
-                        key: const ValueKey('bottomNavPill'),
-                        items: [
-                          for (final item in _destinations)
-                            FloatingNavItem(
-                              item.label,
-                              item.icon,
-                              showBadge:
-                                  item.label == 'Subscriptions' &&
-                                  hasUnreadSubs,
-                            ),
-                        ],
-                        currentIndex: navigationShell.currentIndex,
-                        onSelected: (index) => select(index),
-                        onDragSelected: (index) => select(index),
-                        inverted: shorts,
+                    child: ColoredBox(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: SafeArea(
+                        top: false,
+                        child: FloatingNav(
+                          items: [
+                            for (final item in _destinations)
+                              FloatingNavItem(
+                                item.label,
+                                item.icon,
+                                activeIcon: item.activeIcon,
+                              ),
+                          ],
+                          currentIndex: navigationShell.currentIndex,
+                          onSelected: select,
+                          onDragSelected: select,
+                        ),
                       ),
                     ),
                   ),

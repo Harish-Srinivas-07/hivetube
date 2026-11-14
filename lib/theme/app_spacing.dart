@@ -2,13 +2,15 @@ abstract final class AppSpacing {
   // ── 4-pt grid ─────────────────────────────────────────────────────────────
   static const double xxs = 2,
       xs = 4,
-      iconGap = 6,
+      iconGap = 8,
       sm = 8,
       md = 12,
       lg = 16,
       xl = 24,
       xxl = 32,
       xxxl = 48;
+
+  static const double screenGutter = md, feedCardGap = xl, shelfCardGap = md;
 
   // ── Video / content geometry ───────────────────────────────────────────────
   static const double videoMaxWidth = 360,
@@ -27,6 +29,7 @@ abstract final class AppSpacing {
 
   // ── Sheet / modal sizes ────────────────────────────────────────────────────
   static const double contentSheetMaxHeightFactor = .85,
+      sheetMaxHeightFactor = .9,
       contentSheetMinExtent = .55,
       contentRegionPickerHeightFactor = .65,
       contentSheetHandleWidth = 36,

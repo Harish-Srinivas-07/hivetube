@@ -19,7 +19,15 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [dbProvider.overrideWithValue(db)],
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          recentSearchesStreamProvider.overrideWith(
+            (ref) => Stream.value(const <String>[]),
+          ),
+          subscriptionsStreamProvider.overrideWith(
+            (ref) => const Stream.empty(),
+          ),
+        ],
         child: MaterialApp(home: SearchScreen(suggestionSource: source)),
       ),
     );

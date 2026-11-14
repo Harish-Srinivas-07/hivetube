@@ -87,8 +87,7 @@
     "All": [
       "{language} {topic} {freshness}",
       "{artist} {language} latest",
-      "{film} {language} trailer new",
-      "{festival} {language} songs"
+      "{film} {language} trailer new"
     ]
   },
   "freshnessWords": [

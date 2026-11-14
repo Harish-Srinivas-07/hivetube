@@ -42,7 +42,11 @@ void main() {
   );
   test('launch cache expires at thirty minutes and ignores malformed data', () {
     final now = DateTime.utc(2026);
-    final cache = HomeCache(const [], const [], now);
+    final cache = HomeCache(
+      const [VideoItem(id: 'cached', title: 'Cached')],
+      const [],
+      now,
+    );
     expect(
       HomeCache.decode(cache.encode(), now.add(const Duration(minutes: 29))),
       isNotNull,

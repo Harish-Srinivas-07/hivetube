@@ -19,6 +19,8 @@ import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/player/player_controls.dart';
 import '../shorts/shorts_screen.dart';
@@ -504,7 +506,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
               child: SizedBox(
                 width: fullWidth,
                 height: fullHeight,
-                child: sharedPlayer,
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: sharedPlayer,
+                ),
               ),
             );
             final watchScreen = RepaintBoundary(
@@ -557,7 +562,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                         expandedTopLeft,
                         p,
                       )!;
-                      final radius = lerpDouble(12, 0, p)!;
+                      final radius = lerpDouble(AppRadius.md, 0, p)!;
                       return Align(
                         alignment: Alignment.topLeft,
                         child: Transform(
@@ -687,6 +692,32 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                       onPressed: _dismiss,
                                     ),
                                   ),
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    child: IgnorePointer(
+                                      child: LinearProgressIndicator(
+                                        value:
+                                            service.state.duration >
+                                                Duration.zero
+                                            ? (service
+                                                          .state
+                                                          .position
+                                                          .inMilliseconds /
+                                                      service
+                                                          .state
+                                                          .duration
+                                                          .inMilliseconds)
+                                                  .clamp(0.0, 1.0)
+                                                  .toDouble()
+                                            : 0.0,
+                                        minHeight: AppSpacing.xxs,
+                                        color: AppColors.primary,
+                                        backgroundColor: AppColors.transparent,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -717,28 +748,24 @@ class _MiniControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 40,
-    height: 40,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            color: Color(0x99000000),
-            shape: BoxShape.circle,
-          ),
-          child: SizedBox(width: 32, height: 32),
+    width: AppSizes.buttonIcon,
+    height: AppSizes.buttonIcon,
+    child: Material(
+      color: AppColors.black.withValues(alpha: 0.6),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(
+          width: AppSizes.buttonIcon,
+          height: AppSizes.buttonIcon,
         ),
-        IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-          iconSize: 16,
-          color: Colors.white,
-          icon: Icon(icon),
-        ),
-      ],
+        iconSize: AppSizes.iconSm,
+        color: AppColors.white,
+        icon: Icon(icon),
+      ),
     ),
   );
 }

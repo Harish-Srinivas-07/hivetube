@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/db/app_db.dart';
 import '../../core/yt/models.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
@@ -13,6 +14,18 @@ import '../../features/home/home_controller.dart';
 import '../video_options_menu.dart';
 import 'channel_avatar.dart';
 import 'thumbnail_with_duration.dart';
+
+String _feedThumbnail(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null ||
+      (uri.host != 'i.ytimg.com' && uri.host != 'img.youtube.com')) {
+    return url;
+  }
+  return url.replaceFirst(
+    RegExp(r'/(?:hqdefault|default)\.jpg(?=\?|$)'),
+    '/mqdefault.jpg',
+  );
+}
 
 /// Display presentation mode for [VideoCard].
 enum VideoCardMode {
@@ -27,6 +40,9 @@ enum VideoCardMode {
 
   /// Stacked YouTube mobile search result card.
   searchResult,
+
+  /// Rounded card for a horizontal shelf.
+  shelf,
 }
 
 /// Canonical, unified VideoCard component used across all surfaces.
@@ -38,6 +54,8 @@ class VideoCard extends ConsumerWidget {
     this.mode = VideoCardMode.feed,
     this.progress,
     this.trailing,
+    this.thumbnailBadge,
+    this.enabled = true,
     this.showAvatar = true,
     this.compact,
     this.roundedThumbnail,
@@ -52,6 +70,8 @@ class VideoCard extends ConsumerWidget {
     this.trailing,
     this.showAvatar = true,
   }) : mode = VideoCardMode.feed,
+       enabled = true,
+       thumbnailBadge = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -62,6 +82,8 @@ class VideoCard extends ConsumerWidget {
     required this.onTap,
     this.progress,
     this.trailing,
+    this.thumbnailBadge,
+    this.enabled = true,
   }) : mode = VideoCardMode.compact,
        showAvatar = false,
        compact = null,
@@ -76,6 +98,8 @@ class VideoCard extends ConsumerWidget {
     this.trailing,
     this.showAvatar = true,
   }) : mode = VideoCardMode.grid,
+       enabled = true,
+       thumbnailBadge = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -89,13 +113,30 @@ class VideoCard extends ConsumerWidget {
        roundedThumbnail = null,
        progress = null,
        trailing = null,
+       thumbnailBadge = null,
+       enabled = true,
        showAvatar = true;
+
+  const VideoCard.shelf({
+    super.key,
+    required this.video,
+    required this.onTap,
+    this.progress,
+  }) : mode = VideoCardMode.shelf,
+       showAvatar = false,
+       trailing = null,
+       thumbnailBadge = null,
+       enabled = true,
+       compact = null,
+       roundedThumbnail = null;
 
   final VideoItem video;
   final VoidCallback onTap;
   final VideoCardMode mode;
   final double? progress;
   final Widget? trailing;
+  final String? thumbnailBadge;
+  final bool enabled;
   final bool showAvatar;
 
   /// Backward-compatibility parameters:
@@ -111,12 +152,46 @@ class VideoCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     switch (_effectiveMode) {
+      case VideoCardMode.shelf:
+        return RepaintBoundary(
+          child: InkWell(
+            onTap: onTap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ThumbnailWithDuration(
+                  url: video.thumbUrl,
+                  duration: video.durationText,
+                  progress: progress,
+                  borderRadius: AppRadius.mdBorder,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  video.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.videoTitle,
+                ),
+                Text(
+                  video.channelName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.meta.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       case VideoCardMode.compact:
         return _CompactCard(
           video: video,
           onTap: onTap,
           progress: progress,
           trailing: trailing,
+          thumbnailBadge: thumbnailBadge,
+          enabled: enabled,
         );
       case VideoCardMode.grid:
         return _FeedCard(
@@ -178,7 +253,9 @@ class _FeedCard extends StatelessWidget {
           ThumbnailWithDuration(
             thumbnailKey: ValueKey('homeThumbnail:${video.id}'),
             progressKey: ValueKey('watchedProgress:${video.id}'),
-            url: video.thumbUrl,
+            url: roundedThumbnail
+                ? video.thumbUrl
+                : _feedThumbnail(video.thumbUrl),
             duration: video.durationText,
             progress: progress,
             borderRadius: roundedThumbnail ? AppRadius.mdBorder : null,
@@ -278,42 +355,81 @@ class _CompactCard extends StatelessWidget {
     required this.onTap,
     this.progress,
     this.trailing,
+    this.thumbnailBadge,
+    required this.enabled,
   });
 
   final VideoItem video;
   final VoidCallback onTap;
   final double? progress;
   final Widget? trailing;
+  final String? thumbnailBadge;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return ListTile(
-      onTap: onTap,
+      enabled: enabled,
+      onTap: enabled ? onTap : null,
       contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
+        horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
+      horizontalTitleGap: AppSpacing.md,
+      minLeadingWidth: 0,
+      minTileHeight: AppSizes.compactRowMinHeight,
       leading: SizedBox(
-        width: AppSizes.searchCompactThumbnailWidth,
-        child: ThumbnailWithDuration(
-          thumbnailKey: ValueKey('compactThumbnail:${video.id}'),
-          progressKey: ValueKey('watchedProgress:${video.id}'),
-          url: video.thumbUrl,
-          duration: video.durationText,
-          progress: progress,
-          borderRadius: AppRadius.smBorder,
+        width: AppSizes.compactThumbW,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (enabled)
+              ThumbnailWithDuration(
+                thumbnailKey: ValueKey('compactThumbnail:${video.id}'),
+                progressKey: ValueKey('watchedProgress:${video.id}'),
+                url: video.thumbUrl,
+                duration: video.durationText,
+                progress: progress,
+                borderRadius: AppRadius.smBorder,
+              )
+            else
+              ClipRRect(
+                borderRadius: AppRadius.smBorder,
+                child: ColoredBox(color: cs.surfaceContainerHighest),
+              ),
+            if (thumbnailBadge != null)
+              Positioned(
+                top: AppSpacing.xs,
+                left: AppSpacing.xs,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
+                    vertical: AppSpacing.xxs,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: AppColors.thumbnailBadge,
+                    borderRadius: AppRadius.xsBorder,
+                  ),
+                  child: Text(
+                    thumbnailBadge!,
+                    style: AppTextStyles.badge.copyWith(
+                      color: AppColors.thumbnailBadgeText,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
       title: Text(
         video.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w500,
-        ),
+        style: enabled
+            ? AppTextStyles.videoTitle
+            : AppTextStyles.videoTitle.copyWith(color: cs.onSurfaceVariant),
       ),
       subtitle: Text(
         [
@@ -323,7 +439,7 @@ class _CompactCard extends StatelessWidget {
         ].where((s) => s.isNotEmpty).join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        style: AppTextStyles.meta.copyWith(color: cs.onSurfaceVariant),
       ),
       trailing: trailing,
     );

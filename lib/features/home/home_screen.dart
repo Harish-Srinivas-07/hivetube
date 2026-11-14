@@ -425,7 +425,10 @@ class _Shorts extends ConsumerWidget {
         ),
       ),
       SizedBox(
-        height: AppSpacing.homeShortWidth / AppSpacing.homeShortRatio,
+        height:
+            AppSpacing.homeShortWidth / AppSpacing.homeShortRatio +
+            AppSpacing.xxxl +
+            AppSpacing.xs,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -435,81 +438,73 @@ class _Shorts extends ConsumerWidget {
             onTap: () => onTap(index),
             child: SizedBox(
               width: AppSpacing.homeShortWidth,
-              child: ClipRRect(
-                borderRadius: AppRadius.mdBorder,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CachedNetworkImage(
-                      imageUrl: items[index].thumbUrl,
-                      fit: BoxFit.cover,
-                      memCacheWidth:
-                          (AppSpacing.homeShortWidth *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .round(),
-                      maxWidthDiskCache:
-                          (AppSpacing.homeShortWidth *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .round(),
-                      fadeInDuration: AppMotion.imageFade,
-                      placeholder: (_, _) => ColoredBox(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                      ),
-                    ),
-                    Positioned(
-                      right: AppSpacing.xs,
-                      top: AppSpacing.xs,
-                      child: IconButton(
-                        tooltip: 'More options',
-                        onPressed: () => showVideoOptionsMenu(
-                          context,
-                          videoId: items[index].id,
-                          onVideo: true,
-                        ),
-                        icon: const Icon(
-                          LucideIcons.ellipsisVertical,
-                          color: AppColors.shortsForeground,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: AppSpacing.sm,
-                      right: AppSpacing.sm,
-                      bottom: AppSpacing.sm,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppColors.shelfTitleScrim,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xs),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                items[index].title ?? '',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTextStyles.homeShortTitle.copyWith(
-                                  color: AppColors.thumbnailBadgeText,
-                                ),
-                              ),
-                              if ((items[index].viewsText ?? '').isNotEmpty)
-                                Text(
-                                  items[index].viewsText!,
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.thumbnailBadgeText,
-                                  ),
-                                ),
-                            ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: AppRadius.mdBorder,
+                    child: AspectRatio(
+                      aspectRatio: AppSpacing.homeShortRatio,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            imageUrl: items[index].thumbUrl,
+                            fit: BoxFit.cover,
+                            memCacheWidth:
+                                (AppSpacing.homeShortWidth *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round(),
+                            maxWidthDiskCache:
+                                (AppSpacing.homeShortWidth *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round(),
+                            fadeInDuration: AppMotion.imageFade,
+                            placeholder: (_, _) => ColoredBox(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            right: AppSpacing.xs,
+                            top: AppSpacing.xs,
+                            child: IconButton(
+                              tooltip: 'More options',
+                              onPressed: () => showVideoOptionsMenu(
+                                context,
+                                videoId: items[index].id,
+                                onVideo: true,
+                              ),
+                              icon: const Icon(
+                                LucideIcons.ellipsisVertical,
+                                color: AppColors.shortsForeground,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    items[index].title ?? '',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.homeShortTitle.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  if ((items[index].viewsText ?? '').isNotEmpty)
+                    Text(
+                      items[index].viewsText!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

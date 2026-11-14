@@ -54,14 +54,19 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byTooltip('Search'), findsNothing);
+      expect(find.byTooltip('Search'), findsOneWidget);
       expect(find.text('HiveTube'), findsNothing);
-      expect(find.byKey(const ValueKey('bottomNavPill')), findsOneWidget);
+      expect(find.byKey(const ValueKey('floatingNavSurface')), findsOneWidget);
       expect(find.byKey(const ValueKey('shortsActionRail')), findsOneWidget);
       final page = find.byKey(const ValueKey('shortsPageView'));
       expect(tester.getSize(page), const Size(400, 800));
       expect(find.byTooltip('Mute'), findsOneWidget);
-      await tester.tap(find.byTooltip('More'));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('shortsActionRail')),
+          matching: find.byTooltip('More'),
+        ),
+      );
       await tester.pumpAndSettle();
       final sheet = find.byType(BottomSheet);
       expect(
@@ -141,7 +146,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.byType(NavigationRail), findsOneWidget);
-    expect(find.byTooltip('Search'), findsNothing);
+    expect(find.byTooltip('Search'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('shortsPageView'))),
       const Size(450, 800),

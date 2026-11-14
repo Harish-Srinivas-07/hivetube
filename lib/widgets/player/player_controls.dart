@@ -446,6 +446,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // allowed: player title fade
                               ShaderMask(
                                 shaderCallback: (bounds) =>
                                     const LinearGradient(

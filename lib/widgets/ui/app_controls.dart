@@ -333,8 +333,8 @@ class AppLikeDislikeSegment extends StatelessWidget {
     final isLiked = reaction == 1;
     final isDisliked = reaction == -1;
 
-    final likeFg = isLiked ? AppColors.primary : cs.onSurface;
-    final dislikeFg = isDisliked ? AppColors.primary : cs.onSurface;
+    final likeFg = cs.onSurface;
+    final dislikeFg = cs.onSurface;
 
     return Material(
       color: cs.surfaceContainerHighest,
@@ -355,7 +355,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      LucideIcons.thumbsUp,
+                      isLiked ? Icons.thumb_up : LucideIcons.thumbsUp,
                       size: AppSizes.iconInline,
                       color: likeFg,
                     ),
@@ -375,7 +375,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
             Container(
               width: AppSpacing.borderWidth,
               height: _height * 0.55,
-              color: cs.outlineVariant.withAlpha(80),
+              color: cs.outlineVariant.withValues(alpha: 0.4),
             ),
             InkWell(
               onTap: onDislike,
@@ -388,7 +388,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      LucideIcons.thumbsDown,
+                      isDisliked ? Icons.thumb_down : LucideIcons.thumbsDown,
                       size: AppSizes.iconInline,
                       color: dislikeFg,
                     ),

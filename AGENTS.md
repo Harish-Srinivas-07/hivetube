@@ -37,3 +37,8 @@
 - Do not commit credentials or signing files.
 - Tests are in `test/`; manual smoke and inspection tools are in `tool/`.
 - Run only checks requested for the task. Do not treat smoke scripts as unit tests.
+
+## Windows Flutter tests
+
+- If `flutter test` fails before tests start with `Flutter failed to copy file` under the sandbox-managed Windows `Temp\flutter_tools` directory, the temp directory may be inaccessible. Set `TEMP` and `TMP` for the test process to a writable directory under the Pub cache, for example:
+  `$testTempPath = Join-Path $env:LOCALAPPDATA 'Pub\codex-test-tmp'; New-Item -ItemType Directory -Force -Path $testTempPath | Out-Null; $env:TEMP = $testTempPath; $env:TMP = $testTempPath`

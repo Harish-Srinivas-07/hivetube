@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../theme/app_spacing.dart';
+
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
+import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 
 Future<void> showSaveToPlaylistSheet(
@@ -14,7 +18,7 @@ Future<void> showSaveToPlaylistSheet(
   return showAppSheet<void>(
     context,
     fit: true,
-    title: 'Save video to...',
+    title: 'Save to',
     builder: (sheetContext, _) =>
         _SaveToPlaylistSheet(videoId: videoId, media: media),
   );
@@ -33,7 +37,9 @@ class _SaveToPlaylistSheet extends ConsumerStatefulWidget {
 
 class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
   final Map<int, bool> _membership = {};
+  List<PlaylistRow> _playlists = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -42,32 +48,75 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
   }
 
   Future<void> _loadStatus() async {
-    final db = ref.read(dbProvider);
-    await db.playlistsDao.getOrCreateWatchLater();
-    final playlists = await db.playlistsDao.getPlaylists();
-    for (final pl in playlists) {
-      _membership[pl.id] = await db.playlistsDao.isInPlaylist(
-        pl.id,
-        widget.videoId,
-      );
-    }
     if (mounted) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final db = ref.read(dbProvider);
+      await db.playlistsDao.getOrCreateWatchLater();
+      final playlists = await db.playlistsDao.getPlaylists();
+      final membership = <int, bool>{};
+      for (final playlist in playlists) {
+        membership[playlist.id] = await db.playlistsDao.isInPlaylist(
+          playlist.id,
+          widget.videoId,
+        );
+      }
+      playlists.sort((a, b) {
+        final aWatchLater = a.remoteId == 'watch_later';
+        final bWatchLater = b.remoteId == 'watch_later';
+        if (aWatchLater == bWatchLater) return 0;
+        return aWatchLater ? -1 : 1;
+      });
+      if (!mounted) return;
+      setState(() {
+        _playlists = playlists;
+        _membership
+          ..clear()
+          ..addAll(membership);
+        _loading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('[SaveToPlaylist] load failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _error = error.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
-  Future<void> _togglePlaylist(PlaylistRow pl, bool current) async {
-    final db = ref.read(dbProvider);
-    setState(() => _membership[pl.id] = !current);
-
-    if (current) {
-      await db.playlistsDao.removePlaylistItem(pl.id, widget.videoId);
-    } else {
-      await db.playlistsDao.addPlaylistItem(
-        pl.id,
-        widget.videoId,
-        mediaItem: widget.media,
-      );
+  Future<void> _togglePlaylist(PlaylistRow playlist) async {
+    final wasSaved = _membership[playlist.id] ?? false;
+    setState(() => _membership[playlist.id] = !wasSaved);
+    try {
+      final dao = ref.read(dbProvider).playlistsDao;
+      if (wasSaved) {
+        await dao.removePlaylistItem(playlist.id, widget.videoId);
+      } else {
+        await dao.addPlaylistItem(
+          playlist.id,
+          widget.videoId,
+          mediaItem: widget.media,
+        );
+      }
+      if (mounted) {
+        AppSnackbar.show(
+          context,
+          wasSaved
+              ? 'Removed from ${playlist.name}'
+              : 'Saved to ${playlist.name}',
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[SaveToPlaylist] toggle failed: $error\n$stackTrace');
+      if (!mounted) return;
+      setState(() => _membership[playlist.id] = wasSaved);
+      AppSnackbar.showError(context, 'Could not update ${playlist.name}');
     }
   }
 
@@ -75,125 +124,140 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AppDialog(
+      builder: (dialogContext) => AppDialog(
         title: 'New playlist',
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Enter title...'),
+        content: ClipRRect(
+          borderRadius: AppRadius.mdBorder,
+          child: ColoredBox(
+            color: Theme.of(dialogContext).colorScheme.surfaceContainerHighest,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Playlist name',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppSpacing.md),
+              ),
+            ),
+          ),
         ),
         actions: [
           AppButton.text(
             label: 'Cancel',
-            onPressed: () => Navigator.of(ctx).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
           ),
-          AppButton.filled(
+          AppButton.text(
             label: 'Create',
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
           ),
         ],
       ),
     );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
 
-    if (name != null && name.isNotEmpty && mounted) {
-      final db = ref.read(dbProvider);
-      final id = await db.playlistsDao.createPlaylist(name);
-      await db.playlistsDao.addPlaylistItem(
-        id,
-        widget.videoId,
-        mediaItem: widget.media,
-      );
+    try {
+      final dao = ref.read(dbProvider).playlistsDao;
+      final id = await dao.createPlaylist(name);
+      await dao.addPlaylistItem(id, widget.videoId, mediaItem: widget.media);
+      final playlist = await dao.getPlaylist(id);
+      if (!mounted || playlist == null) return;
       setState(() {
+        _playlists = [playlist, ..._playlists];
         _membership[id] = true;
       });
+      AppSnackbar.show(context, 'Saved to $name');
+    } catch (error, stackTrace) {
+      debugPrint('[SaveToPlaylist] create failed: $error\n$stackTrace');
+      if (mounted) AppSnackbar.showError(context, 'Could not create playlist');
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final playlistsAsync = ref.watch(playlistsStreamProvider);
-
-    return SafeArea(
+  Widget _newPlaylistRow() => InkWell(
+    onTap: _createNewPlaylist,
+    child: SizedBox(
+      height: AppSizes.settingsRowHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: AppButton(
-                  label: 'New playlist',
-                  icon: LucideIcons.plus,
-                  variant: AppButtonVariant.tonal,
-                  size: AppButtonSize.compact,
-                  onPressed: _createNewPlaylist,
-                ),
-              ),
+            Icon(
+              LucideIcons.plus,
+              size: AppSizes.icon,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
-            if (_loading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(AppSpacing.xl),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else
-              playlistsAsync.when(
-                data: (playlists) {
-                  if (playlists.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(AppSpacing.lg),
-                      child: Text('No playlists available'),
-                    );
-                  }
-                  return Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: playlists.length,
-                      itemBuilder: (ctx, idx) {
-                        final pl = playlists[idx];
-                        final isChecked = _membership[pl.id] ?? false;
-                        final isWatchLater = pl.remoteId == 'watch_later';
-                        return CheckboxListTile(
-                          value: isChecked,
-                          title: Text(pl.name),
-                          secondary: Icon(
-                            isWatchLater
-                                ? LucideIcons.clock
-                                : LucideIcons.listMusic,
-                          ),
-                          onChanged: (_) => _togglePlaylist(pl, isChecked),
-                        );
-                      },
-                    ),
-                  );
-                },
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(AppSpacing.xl),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-                error: (e, _) => Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text('Error loading playlists: $e'),
-                ),
-              ),
-            const SizedBox(height: AppSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(width: AppSpacing.xxl),
+            Text('New playlist', style: AppTextStyles.settingsTitle),
           ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _playlistRow(PlaylistRow playlist) {
+    final selected = _membership[playlist.id] ?? false;
+    return InkWell(
+      key: ValueKey('save-playlist:${playlist.id}'),
+      onTap: () => _togglePlaylist(playlist),
+      child: SizedBox(
+        height: AppSizes.settingsRowHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          child: Row(
+            children: [
+              Icon(
+                playlist.remoteId == 'watch_later'
+                    ? LucideIcons.clock3
+                    : LucideIcons.listMusic,
+                size: AppSizes.icon,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.xxl),
+              Expanded(
+                child: Text(
+                  playlist.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.settingsTitle,
+                ),
+              ),
+              Checkbox(
+                value: selected,
+                onChanged: (_) => _togglePlaylist(playlist),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _newPlaylistRow(),
+        if (_loading)
+          const PlaylistSheetSkeleton()
+        else if (_error != null)
+          InlineBanner(
+            message: 'Could not load playlists',
+            actionLabel: 'Retry',
+            onAction: _loadStatus,
+          )
+        else if (_playlists.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: Text('No playlists available'),
+          )
+        else
+          for (final playlist in _playlists) _playlistRow(playlist),
+        const SizedBox(height: AppSpacing.sm),
+      ],
+    ),
+  );
 }

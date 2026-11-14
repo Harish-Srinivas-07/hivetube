@@ -264,7 +264,7 @@ Motion: expand/collapse follows drag 1:1, settle slow 300ms easeOutCubic; conten
 Full-screen vertical PageView (snap, physics clamping), black bg, system bars transparent. No top bar except overlay.
 Per page: video cover-fit 9:16, tap = play/pause (brief center icon 56 fade 200ms), long-press = pause (resume on release), double-tap = like (heart burst 400ms, optional).
 Overlays: right rail (bottom 96 from edge, x pad 12), vertical gap 20: like (thumbUp 28 + count caption), dislike (thumbDown 28 + "Dislike"), comments (28 + count), share (28 + "Share"), more (3-dot), channel avatar 36 at bottom of rail? NO: avatar is bottom-left.
-Bottom-left (pad L12 B16, max width 75%): row avatar 32 | @channel bodyStrong white | Subscribe pill (filled white bg black text, height 32) ; below: title 14 white max2. Bottom gradient scrim black@60% 30% height (allowed here).
+Bottom-left (pad L12 B16, max width 75%): row avatar 32 | @channel bodyStrong white | Subscribe pill (filled white bg black text, height 32) ; below: title 14 white max2. Bottom gradient scrim black@50% 30% height (allowed here).
 Top-left: back/close if pushed via home shelf; top-right: search + more 48 white.
 Progress: 2px line at very bottom, primary, no thumb, scrubbable on drag (optional).
 Behavior: preload next 1 page; pause when page not visible/app backgrounded; loop video; autoplay on page settle; mute state persistent.
@@ -272,7 +272,7 @@ States: loading=black + centered spinner | error=black + "Couldn't load Shorts" 
 Motion: page snap slow 300ms easeOutCubic; rail icons fade-in 150ms; like toggle = icon fill swap + scale 1.0->1.2->1.0 150ms.
 
 ### 5.5 CHANNEL (/channel/:id)
-Top bar: back + search + more (overlay on banner, transparent, icons white with 24 shadow? NO shadow; use scrim top 56 black@30%).
+Top bar: back + search + more (overlay on banner, transparent, icons white with 24 shadow? NO shadow; use scrim top 56 black@40%).
 Body: ChannelHeader (4.24) -> tabs.
  - Home: featured video (compact?) + shelves (Latest videos horizontal, Shorts shelf, Playlists shelf)
  - Videos: ChipBar (Latest, Popular, Oldest) + VideoCard feed list (or grid-mode rounded). Continuation scroll.
@@ -285,7 +285,7 @@ Behavior: subscribe toggles local subscription + optimistic UI; notification bel
 
 ### 5.6 LIBRARY (tab 3, "You")
 Layout top->bottom:
- 1. Header row pad 16: avatar 72 (local profile) | 16 | Column(name pageTitle, "@handle · View channel" meta). Below (pad T12): chips-style tonal buttons row: "Edit profile", "Backup" (height 32, radius 8, tonal, buttonLabel). Settings gear 48 in top bar right.
+ 1. Header row pad 16: avatar 72 (local profile) | 16 | Column(name pageTitle, "N videos watched · M playlists" meta). Below (pad T12): chips-style tonal buttons row: "Edit profile", "Backup" AppButton.tonal (height 36, pill). Settings gear 48 in top bar right.
  2. History shelf: SectionHeader("History","View all") -> horizontal list of cards (thumb 160x90 radius 8? use radius 12, title 13 max2, meta 12 max1; width 160) gap 12 pad L12. Empty: EmptyState compact (icon + "Videos you watch will show here"), no button.
  3. Playlists shelf: SectionHeader("Playlists","View all") + "New playlist" tonal pill leading card? Horizontal PlaylistCards. Empty: one row tile "Create playlist".
  4. Rows (ListTile, height 56, leading icon 24): Your videos? NO (no upload) -> Downloads, Liked videos, Watch later, Stats (local). Trailing count meta + chevron none.

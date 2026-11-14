@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/services/search_suggestions.dart';
 
@@ -13,35 +14,54 @@ void main() {
     ]);
   });
 
-  test('debounces for 250ms and drops stale responses', () async {
-    final oldResponse = Completer<List<String>>();
-    final newResponse = Completer<List<String>>();
-    final source = _FakeSuggestionSource((query) {
-      if (query == 'VJ') return oldResponse.future;
-      return newResponse.future;
-    });
-    final controller = SearchSuggestionController(source: source);
-    addTearDown(controller.dispose);
+  test(
+    'debounces, clears old results immediately, and drops stale responses',
+    () {
+      fakeAsync((async) {
+        final staleResponse = Completer<List<String>>();
+        final currentResponse = Completer<List<String>>();
+        final source = _FakeSuggestionSource((query) {
+          if (query == 'second') return staleResponse.future;
+          if (query == 'third') return currentResponse.future;
+          return Future.value(['first result']);
+        });
+        final controller = SearchSuggestionController(source: source);
 
-    controller.updateQuery('VJ');
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    expect(source.queries, isEmpty);
+        controller.updateQuery('first');
+        async.elapse(const Duration(milliseconds: 249));
+        expect(source.queries, isEmpty);
+        async.elapse(const Duration(milliseconds: 1));
+        async.flushMicrotasks();
+        expect(source.queries, ['first']);
+        expect(controller.suggestions, ['first result']);
 
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    expect(source.queries, ['VJ']);
+        controller.updateQuery('second');
+        expect(controller.suggestions, isEmpty);
+        async.elapse(const Duration(milliseconds: 250));
+        async.flushMicrotasks();
+        expect(source.queries, ['first', 'second']);
 
-    controller.updateQuery('VJ siddhu');
-    await Future<void>.delayed(const Duration(milliseconds: 280));
-    expect(source.queries, ['VJ', 'VJ siddhu']);
+        controller.updateQuery('third');
+        expect(controller.suggestions, isEmpty);
+        async.elapse(const Duration(milliseconds: 249));
+        expect(source.queries, ['first', 'second']);
+        async.elapse(const Duration(milliseconds: 1));
+        async.flushMicrotasks();
+        expect(source.queries, ['first', 'second', 'third']);
 
-    newResponse.complete(['VJ siddhu vlogs', 'VJ siddhu virundhu']);
-    await Future<void>.delayed(Duration.zero);
-    expect(controller.suggestions, ['VJ siddhu vlogs', 'VJ siddhu virundhu']);
+        currentResponse.complete(['third result']);
+        async.flushMicrotasks();
+        expect(controller.suggestions, ['third result']);
 
-    oldResponse.complete(['stale suggestion']);
-    await Future<void>.delayed(Duration.zero);
-    expect(controller.suggestions, ['VJ siddhu vlogs', 'VJ siddhu virundhu']);
-  });
+        staleResponse.complete(['stale result']);
+        async.flushMicrotasks();
+        expect(controller.suggestions, ['third result']);
+
+        controller.dispose();
+        source.dispose();
+      });
+    },
+  );
 }
 
 class _FakeSuggestionSource implements SearchSuggestionSource {

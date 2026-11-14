@@ -4,6 +4,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_sizes.dart';
+import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
 
 class PlayerSeekBar extends StatefulWidget {
@@ -55,10 +57,16 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
     super.dispose();
   }
 
-  Duration _position(double dx, double width) => Duration(
-    milliseconds:
-        (widget.duration.inMilliseconds * (dx / width).clamp(0.0, 1.0)).round(),
-  );
+  Duration _position(double dx, double width) {
+    final inset = AppSizes.seekThumb / 2;
+    final usableWidth = max(0.0, width - inset * 2);
+    final trackPosition = usableWidth == 0
+        ? 0.0
+        : ((dx - inset) / usableWidth).clamp(0.0, 1.0);
+    return Duration(
+      milliseconds: (widget.duration.inMilliseconds * trackPosition).round(),
+    );
+  }
 
   String _format(Duration d) {
     final m = d.inMinutes;
@@ -140,7 +148,7 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
                 widget.onScrubEnd(current);
               },
         child: SizedBox(
-          height: 20,
+          height: AppSizes.iconSm,
           child: Stack(
             clipBehavior: Clip.none,
             fit: StackFit.expand,
@@ -186,9 +194,8 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
                         bubbleText,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: AppTextStyles.meta.copyWith(
                           color: AppColors.shortsForeground,
-                          fontSize: 12,
                         ),
                       ),
                     ),
@@ -224,10 +231,12 @@ class _SeekPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final y = size.height - 3;
     final stroke = 2.0 + 2.0 * active;
+    final inset = AppSizes.seekThumb / 2;
+    final trackWidth = max(0.0, size.width - inset * 2);
     void line(double end, Color color) {
       canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width * end, y),
+        Offset(inset, y),
+        Offset(inset + trackWidth * end, y),
         Paint()
           ..color = color
           ..strokeWidth = stroke,
@@ -251,8 +260,14 @@ class _SeekPainter extends CustomPainter {
       );
     }
     if (overlayVisible || active > 0 || seeking) {
-      final thumbRadius = active > 0 ? 6.0 : (overlayVisible ? 5.0 : 4.0);
-      final center = Offset(size.width * position, y);
+      final thumbRadius = AppSizes.seekThumb / 2;
+      final center = Offset(
+        (inset + trackWidth * position).clamp(
+          thumbRadius,
+          max(thumbRadius, size.width - thumbRadius),
+        ),
+        y,
+      );
 
       if (seeking) {
         // Draw subtle spinner ring around thumb while seeking/buffering

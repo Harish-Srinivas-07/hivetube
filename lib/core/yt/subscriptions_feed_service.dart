@@ -22,8 +22,14 @@ class SubscriptionsFeedService {
 
   bool _isRefreshing = false;
   bool get isRefreshing => _isRefreshing;
+  final Set<String> _lastFailedChannelIds = {};
+  Set<String> get lastFailedChannelIds =>
+      Set.unmodifiable(_lastFailedChannelIds);
 
   static const _lastOpenedKey = 'subs_tab_last_opened_at';
+
+  Future<int> getLastOpenedAt() async =>
+      int.tryParse(await db.getValue(_lastOpenedKey) ?? '') ?? 0;
 
   Future<void> markTabOpened() async {
     final now = clock().millisecondsSinceEpoch;
@@ -35,10 +41,11 @@ class SubscriptionsFeedService {
     final lastOpened = int.tryParse(val ?? '') ?? 0;
     if (lastOpened == 0) return false;
 
-    final latest = await (db.select(db.feedItems)
-          ..orderBy([(t) => OrderingTerm.desc(t.publishedAt)])
-          ..limit(1))
-        .getSingleOrNull();
+    final latest =
+        await (db.select(db.feedItems)
+              ..orderBy([(t) => OrderingTerm.desc(t.publishedAt)])
+              ..limit(1))
+            .getSingleOrNull();
 
     if (latest != null && latest.publishedAt > lastOpened) {
       return true;
@@ -84,6 +91,7 @@ class SubscriptionsFeedService {
   Future<void> refreshFeed({bool force = false}) async {
     if (_isRefreshing) return;
     _isRefreshing = true;
+    _lastFailedChannelIds.clear();
 
     try {
       final subs = await db.subscriptionsDao.getSubscriptions();
@@ -107,28 +115,34 @@ class SubscriptionsFeedService {
             : channelsToRefresh.length;
         final chunk = channelsToRefresh.sublist(i, end);
 
-        await Future.wait(
-          chunk.map((sub) => _fetchChannelFeed(sub, now)),
-        );
+        await Future.wait(chunk.map((sub) => _fetchChannelFeed(sub, now)));
       }
     } finally {
       _isRefreshing = false;
     }
   }
 
-  Future<void> _fetchChannelFeed(SubscriptionRow sub, int fetchTimestamp) async {
+  Future<void> _fetchChannelFeed(
+    SubscriptionRow sub,
+    int fetchTimestamp,
+  ) async {
     List<VideoItem> items = const [];
+    var sourceFailed = false;
 
     try {
       // 1. Try RSS with UULF playlist (exclude shorts)
       items = await rss.uploads(sub.channelId, excludeShorts: true);
-    } catch (_) {}
+    } catch (_) {
+      sourceFailed = true;
+    }
 
     // 2. If empty, try channel_id RSS
     if (items.isEmpty) {
       try {
         items = await rss.uploads(sub.channelId, excludeShorts: false);
-      } catch (_) {}
+      } catch (_) {
+        sourceFailed = true;
+      }
     }
 
     // 3. Fallback to Y7 Videos tab
@@ -136,12 +150,19 @@ class SubscriptionsFeedService {
       try {
         final page = await browse.channelVideos(sub.channelId);
         items = page.items;
-      } catch (_) {}
+      } catch (_) {
+        sourceFailed = true;
+      }
+    }
+
+    if (items.isEmpty && sourceFailed) {
+      _lastFailedChannelIds.add(sub.channelId);
     }
 
     if (items.isNotEmpty) {
       final companions = items.map((item) {
-        final publishedMs = item.publishedAt?.millisecondsSinceEpoch ?? fetchTimestamp;
+        final publishedMs =
+            item.publishedAt?.millisecondsSinceEpoch ?? fetchTimestamp;
         final durSec = _parseDuration(item.durationText);
         return FeedItemsCompanion.insert(
           videoId: item.id,
@@ -165,17 +186,19 @@ class SubscriptionsFeedService {
           );
         }
         final durSec = _parseDuration(item.durationText);
-        await db.into(db.media).insertOnConflictUpdate(
-          MediaCompanion.insert(
-            videoId: item.id,
-            title: item.title,
-            channelId: sub.channelId,
-            channelName: sub.name,
-            durationSec: Value(durSec),
-            thumbUrl: item.thumbUrl,
-            updatedAt: fetchTimestamp,
-          ),
-        );
+        await db
+            .into(db.media)
+            .insertOnConflictUpdate(
+              MediaCompanion.insert(
+                videoId: item.id,
+                title: item.title,
+                channelId: sub.channelId,
+                channelName: sub.name,
+                durationSec: Value(durSec),
+                thumbUrl: item.thumbUrl,
+                updatedAt: fetchTimestamp,
+              ),
+            );
       }
     }
 

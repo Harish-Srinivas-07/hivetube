@@ -13,17 +13,21 @@ class PlaylistItemWithMedia {
 }
 
 @DriftAccessor(tables: [Subscriptions])
-class SubscriptionsDao extends DatabaseAccessor<AppDb> with _$SubscriptionsDaoMixin {
+class SubscriptionsDao extends DatabaseAccessor<AppDb>
+    with _$SubscriptionsDaoMixin {
   SubscriptionsDao(super.db);
 
-  Stream<List<SubscriptionRow>> watchSubscriptions() =>
-      (select(subscriptions)..orderBy([(t) => OrderingTerm(expression: t.name)])).watch();
+  Stream<List<SubscriptionRow>> watchSubscriptions() => (select(
+    subscriptions,
+  )..orderBy([(t) => OrderingTerm(expression: t.name)])).watch();
 
-  Future<List<SubscriptionRow>> getSubscriptions() =>
-      (select(subscriptions)..orderBy([(t) => OrderingTerm(expression: t.name)])).get();
+  Future<List<SubscriptionRow>> getSubscriptions() => (select(
+    subscriptions,
+  )..orderBy([(t) => OrderingTerm(expression: t.name)])).get();
 
-  Future<SubscriptionRow?> getSubscription(String channelId) =>
-      (select(subscriptions)..where((t) => t.channelId.equals(channelId))).getSingleOrNull();
+  Future<SubscriptionRow?> getSubscription(String channelId) => (select(
+    subscriptions,
+  )..where((t) => t.channelId.equals(channelId))).getSingleOrNull();
 
   Future<bool> isSubscribed(String channelId) async =>
       (await getSubscription(channelId)) != null;
@@ -46,8 +50,8 @@ class SubscriptionsDao extends DatabaseAccessor<AppDb> with _$SubscriptionsDaoMi
             ? normalizedAvatar
             : (existing?.avatarUrl ?? ''),
         handle: Value(handle.isNotEmpty ? handle : (existing?.handle ?? '')),
-        subscribedAt: existing?.subscribedAt ??
-            DateTime.now().millisecondsSinceEpoch,
+        subscribedAt:
+            existing?.subscribedAt ?? DateTime.now().millisecondsSinceEpoch,
         lastFeedAt: Value(existing?.lastFeedAt ?? 0),
       ),
     );
@@ -61,20 +65,21 @@ class SubscriptionsDao extends DatabaseAccessor<AppDb> with _$SubscriptionsDaoMi
   }) async {
     final existing = await getSubscription(channelId);
     if (existing == null) return;
-    await (update(subscriptions)..where((t) => t.channelId.equals(channelId)))
-        .write(
-          SubscriptionsCompanion(
-            name: isMissingChannelName(name, channelId)
-                ? Value(existing.name)
-                : Value(name.trim()),
-            avatarUrl: Value(
-              normalizeChannelAvatarUrl(avatarUrl).isNotEmpty
-                  ? normalizeChannelAvatarUrl(avatarUrl)
-                  : existing.avatarUrl,
-            ),
-            handle: Value(handle.isNotEmpty ? handle : existing.handle),
-          ),
-        );
+    await (update(
+      subscriptions,
+    )..where((t) => t.channelId.equals(channelId))).write(
+      SubscriptionsCompanion(
+        name: isMissingChannelName(name, channelId)
+            ? Value(existing.name)
+            : Value(name.trim()),
+        avatarUrl: Value(
+          normalizeChannelAvatarUrl(avatarUrl).isNotEmpty
+              ? normalizeChannelAvatarUrl(avatarUrl)
+              : existing.avatarUrl,
+        ),
+        handle: Value(handle.isNotEmpty ? handle : existing.handle),
+      ),
+    );
   }
 
   Future<void> unsubscribe(String channelId) =>
@@ -105,13 +110,16 @@ class FeedItemsDao extends DatabaseAccessor<AppDb> with _$FeedItemsDaoMixin {
       batch((b) => b.insertAllOnConflictUpdate(feedItems, items));
 
   Future<void> deleteOldFeedItems({int keep = 1000}) async {
-    final rows = await (select(feedItems)
-          ..orderBy([(t) => OrderingTerm.desc(t.publishedAt)])
-          ..limit(keep))
-        .get();
+    final rows =
+        await (select(feedItems)
+              ..orderBy([(t) => OrderingTerm.desc(t.publishedAt)])
+              ..limit(keep))
+            .get();
     if (rows.isNotEmpty) {
       final oldest = rows.last.publishedAt;
-      await (delete(feedItems)..where((t) => t.publishedAt.isSmallerThanValue(oldest))).go();
+      await (delete(
+        feedItems,
+      )..where((t) => t.publishedAt.isSmallerThanValue(oldest))).go();
     }
   }
 }
@@ -120,33 +128,42 @@ class FeedItemsDao extends DatabaseAccessor<AppDb> with _$FeedItemsDaoMixin {
 class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
   HistoryDao(super.db);
 
-  Stream<List<HistoryItemWithMedia>> watchHistory({String scope = 'yt', int limit = 200}) {
-    final query = select(history).join([
-      leftOuterJoin(media, media.videoId.equalsExp(history.videoId)),
-    ])
-      ..where(history.scope.equals(scope))
-      ..orderBy([OrderingTerm.desc(history.at)])
-      ..limit(limit);
+  Stream<List<HistoryItemWithMedia>> watchHistory({
+    String scope = 'yt',
+    int limit = 200,
+  }) {
+    final query =
+        select(history).join([
+            leftOuterJoin(media, media.videoId.equalsExp(history.videoId)),
+          ])
+          ..where(history.scope.equals(scope))
+          ..orderBy([OrderingTerm.desc(history.at)])
+          ..limit(limit);
 
     return query.watch().map(
-          (rows) => rows
-              .map(
-                (r) => HistoryItemWithMedia(
-                  history: r.readTable(history),
-                  media: r.readTableOrNull(media),
-                ),
-              )
-              .toList(),
-        );
+      (rows) => rows
+          .map(
+            (r) => HistoryItemWithMedia(
+              history: r.readTable(history),
+              media: r.readTableOrNull(media),
+            ),
+          )
+          .toList(),
+    );
   }
 
-  Future<List<HistoryItemWithMedia>> getHistory({String scope = 'yt', int limit = 200}) async {
-    final query = select(history).join([
-      leftOuterJoin(media, media.videoId.equalsExp(history.videoId)),
-    ])
-      ..where(history.scope.equals(scope))
-      ..orderBy([OrderingTerm.desc(history.at)])
-      ..limit(limit);
+  Future<List<HistoryItemWithMedia>> getHistory({
+    String scope = 'yt',
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final query =
+        select(history).join([
+            leftOuterJoin(media, media.videoId.equalsExp(history.videoId)),
+          ])
+          ..where(history.scope.equals(scope))
+          ..orderBy([OrderingTerm.desc(history.at)])
+          ..limit(limit, offset: offset);
 
     final rows = await query.get();
     return rows
@@ -173,9 +190,9 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     await transaction(() async {
-      final oldMedia = await (select(media)
-            ..where((t) => t.videoId.equals(videoId)))
-          .getSingleOrNull();
+      final oldMedia = await (select(
+        media,
+      )..where((t) => t.videoId.equals(videoId))).getSingleOrNull();
       final safeTitle = !isMissingVideoTitle(title, videoId)
           ? title.trim()
           : oldMedia != null && !isMissingVideoTitle(oldMedia.title, videoId)
@@ -209,13 +226,16 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
         ),
       );
 
-      final rows = await (select(history)
-            ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
-            ..orderBy([
-              (t) => OrderingTerm.desc(t.at),
-              (t) => OrderingTerm.desc(t.id),
-            ]))
-          .get();
+      final rows =
+          await (select(history)
+                ..where(
+                  (t) => t.videoId.equals(videoId) & t.scope.equals(scope),
+                )
+                ..orderBy([
+                  (t) => OrderingTerm.desc(t.at),
+                  (t) => OrderingTerm.desc(t.id),
+                ]))
+              .get();
       if (rows.isEmpty) {
         await into(history).insert(
           HistoryCompanion.insert(
@@ -229,13 +249,12 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
       } else {
         final latest = rows.first;
         if (rows.length > 1) {
-          await (delete(history)
-                ..where(
-                  (t) =>
-                      t.videoId.equals(videoId) &
-                      t.scope.equals(scope) &
-                      t.id.isNotIn(rows.map((row) => row.id)),
-                ))
+          await (delete(history)..where(
+                (t) =>
+                    t.videoId.equals(videoId) &
+                    t.scope.equals(scope) &
+                    t.id.isNotIn(rows.map((row) => row.id)),
+              ))
               .go();
         }
         await (update(history)..where((t) => t.id.equals(latest.id))).write(
@@ -257,9 +276,9 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
     required String thumbUrl,
     int? durationSec,
   }) async {
-    final existing = await (select(media)
-          ..where((t) => t.videoId.equals(videoId)))
-        .getSingleOrNull();
+    final existing = await (select(
+      media,
+    )..where((t) => t.videoId.equals(videoId))).getSingleOrNull();
     final safeTitle = !isMissingVideoTitle(title, videoId)
         ? title
         : existing != null && !isMissingVideoTitle(existing.title, videoId)
@@ -280,7 +299,8 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
         ),
         thumbUrl: thumbUrl.isNotEmpty
             ? thumbUrl
-            : existing?.thumbUrl ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+            : existing?.thumbUrl ??
+                  'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
         isMusic: Value(existing?.isMusic ?? false),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -294,11 +314,12 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
     String scope = 'yt',
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    final existing = await (select(history)
-          ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
-          ..orderBy([(t) => OrderingTerm.desc(t.at)])
-          ..limit(1))
-        .getSingleOrNull();
+    final existing =
+        await (select(history)
+              ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
+              ..orderBy([(t) => OrderingTerm.desc(t.at)])
+              ..limit(1))
+            .getSingleOrNull();
 
     if (existing != null) {
       await (update(history)..where((t) => t.id.equals(existing.id))).write(
@@ -322,19 +343,32 @@ class HistoryDao extends DatabaseAccessor<AppDb> with _$HistoryDaoMixin {
   }
 
   Future<int?> getLastPosition(String videoId, {String scope = 'yt'}) async {
-    final entry = await (select(history)
-          ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
-          ..orderBy([(t) => OrderingTerm.desc(t.at)])
-          ..limit(1))
-        .getSingleOrNull();
+    final entry =
+        await (select(history)
+              ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))
+              ..orderBy([(t) => OrderingTerm.desc(t.at)])
+              ..limit(1))
+            .getSingleOrNull();
     return entry?.positionMs;
   }
 
   Future<void> deleteHistoryItem(int id) =>
       (delete(history)..where((t) => t.id.equals(id))).go();
 
+  Future<void> restoreHistoryItem(HistoryRow item) => into(history).insert(
+    HistoryCompanion.insert(
+      videoId: item.videoId,
+      positionMs: item.positionMs,
+      durationMs: item.durationMs,
+      at: item.at,
+      scope: Value(item.scope),
+    ),
+  );
+
   Future<void> deleteVideoHistory(String videoId, {String scope = 'yt'}) =>
-      (delete(history)..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))).go();
+      (delete(
+        history,
+      )..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))).go();
 
   Future<void> clearHistory({String scope = 'yt'}) =>
       (delete(history)..where((t) => t.scope.equals(scope))).go();
@@ -345,19 +379,27 @@ class ReactionsDao extends DatabaseAccessor<AppDb> with _$ReactionsDaoMixin {
   ReactionsDao(super.db);
 
   Stream<int?> watchReaction(String videoId, {String scope = 'yt'}) =>
-      (select(reactions)..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope)))
+      (select(reactions)
+            ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope)))
           .watchSingleOrNull()
           .map((r) => r?.value);
 
   Future<int?> getReaction(String videoId, {String scope = 'yt'}) async =>
-      (await (select(reactions)
-                ..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope)))
+      (await (select(reactions)..where(
+                (t) => t.videoId.equals(videoId) & t.scope.equals(scope),
+              ))
               .getSingleOrNull())
           ?.value;
 
-  Future<void> setReaction(String videoId, int? value, {String scope = 'yt'}) async {
+  Future<void> setReaction(
+    String videoId,
+    int? value, {
+    String scope = 'yt',
+  }) async {
     if (value == null || value == 0) {
-      await (delete(reactions)..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))).go();
+      await (delete(
+        reactions,
+      )..where((t) => t.videoId.equals(videoId) & t.scope.equals(scope))).go();
     } else {
       await into(reactions).insertOnConflictUpdate(
         ReactionsCompanion.insert(
@@ -371,34 +413,38 @@ class ReactionsDao extends DatabaseAccessor<AppDb> with _$ReactionsDaoMixin {
   }
 
   Stream<List<MediaRow>> watchLikedVideos({String scope = 'yt'}) {
-    final query = select(reactions).join([
-      leftOuterJoin(media, media.videoId.equalsExp(reactions.videoId)),
-    ])
-      ..where(reactions.value.equals(1) & reactions.scope.equals(scope))
-      ..orderBy([OrderingTerm.desc(reactions.at)]);
+    final query =
+        select(reactions).join([
+            leftOuterJoin(media, media.videoId.equalsExp(reactions.videoId)),
+          ])
+          ..where(reactions.value.equals(1) & reactions.scope.equals(scope))
+          ..orderBy([OrderingTerm.desc(reactions.at)]);
 
-    return query.watch().map((rows) => rows.map((r) {
-      final m = r.readTableOrNull(media);
-      if (m != null) return m;
-      final rx = r.readTable(reactions);
-      return MediaRow(
-        videoId: rx.videoId,
-        title: rx.videoId,
-        channelId: '',
-        channelName: '',
-        thumbUrl: 'https://i.ytimg.com/vi/${rx.videoId}/hqdefault.jpg',
-        isMusic: false,
-        updatedAt: rx.at,
-      );
-    }).toList());
+    return query.watch().map(
+      (rows) => rows.map((r) {
+        final m = r.readTableOrNull(media);
+        if (m != null) return m;
+        final rx = r.readTable(reactions);
+        return MediaRow(
+          videoId: rx.videoId,
+          title: rx.videoId,
+          channelId: '',
+          channelName: '',
+          thumbUrl: 'https://i.ytimg.com/vi/${rx.videoId}/hqdefault.jpg',
+          isMusic: false,
+          updatedAt: rx.at,
+        );
+      }).toList(),
+    );
   }
 
   Future<List<MediaRow>> getLikedVideos({String scope = 'yt'}) async {
-    final query = select(reactions).join([
-      leftOuterJoin(media, media.videoId.equalsExp(reactions.videoId)),
-    ])
-      ..where(reactions.value.equals(1) & reactions.scope.equals(scope))
-      ..orderBy([OrderingTerm.desc(reactions.at)]);
+    final query =
+        select(reactions).join([
+            leftOuterJoin(media, media.videoId.equalsExp(reactions.videoId)),
+          ])
+          ..where(reactions.value.equals(1) & reactions.scope.equals(scope))
+          ..orderBy([OrderingTerm.desc(reactions.at)]);
 
     final rows = await query.get();
     return rows.map((r) {
@@ -416,6 +462,14 @@ class ReactionsDao extends DatabaseAccessor<AppDb> with _$ReactionsDaoMixin {
       );
     }).toList();
   }
+
+  Future<int?> getLatestLikedAt({String scope = 'yt'}) async =>
+      (await (select(reactions)
+                ..where((t) => t.value.equals(1) & t.scope.equals(scope))
+                ..orderBy([(t) => OrderingTerm.desc(t.at)])
+                ..limit(1))
+              .getSingleOrNull())
+          ?.at;
 }
 
 @DriftAccessor(tables: [Playlists, PlaylistItems, Media])
@@ -438,9 +492,11 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
       (select(playlists)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<PlaylistRow> getOrCreateWatchLater({String scope = 'yt'}) async {
-    final existing = await (select(playlists)
-          ..where((t) => t.remoteId.equals('watch_later') & t.scope.equals(scope)))
-        .getSingleOrNull();
+    final existing =
+        await (select(playlists)..where(
+              (t) => t.remoteId.equals('watch_later') & t.scope.equals(scope),
+            ))
+            .getSingleOrNull();
     if (existing != null) return existing;
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -477,8 +533,9 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
 
   Future<void> renamePlaylist(int id, String name) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    return (update(playlists)..where((t) => t.id.equals(id)))
-        .write(PlaylistsCompanion(name: Value(name), updatedAt: Value(now)));
+    return (update(playlists)..where((t) => t.id.equals(id))).write(
+      PlaylistsCompanion(name: Value(name), updatedAt: Value(now)),
+    );
   }
 
   Future<void> deletePlaylist(int id) async {
@@ -487,30 +544,38 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
   }
 
   Stream<List<PlaylistItemWithMedia>> watchPlaylistItems(int playlistId) {
-    final query = select(playlistItems).join([
-      leftOuterJoin(media, media.videoId.equalsExp(playlistItems.videoId)),
-    ])
-      ..where(playlistItems.playlistId.equals(playlistId))
-      ..orderBy([OrderingTerm.asc(playlistItems.position)]);
+    final query =
+        select(playlistItems).join([
+            leftOuterJoin(
+              media,
+              media.videoId.equalsExp(playlistItems.videoId),
+            ),
+          ])
+          ..where(playlistItems.playlistId.equals(playlistId))
+          ..orderBy([OrderingTerm.asc(playlistItems.position)]);
 
     return query.watch().map(
-          (rows) => rows
-              .map(
-                (r) => PlaylistItemWithMedia(
-                  item: r.readTable(playlistItems),
-                  media: r.readTableOrNull(media),
-                ),
-              )
-              .toList(),
-        );
+      (rows) => rows
+          .map(
+            (r) => PlaylistItemWithMedia(
+              item: r.readTable(playlistItems),
+              media: r.readTableOrNull(media),
+            ),
+          )
+          .toList(),
+    );
   }
 
   Future<List<PlaylistItemWithMedia>> getPlaylistItems(int playlistId) async {
-    final query = select(playlistItems).join([
-      leftOuterJoin(media, media.videoId.equalsExp(playlistItems.videoId)),
-    ])
-      ..where(playlistItems.playlistId.equals(playlistId))
-      ..orderBy([OrderingTerm.asc(playlistItems.position)]);
+    final query =
+        select(playlistItems).join([
+            leftOuterJoin(
+              media,
+              media.videoId.equalsExp(playlistItems.videoId),
+            ),
+          ])
+          ..where(playlistItems.playlistId.equals(playlistId))
+          ..orderBy([OrderingTerm.asc(playlistItems.position)]);
 
     final rows = await query.get();
     return rows
@@ -532,12 +597,17 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
     if (mediaItem != null) {
       await into(media).insertOnConflictUpdate(mediaItem);
     }
-    final existing = await (select(playlistItems)
-          ..where((t) => t.playlistId.equals(playlistId) & t.videoId.equals(videoId)))
-        .getSingleOrNull();
+    final existing =
+        await (select(playlistItems)..where(
+              (t) =>
+                  t.playlistId.equals(playlistId) & t.videoId.equals(videoId),
+            ))
+            .getSingleOrNull();
     if (existing != null) return;
 
-    final allItems = await (select(playlistItems)..where((t) => t.playlistId.equals(playlistId))).get();
+    final allItems = await (select(
+      playlistItems,
+    )..where((t) => t.playlistId.equals(playlistId))).get();
     await into(playlistItems).insertOnConflictUpdate(
       PlaylistItemsCompanion.insert(
         playlistId: playlistId,
@@ -546,32 +616,35 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
         addedAt: now,
       ),
     );
-    await (update(playlists)..where((t) => t.id.equals(playlistId)))
-        .write(PlaylistsCompanion(updatedAt: Value(now)));
+    await (update(playlists)..where((t) => t.id.equals(playlistId))).write(
+      PlaylistsCompanion(updatedAt: Value(now)),
+    );
   }
 
   Future<void> removePlaylistItem(int playlistId, String videoId) async {
-    await (delete(playlistItems)
-          ..where((t) => t.playlistId.equals(playlistId) & t.videoId.equals(videoId)))
+    await (delete(playlistItems)..where(
+          (t) => t.playlistId.equals(playlistId) & t.videoId.equals(videoId),
+        ))
         .go();
-    final remaining = await (select(playlistItems)
-          ..where((t) => t.playlistId.equals(playlistId))
-          ..orderBy([(t) => OrderingTerm.asc(t.position)]))
-        .get();
+    final remaining =
+        await (select(playlistItems)
+              ..where((t) => t.playlistId.equals(playlistId))
+              ..orderBy([(t) => OrderingTerm.asc(t.position)]))
+            .get();
     for (var i = 0; i < remaining.length; i++) {
       if (remaining[i].position != i) {
-        await (update(playlistItems)
-              ..where(
-                (t) =>
-                    t.playlistId.equals(playlistId) &
-                    t.videoId.equals(remaining[i].videoId),
-              ))
+        await (update(playlistItems)..where(
+              (t) =>
+                  t.playlistId.equals(playlistId) &
+                  t.videoId.equals(remaining[i].videoId),
+            ))
             .write(PlaylistItemsCompanion(position: Value(i)));
       }
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (update(playlists)..where((t) => t.id.equals(playlistId)))
-        .write(PlaylistsCompanion(updatedAt: Value(now)));
+    await (update(playlists)..where((t) => t.id.equals(playlistId))).write(
+      PlaylistsCompanion(updatedAt: Value(now)),
+    );
   }
 
   Future<void> reorderPlaylistItems(
@@ -579,10 +652,11 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
     int oldIndex,
     int newIndex,
   ) async {
-    final items = await (select(playlistItems)
-          ..where((t) => t.playlistId.equals(playlistId))
-          ..orderBy([(t) => OrderingTerm.asc(t.position)]))
-        .get();
+    final items =
+        await (select(playlistItems)
+              ..where((t) => t.playlistId.equals(playlistId))
+              ..orderBy([(t) => OrderingTerm.asc(t.position)]))
+            .get();
     if (oldIndex < 0 || oldIndex >= items.length) return;
     if (newIndex < 0 || newIndex >= items.length) return;
 
@@ -590,68 +664,74 @@ class PlaylistsDao extends DatabaseAccessor<AppDb> with _$PlaylistsDaoMixin {
     items.insert(newIndex, moved);
 
     for (var i = 0; i < items.length; i++) {
-      await (update(playlistItems)
-            ..where(
-              (t) =>
-                  t.playlistId.equals(playlistId) &
-                  t.videoId.equals(items[i].videoId),
-            ))
+      await (update(playlistItems)..where(
+            (t) =>
+                t.playlistId.equals(playlistId) &
+                t.videoId.equals(items[i].videoId),
+          ))
           .write(PlaylistItemsCompanion(position: Value(i)));
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    await (update(playlists)..where((t) => t.id.equals(playlistId)))
-        .write(PlaylistsCompanion(updatedAt: Value(now)));
+    await (update(playlists)..where((t) => t.id.equals(playlistId))).write(
+      PlaylistsCompanion(updatedAt: Value(now)),
+    );
   }
 
   Future<bool> isInPlaylist(int playlistId, String videoId) async =>
-      (await (select(playlistItems)
-                ..where(
-                  (t) =>
-                      t.playlistId.equals(playlistId) &
-                      t.videoId.equals(videoId),
-                ))
-              .getSingleOrNull()) !=
+      (await (select(playlistItems)..where(
+            (t) => t.playlistId.equals(playlistId) & t.videoId.equals(videoId),
+          ))
+          .getSingleOrNull()) !=
       null;
 }
 
 @DriftAccessor(tables: [SavedRemote])
-class SavedRemoteDao extends DatabaseAccessor<AppDb> with _$SavedRemoteDaoMixin {
+class SavedRemoteDao extends DatabaseAccessor<AppDb>
+    with _$SavedRemoteDaoMixin {
   SavedRemoteDao(super.db);
 
-  Stream<List<SavedRemoteRow>> watchSavedRemote() =>
-      (select(savedRemote)..orderBy([(t) => OrderingTerm.desc(t.savedAt)])).watch();
+  Stream<List<SavedRemoteRow>> watchSavedRemote() => (select(
+    savedRemote,
+  )..orderBy([(t) => OrderingTerm.desc(t.savedAt)])).watch();
 
-  Future<List<SavedRemoteRow>> getSavedRemote() =>
-      (select(savedRemote)..orderBy([(t) => OrderingTerm.desc(t.savedAt)])).get();
+  Future<List<SavedRemoteRow>> getSavedRemote() => (select(
+    savedRemote,
+  )..orderBy([(t) => OrderingTerm.desc(t.savedAt)])).get();
 
   Future<void> saveRemote(
     String id,
     String kind,
     String title, {
     String? thumbUrl,
-  }) =>
-      into(savedRemote).insertOnConflictUpdate(
-        SavedRemoteCompanion.insert(
-          id: id,
-          kind: kind,
-          title: title,
-          thumbUrl: Value(thumbUrl),
-          savedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+  }) => into(savedRemote).insertOnConflictUpdate(
+    SavedRemoteCompanion.insert(
+      id: id,
+      kind: kind,
+      title: title,
+      thumbUrl: Value(thumbUrl),
+      savedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
 
   Future<void> removeRemote(String id) =>
       (delete(savedRemote)..where((t) => t.id.equals(id))).go();
 
   Future<bool> isRemoteSaved(String id) async =>
-      (await (select(savedRemote)..where((t) => t.id.equals(id))).getSingleOrNull()) != null;
+      (await (select(
+        savedRemote,
+      )..where((t) => t.id.equals(id))).getSingleOrNull()) !=
+      null;
 }
 
 @DriftAccessor(tables: [SearchHistory])
-class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMixin {
+class SearchHistoryDao extends DatabaseAccessor<AppDb>
+    with _$SearchHistoryDaoMixin {
   SearchHistoryDao(super.db);
 
-  Stream<List<String>> watchRecentSearches({String scope = 'yt', int limit = 20}) =>
+  Stream<List<String>> watchRecentSearches({
+    String scope = 'yt',
+    int limit = 20,
+  }) =>
       (select(searchHistory)
             ..where((t) => t.scope.equals(scope))
             ..orderBy([(t) => OrderingTerm.desc(t.at)])
@@ -659,7 +739,10 @@ class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMi
           .watch()
           .map((rows) => rows.map((r) => r.query).toList());
 
-  Future<List<String>> getRecentSearches({String scope = 'yt', int limit = 20}) async =>
+  Future<List<String>> getRecentSearches({
+    String scope = 'yt',
+    int limit = 20,
+  }) async =>
       (await (select(searchHistory)
                 ..where((t) => t.scope.equals(scope))
                 ..orderBy([(t) => OrderingTerm.desc(t.at)])
@@ -680,10 +763,9 @@ class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMi
   Future<void> addSearch(String query, {String scope = 'yt'}) =>
       saveSearchTerm(query, scope: scope);
 
-  Future<void> removeSearch(String query, {String scope = 'yt'}) =>
-      (delete(searchHistory)
-            ..where((t) => t.query.equals(query) & t.scope.equals(scope)))
-          .go();
+  Future<void> removeSearch(String query, {String scope = 'yt'}) => (delete(
+    searchHistory,
+  )..where((t) => t.query.equals(query) & t.scope.equals(scope))).go();
 
   Future<void> clearSearches({String scope = 'yt'}) =>
       (delete(searchHistory)..where((t) => t.scope.equals(scope))).go();
@@ -693,18 +775,23 @@ class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMi
 class RydDao extends DatabaseAccessor<AppDb> with _$RydDaoMixin {
   RydDao(super.db);
 
-  Future<RydCacheRow?> getRyd(String videoId) =>
-      (select(rydCache)..where((t) => t.videoId.equals(videoId))).getSingleOrNull();
+  Future<RydCacheRow?> getRyd(String videoId) => (select(
+    rydCache,
+  )..where((t) => t.videoId.equals(videoId))).getSingleOrNull();
 
-  Future<void> putRyd(String videoId, int likes, int dislikes, {int? fetchedAt}) =>
-      into(rydCache).insertOnConflictUpdate(
-        RydCacheCompanion.insert(
-          videoId: videoId,
-          likes: likes,
-          dislikes: dislikes,
-          fetchedAt: fetchedAt ?? DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+  Future<void> putRyd(
+    String videoId,
+    int likes,
+    int dislikes, {
+    int? fetchedAt,
+  }) => into(rydCache).insertOnConflictUpdate(
+    RydCacheCompanion.insert(
+      videoId: videoId,
+      likes: likes,
+      dislikes: dislikes,
+      fetchedAt: fetchedAt ?? DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
 }
 
 @DriftAccessor(tables: [Profile])

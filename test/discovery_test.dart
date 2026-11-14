@@ -36,7 +36,16 @@ void main() {
       ),
       isTrue,
     );
-    expect(queries.any((q) => q.contains('Pongal')), isTrue);
+    expect(queries.any((q) => q.contains('Pongal')), isFalse);
+
+    final categoryQueries = LanguageProfileRegistry.instance.buildQueries(
+      shownLanguages: {'ta'},
+      chip: 'Music',
+      localRatio: 1,
+      random: Random(4),
+      date: DateTime(2026, 1, 12),
+    );
+    expect(categoryQueries.any((q) => q.contains('Pongal')), isTrue);
   });
 
   test('selected Tamil and English receive equal profile query counts', () {
@@ -232,13 +241,13 @@ void main() {
   test('Home launch cache expires at 30 minutes', () {
     final now = DateTime.now();
     final cache = HomeCache(
-      const [],
+      const [VideoItem(id: 'cached', title: 'Cached')],
       const [],
       now.subtract(const Duration(minutes: 29)),
     );
     expect(HomeCache.decode(cache.encode(), now), isNotNull);
     final expired = HomeCache(
-      const [],
+      const [VideoItem(id: 'cached', title: 'Cached')],
       const [],
       now.subtract(const Duration(minutes: 31)),
     );

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/theme/app_theme.dart';
-import 'package:hivetube/theme/app_colors.dart';
 import 'package:hivetube/widgets/floating_nav.dart';
 
 void main() {
-  testWidgets('centers the pill and selects a tab by dragging', (tester) async {
+  testWidgets('flat nav fills its width and selects by dragging', (
+    tester,
+  ) async {
     var selected = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -34,11 +35,11 @@ void main() {
         ),
       ),
     );
-    final pill = tester.getRect(
+    final nav = tester.getRect(
       find.byKey(const ValueKey('floatingNavSurface')),
     );
-    expect(pill.width, lessThan(360));
-    expect(pill.center.dx, closeTo(400, 0.1));
+    expect(nav.width, closeTo(360, 0.1));
+    expect(nav.center.dx, closeTo(400, 0.1));
     final gesture = await tester.startGesture(
       tester.getCenter(find.byTooltip('Home')),
     );
@@ -51,43 +52,42 @@ void main() {
     expect(selected, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
-  testWidgets(
-    'Shorts keeps the red indicator and translucent glass in both themes',
-    (tester) async {
-      for (final theme in [AppTheme.light, AppTheme.dark]) {
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: theme,
-            home: Scaffold(
-              body: Center(
-                child: FloatingNav(
-                  items: const [
-                    FloatingNavItem('Home', Icons.home),
-                    FloatingNavItem('Shorts', Icons.play_arrow),
-                  ],
-                  currentIndex: 1,
-                  onSelected: (_) {},
-                  inverted: true,
-                ),
+  testWidgets('flat nav uses theme colors without a selection indicator', (
+    tester,
+  ) async {
+    for (final theme in [AppTheme.light, AppTheme.dark]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: Center(
+              child: FloatingNav(
+                items: const [
+                  FloatingNavItem('Home', Icons.home),
+                  FloatingNavItem('Shorts', Icons.play_arrow),
+                ],
+                currentIndex: 1,
+                onSelected: (_) {},
+                inverted: true,
               ),
             ),
           ),
-        );
-        final surface = tester.widget<Container>(
-          find.byKey(const ValueKey('floatingNavSurface')),
-        );
-        final indicator = tester.widget<Container>(
-          find.byKey(const ValueKey('floatingNavIndicator')),
-        );
-        expect(
-          (surface.decoration! as BoxDecoration).color,
-          AppColors.shortsNavGlassFill,
-        );
-        expect(
-          (indicator.decoration! as BoxDecoration).color,
-          AppColors.primary,
-        );
-      }
-    },
-  );
+        ),
+      );
+      await tester.pumpAndSettle();
+      final surface = tester.widget<Material>(
+        find.byKey(const ValueKey('floatingNavSurface')),
+      );
+      expect(surface.color, theme.scaffoldBackgroundColor);
+      expect(find.byKey(const ValueKey('floatingNavIndicator')), findsNothing);
+      final selectedIcon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('Shorts'),
+          matching: find.byType(Icon),
+        ),
+      );
+      final navContext = tester.element(find.byTooltip('Shorts'));
+      expect(selectedIcon.color, Theme.of(navContext).colorScheme.onSurface);
+    }
+  });
 }

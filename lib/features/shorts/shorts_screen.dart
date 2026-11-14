@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../core/providers.dart';
@@ -13,10 +14,15 @@ import '../../core/playback/audio_handler.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
+import '../../features/watch/watch_screen.dart'
+    show watchCommentsProvider, watchInfoProvider;
 import '../home/home_shorts.dart';
 import '../home/home_variety.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_settings_menu.dart';
 import '../../widgets/video_options_menu.dart';
@@ -45,6 +51,26 @@ final shortMetadataProvider = FutureProvider.family<ShortItem?, String>(
   (ref, id) async => (await ref.watch(ytApiProvider.future)).reel.metadata(id),
 );
 
+final _shortReactionProvider =
+    Provider.family<_ShortReactionController, String>((ref, id) {
+      final controller = _ShortReactionController();
+      ref.onDispose(controller.dispose);
+      return controller;
+    });
+
+final _channelSubscriptionProvider = FutureProvider.family<bool, String>(
+  (ref, channelId) async =>
+      (await ref.watch(subscriptionRepoProvider).channelIds()).contains(
+        channelId,
+      ),
+);
+
+class _ShortReactionController extends ValueNotifier<int> {
+  _ShortReactionController() : super(0);
+
+  void toggle(int value) => this.value = this.value == value ? 0 : value;
+}
+
 class ShortsScreen extends ConsumerStatefulWidget {
   const ShortsScreen({super.key});
   @override
@@ -66,7 +92,6 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   PageController controller = PageController();
   late final ProviderSubscription<ShortsSelection> selectionSubscription;
   PlaybackService? active;
-  final Map<String, int> reactions = {};
   @override
   void initState() {
     super.initState();
@@ -257,7 +282,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       setState(() {
         items.addAll(filteredItems.where((e) => existingIds.add(e.id)));
         cursor = page.continuation;
-        failed = page.failed || items.isEmpty;
+        failed = page.failed;
       });
       if (visible) {
         _playCurrent(ref.read(playbackProvider));
@@ -291,9 +316,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
         );
       }
     }
-    unawaited(
-      service.preloadShort(nextId, generation: preloadGeneration),
-    );
+    unawaited(service.preloadShort(nextId, generation: preloadGeneration));
   }
 
   void _updateActiveShortMetadata(ShortItem item) {
@@ -303,13 +326,13 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     final title = (item.title?.trim().isNotEmpty ?? false)
         ? item.title!.trim()
         : ((meta?.title?.trim().isNotEmpty ?? false)
-            ? meta!.title!.trim()
-            : 'Short');
+              ? meta!.title!.trim()
+              : 'Short');
     final channel = (item.channelName?.trim().isNotEmpty ?? false)
         ? item.channelName!.trim()
         : ((meta?.channelName?.trim().isNotEmpty ?? false)
-            ? meta!.channelName!.trim()
-            : 'YouTube Short');
+              ? meta!.channelName!.trim()
+              : 'YouTube Short');
     final thumb = item.thumbUrl.isNotEmpty
         ? item.thumbUrl
         : (meta?.thumbUrl ?? '');
@@ -376,11 +399,6 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       pageGeneration == playbackGeneration &&
       currentIndex < items.length &&
       items[currentIndex].id == id;
-
-  void _cancelShortPreloads() {
-    playbackGeneration++;
-    active?.cancelShortPreloads(disposePlayer: true);
-  }
 
   void _movePage(int direction) {
     if (!controller.hasClients || items.isEmpty) return;
@@ -464,12 +482,18 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                   child: items.isEmpty
                       ? Center(
                           child: loading
-                              ? const CircularProgressIndicator()
-                              : TextButton(
-                                  onPressed: _refresh,
-                                  child: const Text(
-                                    'Unable to load Shorts — Retry',
-                                  ),
+                              ? const SizedBox.square(
+                                  dimension: AppSizes.iconLg,
+                                  child: CircularProgressIndicator(),
+                                )
+                              : failed
+                              ? AppErrorState(
+                                  message: "Couldn't load Shorts",
+                                  onRetry: _refresh,
+                                )
+                              : const AppEmptyState(
+                                  icon: LucideIcons.play,
+                                  title: 'No Shorts',
                                 ),
                         )
                       : RefreshIndicator(
@@ -479,52 +503,32 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                             controller: controller,
                             scrollDirection: Axis.vertical,
                             pageSnapping: true,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            itemCount:
-                                items.length + (failed || loading ? 1 : 0),
+                            physics: const ClampingScrollPhysics(
+                              parent: AlwaysScrollableScrollPhysics(),
+                            ),
+                            itemCount: items.length,
                             onPageChanged: (index) {
                               setState(() => currentIndex = index);
-                              if (index < items.length) {
-                                _updateActiveShortMetadata(items[index]);
-                                _playCurrent(service);
-                              } else {
-                                _cancelShortPreloads();
-                                unawaited(service?.setVisible(false));
-                              }
+                              _updateActiveShortMetadata(items[index]);
+                              _playCurrent(service);
                               if (index >= items.length - 3 && cursor != null) {
                                 _load();
                               }
                             },
                             itemBuilder: (context, index) {
-                              if (index == items.length) {
-                                return Center(
-                                  child: failed
-                                      ? AppErrorState(
-                                          message: 'Unable to load Shorts',
-                                          onRetry: _load,
-                                        )
-                                      : const CircularProgressIndicator(),
-                                );
-                              }
                               final item = items[index];
-                              final meta = ref
-                                  .watch(shortMetadataProvider(item.id))
-                                  .value;
                               return _ShortPage(
                                 key: ValueKey(item.id),
                                 item: item,
-                                metadata: meta,
                                 service: index == currentIndex ? service : null,
                                 muted: muted,
-                                reaction: reactions[item.id] ?? 0,
+                                reaction: ref.read(
+                                  _shortReactionProvider(item.id),
+                                ),
                                 onMute: () {
                                   setState(() => muted = !muted);
                                   unawaited(service?.setMuted(muted));
                                 },
-                                onReaction: (value) => setState(
-                                  () => reactions[item.id] =
-                                      reactions[item.id] == value ? 0 : value,
-                                ),
                               );
                             },
                           ),
@@ -539,29 +543,25 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   }
 }
 
-class _ShortPage extends StatefulWidget {
+class _ShortPage extends ConsumerStatefulWidget {
   const _ShortPage({
     super.key,
     required this.item,
-    required this.metadata,
     required this.service,
     required this.muted,
     required this.reaction,
     required this.onMute,
-    required this.onReaction,
   });
   final ShortItem item;
-  final ShortItem? metadata;
   final PlaybackService? service;
   final bool muted;
-  final int reaction;
+  final _ShortReactionController reaction;
   final VoidCallback onMute;
-  final ValueChanged<int> onReaction;
   @override
-  State<_ShortPage> createState() => _ShortPageState();
+  ConsumerState<_ShortPage> createState() => _ShortPageState();
 }
 
-class _ShortPageState extends State<_ShortPage> {
+class _ShortPageState extends ConsumerState<_ShortPage> {
   bool firstFrame = false;
   bool _scrubbing = false;
   bool _wasPlayingBeforeScrub = false;
@@ -570,6 +570,8 @@ class _ShortPageState extends State<_ShortPage> {
   VideoController? _waitingController;
   IconData? feedback;
   PlayerSettingsSession? _settingsSession;
+  bool? _subscriptionOverride;
+  bool _subscriptionLoading = false;
   @override
   void initState() {
     super.initState();
@@ -613,10 +615,12 @@ class _ShortPageState extends State<_ShortPage> {
     _attachService(service);
   }
 
-  void _waitForFrame(
-    PlaybackService? service,
-    VideoController? controller,
-  ) {
+  void _toggleReaction(int value) {
+    widget.reaction.toggle(value);
+    setState(() {});
+  }
+
+  void _waitForFrame(PlaybackService? service, VideoController? controller) {
     if (service == null || controller == null) return;
     controller.waitUntilFirstFrameRendered
         .then((_) {
@@ -646,12 +650,159 @@ class _ShortPageState extends State<_ShortPage> {
   String _formatTime(Duration value) => AppFormatters.formatDuration(value);
 
   Timer? feedbackTimer;
-  void _feedback(IconData icon) {
+  Duration _feedbackDuration = AppMotion.base;
+
+  void _feedback(IconData icon, {Duration duration = AppMotion.base}) {
     feedbackTimer?.cancel();
+    _feedbackDuration = duration;
     setState(() => feedback = icon);
-    feedbackTimer = Timer(AppSpacing.shortsFeedbackDuration, () {
+    feedbackTimer = Timer(duration, () {
       if (mounted) setState(() => feedback = null);
     });
+  }
+
+  Future<void> _toggleSubscription({
+    required String channelId,
+    required String channelName,
+    required String avatarUrl,
+    required bool isSubscribed,
+  }) async {
+    if (_subscriptionLoading) return;
+    setState(() {
+      _subscriptionOverride = !isSubscribed;
+      _subscriptionLoading = true;
+    });
+    try {
+      await ref
+          .read(subscriptionRepoProvider)
+          .setSubscribed(
+            channelId,
+            !isSubscribed,
+            name: channelName,
+            avatarUrl: avatarUrl,
+          );
+      ref.invalidate(_channelSubscriptionProvider(channelId));
+    } catch (_) {
+      if (mounted) {
+        setState(() => _subscriptionOverride = isSubscribed);
+        AppSnackbar.show(
+          context,
+          'Could not update subscription',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subscriptionLoading = false);
+    }
+  }
+
+  Future<void> _onSubscribePressed({
+    required String channelId,
+    required String channelName,
+    required String avatarUrl,
+    required bool isSubscribed,
+  }) async {
+    if (!isSubscribed) {
+      await _toggleSubscription(
+        channelId: channelId,
+        channelName: channelName,
+        avatarUrl: avatarUrl,
+        isSubscribed: false,
+      );
+      return;
+    }
+    final key = 'subscription_notifications_$channelId';
+    final current = await ref.read(dbProvider).getValue(key) ?? 'Personalized';
+    if (!mounted) return;
+    final selected = await showAppSheet<String>(
+      context,
+      fit: true,
+      title: 'Notifications',
+      builder: (sheetContext, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final option in const ['All', 'Personalized', 'None'])
+            AppSheetRow(
+              icon: option == 'None' ? LucideIcons.bellOff : LucideIcons.bell,
+              label: option,
+              selected: current == option,
+              onTap: () => Navigator.pop(sheetContext, option),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) await ref.read(dbProvider).setValue(key, selected);
+  }
+
+  Future<void> _openComments() async {
+    try {
+      final info = await ref.read(watchInfoProvider(widget.item.id).future);
+      if (!mounted) return;
+      await showAppSheet<void>(
+        context,
+        title: 'Comments',
+        showClose: false,
+        builder: (sheetContext, scrollController) {
+          final token = info.commentsToken;
+          if (token == null) {
+            return const Center(child: Text('Comments unavailable'));
+          }
+          return Consumer(
+            builder: (context, ref, _) => ref
+                .watch(watchCommentsProvider(token))
+                .when(
+                  data: (page) => ListView.builder(
+                    controller: scrollController,
+                    itemCount: page.items.length,
+                    itemBuilder: (context, index) {
+                      final comment = page.items[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ChannelAvatar(
+                              name: comment.author,
+                              url: comment.avatar,
+                              size: AppSizes.avatarSm,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${comment.author} · ${comment.age}',
+                                    style: AppTextStyles.meta.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(comment.content),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (_, _) =>
+                      const Center(child: Text('Could not load comments')),
+                ),
+          );
+        },
+      );
+    } catch (_) {
+      if (mounted) AppSnackbar.show(context, 'Could not load comments');
+    }
   }
 
   @override
@@ -666,18 +817,17 @@ class _ShortPageState extends State<_ShortPage> {
   Widget build(BuildContext context) {
     final service = widget.service;
     final state = service?.state;
-    final name = widget.metadata?.channelName ?? widget.item.channelName;
-    final title = widget.metadata?.title ?? widget.item.title;
-    final avatar =
-        widget.metadata?.channelAvatarUrl ?? widget.item.channelAvatarUrl;
-    final wide =
-        MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
+    final metadata = ref.watch(shortMetadataProvider(widget.item.id)).value;
+    final name = metadata?.channelName ?? widget.item.channelName;
+    final title = metadata?.title ?? widget.item.title;
+    final avatar = metadata?.channelAvatarUrl ?? widget.item.channelAvatarUrl;
+    final channelId = widget.item.channelId;
+    final subscription = channelId == null || channelId.isEmpty
+        ? false
+        : ref.watch(_channelSubscriptionProvider(channelId)).value ?? false;
+    final isSubscribed = _subscriptionOverride ?? subscription;
     final safe = MediaQuery.paddingOf(context);
-    final bottom =
-        safe.bottom +
-        (wide
-            ? AppSpacing.lg
-            : AppSpacing.navHeight + AppSpacing.lg + AppSpacing.lg);
+    final bottom = safe.bottom + AppSpacing.navHeight + AppSpacing.md;
     final duration = state?.duration.inMilliseconds ?? 0;
     final played = duration > 0
         ? (state!.position.inMilliseconds / duration).clamp(0.0, 1.0)
@@ -685,11 +835,6 @@ class _ShortPageState extends State<_ShortPage> {
     final buffered = duration > 0
         ? (state!.buffered.inMilliseconds / duration).clamp(0.0, 1.0)
         : 0.0;
-    final w = state?.videoWidth ?? 0, h = state?.videoHeight ?? 0;
-    final portrait =
-        h > 0 &&
-        ((w / h) - AppSpacing.shortRatio).abs() <=
-            AppSpacing.shortsAspectTolerance;
     final frameReady =
         firstFrame &&
         state != null &&
@@ -725,7 +870,7 @@ class _ShortPageState extends State<_ShortPage> {
                     child: Video(
                       controller: service.controller,
                       controls: NoVideoControls,
-                      fit: portrait ? BoxFit.cover : BoxFit.contain,
+                      fit: BoxFit.cover,
                     ),
                   ),
                 );
@@ -754,8 +899,8 @@ class _ShortPageState extends State<_ShortPage> {
                   _feedback(LucideIcons.play);
                 },
           onDoubleTap: () {
-            if (widget.reaction != 1) widget.onReaction(1);
-            _feedback(LucideIcons.heart);
+            if (widget.reaction.value != 1) _toggleReaction(1);
+            _feedback(LucideIcons.heart, duration: AppMotion.base * 2);
           },
         ),
         Align(
@@ -764,10 +909,11 @@ class _ShortPageState extends State<_ShortPage> {
             child: Container(
               height: AppSpacing.shortsScrimHeight + bottom,
               decoration: const BoxDecoration(
+                // allowed: shorts scrim
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [AppColors.transparent, AppColors.shortsScrim],
+                  colors: [AppColors.transparent, AppColors.scrim50],
                 ),
               ),
             ),
@@ -777,161 +923,241 @@ class _ShortPageState extends State<_ShortPage> {
           Opacity(
             opacity: _scrubbing ? 0.35 : 1,
             child: Center(
-            child: TweenAnimationBuilder<double>(
-              key: ValueKey(feedbackTimer),
-              tween: Tween(begin: 0, end: 1),
-              duration: AppSpacing.shortsFeedbackDuration,
-              builder: (context, value, child) => Opacity(
-                opacity: (1 - value).clamp(0, 1),
-                child: Transform.scale(
-                  scale: 1 + value * AppSpacing.shortsFeedbackScale,
-                  child: child,
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey(feedbackTimer),
+                tween: Tween(begin: 0, end: 1),
+                duration: _feedbackDuration,
+                builder: (context, value, child) => Opacity(
+                  opacity: (1 - value).clamp(0, 1),
+                  child: Transform.scale(
+                    scale: 1 + value * AppSpacing.shortsFeedbackScale,
+                    child: child,
+                  ),
+                ),
+                child: Icon(
+                  feedback,
+                  size: feedback == LucideIcons.heart
+                      ? AppSpacing.shortsHeartIcon
+                      : AppSpacing.shortsFeedbackIcon,
+                  color: feedback == LucideIcons.heart
+                      ? AppColors.shortsSelected
+                      : AppColors.shortsForeground,
                 ),
               ),
-              child: Icon(
-                feedback,
-                size: feedback == LucideIcons.heart
-                    ? AppSpacing.shortsHeartIcon
-                    : AppSpacing.shortsFeedbackIcon,
-                color: feedback == LucideIcons.heart
-                    ? AppColors.shortsSelected
-                    : AppColors.shortsForeground,
-              ),
-            ),
             ),
           ),
         Positioned(
-          top: safe.top + AppSpacing.sm,
-          right: AppSpacing.sm,
+          top: safe.top,
+          left: 0,
+          right: 0,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
-            child: IconButton(
-            key: const ValueKey('shortsMute'),
-            tooltip: widget.muted ? 'Unmute' : 'Mute',
-            onPressed: widget.onMute,
-            color: AppColors.shortsForeground,
-            icon: Icon(
-              widget.muted ? LucideIcons.volumeX : LucideIcons.volume2,
-            ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: context.canPop() ? 'Close' : 'Back',
+                  onPressed: () =>
+                      context.canPop() ? context.pop() : context.go('/'),
+                  color: AppColors.shortsForeground,
+                  icon: Icon(
+                    context.canPop() ? LucideIcons.x : LucideIcons.arrowLeft,
+                  ),
+                  constraints: const BoxConstraints.tightFor(
+                    width: AppSizes.touchMin,
+                    height: AppSizes.touchMin,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  key: const ValueKey('shortsMute'),
+                  tooltip: widget.muted ? 'Unmute' : 'Mute',
+                  onPressed: widget.onMute,
+                  color: AppColors.shortsForeground,
+                  icon: Icon(
+                    widget.muted ? LucideIcons.volumeX : LucideIcons.volume2,
+                  ),
+                  constraints: const BoxConstraints.tightFor(
+                    width: AppSizes.touchMin,
+                    height: AppSizes.touchMin,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Search',
+                  onPressed: () => context.push('/search'),
+                  color: AppColors.shortsForeground,
+                  icon: const Icon(LucideIcons.search),
+                  constraints: const BoxConstraints.tightFor(
+                    width: AppSizes.touchMin,
+                    height: AppSizes.touchMin,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'More',
+                  onPressed: () => unawaited(
+                    showVideoOptionsMenu(
+                      context,
+                      videoId: widget.item.id,
+                      onVideo: true,
+                    ),
+                  ),
+                  color: AppColors.shortsForeground,
+                  icon: const Icon(LucideIcons.ellipsis),
+                  constraints: const BoxConstraints.tightFor(
+                    width: AppSizes.touchMin,
+                    height: AppSizes.touchMin,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
         Positioned(
-          right: AppSpacing.sm,
-          bottom: bottom + AppSpacing.xxxl,
+          right: AppSpacing.md,
+          top: safe.top + AppSizes.touchMin,
+          bottom: safe.bottom + AppSpacing.navHeight + AppSpacing.xxxl * 2,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
-            child: Column(
-            key: const ValueKey('shortsActionRail'),
-            children: [
-              _ShortAction(
-                icon: LucideIcons.thumbsUp,
-                label: 'Like',
-                selected: widget.reaction == 1,
-                onTap: () => widget.onReaction(1),
-              ),
-              _ShortAction(
-                icon: LucideIcons.thumbsDown,
-                label: 'Dislike',
-                selected: widget.reaction == -1,
-                onTap: () => widget.onReaction(-1),
-              ),
-              _ShortAction(
-                icon: LucideIcons.messageCircle,
-                label: 'Comments',
-                onTap: () {},
-              ),
-              _ShortAction(
-                icon: LucideIcons.share2,
-                label: 'Share',
-                onTap: () => unawaited(
-                  SharePlus.instance.share(
-                    ShareParams(
-                      uri: Uri.https(
-                        'www.youtube.com',
-                        '/shorts/${widget.item.id}',
+            child: SingleChildScrollView(
+              child: Column(
+                key: const ValueKey('shortsActionRail'),
+                children: [
+                  _ShortAction(
+                    icon: widget.reaction.value == 1
+                        ? Icons.thumb_up
+                        : LucideIcons.thumbsUp,
+                    label: 'Like',
+                    onTap: () => _toggleReaction(1),
+                  ),
+                  _ShortAction(
+                    icon: widget.reaction.value == -1
+                        ? Icons.thumb_down
+                        : LucideIcons.thumbsDown,
+                    label: 'Dislike',
+                    onTap: () => _toggleReaction(-1),
+                  ),
+                  _ShortAction(
+                    icon: LucideIcons.messageCircle,
+                    label: 'Comments',
+                    onTap: () => unawaited(_openComments()),
+                  ),
+                  _ShortAction(
+                    icon: LucideIcons.share2,
+                    label: 'Share',
+                    onTap: () => unawaited(
+                      SharePlus.instance.share(
+                        ShareParams(
+                          uri: Uri.https(
+                            'www.youtube.com',
+                            '/shorts/${widget.item.id}',
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                  _ShortAction(
+                    icon: LucideIcons.ellipsis,
+                    label: 'More',
+                    onTap: () {
+                      final session = _settingsSession;
+                      if (session != null) {
+                        unawaited(
+                          showPlayerSettingsMenu(context, session: session),
+                        );
+                      } else {
+                        unawaited(
+                          showVideoOptionsMenu(
+                            context,
+                            videoId: widget.item.id,
+                            onVideo: true,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
               ),
-              _ShortAction(
-                icon: LucideIcons.ellipsis,
-                label: 'More',
-                onTap: () {
-                  final session = _settingsSession;
-                  if (session != null) {
-                    unawaited(
-                      showPlayerSettingsMenu(context, session: session),
-                    );
-                  } else {
-                    unawaited(
-                      showVideoOptionsMenu(
-                        context,
-                        videoId: widget.item.id,
-                        onVideo: true,
-                      ),
-                    );
-                  }
-                },
-              ),
-            ],
             ),
           ),
         ),
         Positioned(
-          left: AppSpacing.lg,
-          right: AppSpacing.shortsRailWidth + AppSpacing.lg,
-          bottom: bottom + AppSpacing.xxl,
+          left: AppSpacing.md,
+          right: AppSpacing.shortsRailWidth + AppSpacing.md,
+          bottom: safe.bottom + AppSpacing.navHeight + AppSpacing.md,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (name != null && name.isNotEmpty)
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: AppSpacing.avatar / 2,
-                      backgroundColor: AppColors.shortsScrim,
-                      foregroundImage: avatar == null
-                          ? null
-                          : CachedNetworkImageProvider(avatar),
-                      onForegroundImageError: avatar == null ? null : (_, _) {},
-                      child: Text(
-                        name.characters.first.toUpperCase(),
-                        style: textTheme.titleSmall?.copyWith(
-                          color: AppColors.shortsForeground,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (name != null && name.isNotEmpty)
+                  Row(
+                    children: [
+                      ChannelAvatar(
+                        name: name,
+                        url: avatar ?? '',
+                        size: AppSizes.avatarSm + AppSpacing.sm,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          '@${name.replaceFirst(RegExp(r'^@'), '')}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodyStrong.copyWith(
+                            color: AppColors.shortsForeground,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleSmall?.copyWith(
-                          color: AppColors.shortsForeground,
+                      if (channelId != null && channelId.isNotEmpty) ...[
+                        const SizedBox(width: AppSpacing.sm),
+                        Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: Theme.of(context).colorScheme.copyWith(
+                              onSurface: isSubscribed
+                                  ? AppColors.white
+                                  : AppColors.black,
+                              surfaceContainerHighest: isSubscribed
+                                  ? AppColors.shortsNavGlassFill
+                                  : AppColors.white,
+                            ),
+                          ),
+                          child: AppButton(
+                            label: isSubscribed ? 'Subscribed' : 'Subscribe',
+                            variant: isSubscribed
+                                ? AppButtonVariant.tonal
+                                : AppButtonVariant.filled,
+                            size: AppButtonSize.compact,
+                            icon: isSubscribed ? LucideIcons.bell : null,
+                            trailingIcon: isSubscribed
+                                ? LucideIcons.chevronDown
+                                : null,
+                            isLoading: _subscriptionLoading,
+                            onPressed: () => unawaited(
+                              _onSubscribePressed(
+                                channelId: channelId,
+                                channelName: name,
+                                avatarUrl: avatar ?? '',
+                                isSubscribed: isSubscribed,
+                              ),
+                            ),
+                          ),
                         ),
+                      ],
+                    ],
+                  ),
+                if (title != null && title.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm),
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: AppColors.shortsForeground,
                       ),
-                    ),
-                  ],
-                ),
-              if (title != null && title.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.sm),
-                  child: Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: AppColors.shortsForeground,
                     ),
                   ),
-                ),
-            ],
+              ],
             ),
           ),
         ),
@@ -942,10 +1168,7 @@ class _ShortPageState extends State<_ShortPage> {
                 child: Text(
                   '${_formatTime(Duration(milliseconds: (_scrubFraction * duration).round()))} / ${_formatTime(state.duration)}',
                   style: textTheme.headlineMedium?.copyWith(
-                    color: Colors.white,
-                    shadows: const [
-                      Shadow(color: Colors.black87, blurRadius: 10),
-                    ],
+                    color: AppColors.white,
                   ),
                 ),
               ),
@@ -954,24 +1177,25 @@ class _ShortPageState extends State<_ShortPage> {
         Positioned(
           left: 0,
           right: 0,
-          bottom: 0,
+          bottom: safe.bottom + AppSpacing.navHeight,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final currentPlayed = _scrubbing ? _scrubFraction : played;
-              final barHeight = _scrubbing
-                  ? AppSpacing.shortsProgressActiveHeight
-                  : AppSpacing.shortsProgressIdleHeight;
+              const barHeight = AppSpacing.shortsProgressIdleHeight;
               double fraction(Offset offset) =>
                   (offset.dx / constraints.maxWidth).clamp(0.0, 1.0);
-              Duration targetAt(double value) => Duration(
-                milliseconds: (value * duration).round(),
-              );
+              Duration targetAt(double value) =>
+                  Duration(milliseconds: (value * duration).round());
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapUp: service == null || duration <= 0
                     ? null
                     : (details) {
-                        unawaited(service.seekTo(targetAt(fraction(details.localPosition))));
+                        unawaited(
+                          service.seekTo(
+                            targetAt(fraction(details.localPosition)),
+                          ),
+                        );
                       },
                 onHorizontalDragStart: service == null || duration <= 0
                     ? null
@@ -1029,19 +1253,6 @@ class _ShortPageState extends State<_ShortPage> {
                               color: AppColors.shortsProgressPlayed,
                             ),
                           ),
-                          if (_scrubbing)
-                            Positioned(
-                              left: (constraints.maxWidth * currentPlayed - 6)
-                                  .clamp(0.0, constraints.maxWidth - 12),
-                              child: Container(
-                                width: 12,
-                                height: 12,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.shortsProgressPlayed,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -1068,38 +1279,65 @@ class _ShortPageState extends State<_ShortPage> {
   }
 }
 
-class _ShortAction extends StatelessWidget {
+class _ShortAction extends StatefulWidget {
   const _ShortAction({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.selected = false,
   });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool selected;
+
+  @override
+  State<_ShortAction> createState() => _ShortActionState();
+}
+
+class _ShortActionState extends State<_ShortAction>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: AppMotion.imageFade,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => SizedBox(
     width: AppSpacing.shortsRailWidth,
     child: Column(
       children: [
         IconButton(
-          tooltip: label,
-          onPressed: onTap,
+          tooltip: widget.label,
+          onPressed: () {
+            _controller.forward(from: 0);
+            widget.onTap();
+          },
           iconSize: AppSpacing.shortsRailIcon,
-          color: selected
-              ? AppColors.shortsSelected
-              : AppColors.shortsForeground,
-          icon: Icon(icon),
+          color: AppColors.shortsForeground,
+          icon: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) => Transform.scale(
+              scale:
+                  1 +
+                  AppSpacing.shortsFeedbackScale *
+                      (1 - (_controller.value * 2 - 1).abs()),
+              child: child,
+            ),
+            child: Icon(widget.icon),
+          ),
         ),
         Text(
-          label,
+          widget.label,
           style: Theme.of(
             context,
           ).textTheme.labelSmall?.copyWith(color: AppColors.shortsForeground),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xl - AppSpacing.xs),
       ],
     ),
   );

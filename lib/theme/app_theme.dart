@@ -6,39 +6,6 @@ import 'app_sizes.dart';
 import 'app_text_styles.dart';
 import 'app_spacing.dart';
 
-class HiveGlass extends ThemeExtension<HiveGlass> {
-  const HiveGlass({
-    required this.blurSigma,
-    required this.glassFill,
-    required this.glassBorder,
-    required this.glow,
-  });
-  final double blurSigma;
-  final Color glassFill, glassBorder;
-  final Gradient glow;
-  @override
-  HiveGlass copyWith({
-    double? blurSigma,
-    Color? glassFill,
-    Color? glassBorder,
-    Gradient? glow,
-  }) => HiveGlass(
-    blurSigma: blurSigma ?? this.blurSigma,
-    glassFill: glassFill ?? this.glassFill,
-    glassBorder: glassBorder ?? this.glassBorder,
-    glow: glow ?? this.glow,
-  );
-  @override
-  HiveGlass lerp(covariant HiveGlass? other, double t) => other == null
-      ? this
-      : HiveGlass(
-          blurSigma: blurSigma + (other.blurSigma - blurSigma) * t,
-          glassFill: Color.lerp(glassFill, other.glassFill, t)!,
-          glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
-          glow: Gradient.lerp(glow, other.glow, t)!,
-        );
-}
-
 abstract final class AppTheme {
   static final light = _build(AppColors.light, Brightness.light);
   static final dark = _build(AppColors.dark, Brightness.dark);
@@ -70,18 +37,6 @@ abstract final class AppTheme {
     ).apply(bodyColor: colors.textPrimary, displayColor: colors.textPrimary);
     return ThemeData(
       useMaterial3: true,
-      extensions: [
-        HiveGlass(
-          blurSigma: AppSpacing.glassBlur,
-          glassFill: colors.glassFill,
-          glassBorder: colors.glassBorder,
-          glow: RadialGradient(
-            center: Alignment.topCenter,
-            radius: AppSpacing.glowRadius,
-            colors: [colors.glowTop, AppColors.transparent],
-          ),
-        ),
-      ],
       brightness: brightness,
       colorScheme: scheme,
       textTheme: text,
@@ -117,7 +72,10 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppRadius.pillBorder,
-          borderSide: BorderSide(color: AppColors.primary, width: AppSpacing.borderWidth),
+          borderSide: BorderSide(
+            color: AppColors.primary,
+            width: AppSpacing.borderWidth,
+          ),
         ),
         hintStyle: AppTextStyles.body.copyWith(color: colors.textSecondary),
       ),
@@ -143,23 +101,39 @@ abstract final class AppTheme {
         backgroundColor: colors.surface,
         elevation: 0,
         indicatorColor: AppColors.transparent,
-        selectedIconTheme: IconThemeData(color: colors.textPrimary, size: AppSizes.icon),
-        unselectedIconTheme: IconThemeData(color: colors.textSecondary, size: AppSizes.icon),
-        selectedLabelTextStyle: AppTextStyles.label.copyWith(color: colors.textPrimary),
-        unselectedLabelTextStyle: AppTextStyles.label.copyWith(color: colors.textSecondary),
+        selectedIconTheme: IconThemeData(
+          color: colors.textPrimary,
+          size: AppSizes.icon,
+        ),
+        unselectedIconTheme: IconThemeData(
+          color: colors.textSecondary,
+          size: AppSizes.icon,
+        ),
+        selectedLabelTextStyle: AppTextStyles.label.copyWith(
+          color: colors.textPrimary,
+        ),
+        unselectedLabelTextStyle: AppTextStyles.label.copyWith(
+          color: colors.textSecondary,
+        ),
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: AppColors.primary,
         thumbColor: AppColors.primary,
         inactiveTrackColor: colors.surfaceVariant,
         trackHeight: AppSizes.seekBarHeight,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: AppSizes.seekBarThumb / 2),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: AppSizes.seekBarThumbPressed / 2),
+        thumbShape: const RoundSliderThumbShape(
+          enabledThumbRadius: AppSizes.seekBarThumb / 2,
+        ),
+        overlayShape: const RoundSliderOverlayShape(
+          overlayRadius: AppSizes.seekBarThumbPressed / 2,
+        ),
         trackShape: const RoundedRectSliderTrackShape(),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.surface,
-        shape: const RoundedRectangleBorder(borderRadius: AppRadius.sheetTopBorder),
+        shape: const RoundedRectangleBorder(
+          borderRadius: AppRadius.sheetTopBorder,
+        ),
         elevation: 0,
         modalElevation: 0,
       ),

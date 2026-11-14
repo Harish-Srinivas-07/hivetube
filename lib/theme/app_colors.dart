@@ -19,7 +19,11 @@ class AppColors {
   static const black = Color(0xFF000000);
   static const maskOpaque = Color(0xFF000000);
   static const scrim50 = Color(0x80000000);
-  static const primary = Color(0xFFFF0033);
+  static const videoSheet = Color(0xFF212121);
+  static const snackbarLight = Color(0xFF323232);
+  static const snackbarDark = Color(0xFFF1F1F1);
+  static const disabledOpacity = 0.38;
+  static const primary = Color(0xFFFF0000);
   static const onPrimary = Color(0xFFFFFFFF);
   static const success = Color(0xFF2BA640);
   static const warning = Color(0xFFF5A623);
@@ -44,7 +48,7 @@ class AppColors {
 
   static const dark = AppColors._(
     background: Color(0xFF0F0F0F),
-    surface: Color(0xFF181818),
+    surface: Color(0xFF0F0F0F),
     surfaceVariant: Color(0xFF272727),
     textPrimary: Color(0xFFF1F1F1),
     textSecondary: Color(0xFFAAAAAA),
@@ -56,7 +60,7 @@ class AppColors {
   );
   static const light = AppColors._(
     background: Color(0xFFFFFFFF),
-    surface: Color(0xFFF9F9F9),
+    surface: Color(0xFFFFFFFF),
     surfaceVariant: Color(0xFFF2F2F2),
     textPrimary: Color(0xFF0F0F0F),
     textSecondary: Color(0xFF606060),
@@ -66,6 +70,24 @@ class AppColors {
     glowTop: Color(0x0FFF0033),
     progressTrack: Color(0x80000000),
   );
+
+  Color get onSurface => textPrimary;
+  Color get onSurfaceVariant => textSecondary;
+  Color get chipSelectedBg => textPrimary;
+  Color get chipSelectedFg => background;
+  Color get outlineVariant => identical(this, light)
+      ? const Color(0xFFD0D0D0)
+      : const Color(0xFF3F3F3F);
+  Color get shimmerBase => surfaceVariant;
+  Color get shimmerHighlight => identical(this, light)
+      ? const Color(0xFFE6E6E6)
+      : const Color(0xFF333333);
+  Color get errorColor => identical(this, light)
+      ? const Color(0xFFCC0000)
+      : const Color(0xFFFF6B6B);
+  static const badgeBg = thumbnailBadge;
+  static const badgeFg = white;
+  static const scrim = Color(0x66000000);
 
   final Color background,
       surface,

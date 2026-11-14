@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_sizes.dart';
+import '../../theme/app_text_styles.dart';
 
 /// Normalizes protocol-relative URLs and optimizes avatar size parameters.
 String normalizeAvatarUrl(String url, {int size = 96}) {
@@ -48,11 +49,7 @@ class ChannelAvatar extends StatelessWidget {
       backgroundColor: colors.surfaceVariant,
       child: Text(
         letter.isNotEmpty ? letter : '?',
-        style: TextStyle(
-          fontSize: size * 0.45,
-          fontWeight: FontWeight.w600,
-          color: colors.textPrimary,
-        ),
+        style: AppTextStyles.bodyStrong.copyWith(color: colors.textSecondary),
       ),
     );
 

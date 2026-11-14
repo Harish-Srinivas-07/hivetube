@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 abstract final class AppRadius {
   static const double none = 0,
+      sheetHandle = 2,
       xs = 4,
       sm = 8,
       md = 12,

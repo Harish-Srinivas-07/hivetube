@@ -6,8 +6,7 @@ import '../../core/providers.dart';
 import '../home/home_controller.dart';
 import '../home/home_screen.dart';
 import '../home/home_variety.dart';
-import '../../theme/app_radius.dart';
-import '../../theme/app_sizes.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../watch/mini_player_inset.dart';
@@ -33,9 +32,14 @@ class SettingsScreen extends ConsumerWidget {
               onPressed: () => Navigator.pop(dialogContext, false),
               label: 'Cancel',
             ),
-            AppButton.filled(
+            TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              label: 'Clear database',
+              child: Text(
+                'Clear',
+                style: AppTextStyles.buttonLabel.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
             ),
           ],
         ),
@@ -59,51 +63,40 @@ class SettingsScreen extends ConsumerWidget {
       String current,
       Future<void> Function(String) update,
     ) async {
-      final chosen = await showModalBottomSheet<String>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: theme.colorScheme.surface,
-        shape: const RoundedRectangleBorder(
-          borderRadius: AppRadius.sheetTopBorder,
-        ),
-        builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height:
-                MediaQuery.sizeOf(context).height *
-                AppSpacing.contentRegionPickerHeightFactor,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      var selected = current;
+      await showAppSheet<void>(
+        context,
+        title: title,
+        builder: (sheetContext, scrollController) => StatefulBuilder(
+          builder: (context, setSheetState) => RadioGroup<String>(
+            groupValue: selected,
+            onChanged: (value) async {
+              if (value == null) return;
+              setSheetState(() => selected = value);
+              await update(value);
+              await Future<void>.delayed(AppMotion.imageFade);
+              if (sheetContext.mounted) Navigator.pop(sheetContext);
+            },
+            child: ListView(
+              controller: scrollController,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                  ),
-                  child: Text(title, style: theme.textTheme.titleLarge),
-                ),
-                Expanded(
-                  child: RadioGroup<String>(
-                    groupValue: current,
-                    onChanged: (value) => Navigator.pop(sheetContext, value),
-                    child: ListView(
-                      children: [
-                        for (final entry in values.entries)
-                          RadioListTile<String>(
-                            value: entry.key,
-                            title: Text(entry.value),
-                          ),
-                      ],
+                for (final entry in values.entries)
+                  RadioListTile<String>(
+                    value: entry.key,
+                    title: Text(
+                      entry.value,
+                      style: AppTextStyles.settingsTitle,
                     ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    controlAffinity: ListTileControlAffinity.trailing,
                   ),
-                ),
               ],
             ),
           ),
         ),
       );
-      if (chosen != null) await update(chosen);
     }
 
     Future<void> pickLanguages(
@@ -111,76 +104,54 @@ class SettingsScreen extends ConsumerWidget {
       Set<String> selected,
       bool hidden,
     ) async {
-      final result = await showModalBottomSheet<Set<String>>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: theme.colorScheme.surface,
-        shape: const RoundedRectangleBorder(
-          borderRadius: AppRadius.sheetTopBorder,
-        ),
-        builder: (sheetContext) {
-          final draft = selected.toSet();
-          return StatefulBuilder(
-            builder: (context, setDialogState) => SafeArea(
-              child: SizedBox(
-                height:
-                    MediaQuery.sizeOf(context).height *
-                    AppSpacing.contentRegionPickerHeightFactor,
-                child: Column(
+      final draft = selected.toSet();
+      final result = await showAppSheet<Set<String>>(
+        context,
+        title: title,
+        builder: (sheetContext, scrollController) => StatefulBuilder(
+          builder: (context, setDialogState) => Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.lg,
-                        AppSpacing.lg,
-                        AppSpacing.lg,
-                        AppSpacing.sm,
+                    for (final option in contentLanguageOptions.entries)
+                      CheckboxListTile(
+                        title: Text(
+                          option.value,
+                          style: AppTextStyles.settingsTitle,
+                        ),
+                        value: draft.contains(option.key),
+                        onChanged: (value) => setDialogState(() {
+                          if (value == true) {
+                            draft.add(option.key);
+                          } else {
+                            draft.remove(option.key);
+                          }
+                        }),
                       ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(title, style: theme.textTheme.titleLarge),
-                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AppButton.text(
+                      label: 'Cancel',
+                      onPressed: () => Navigator.pop(sheetContext),
                     ),
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          for (final option in contentLanguageOptions.entries)
-                            CheckboxListTile(
-                              dense: true,
-                              title: Text(option.value),
-                              value: draft.contains(option.key),
-                              onChanged: (value) => setDialogState(() {
-                                if (value == true) {
-                                  draft.add(option.key);
-                                } else {
-                                  draft.remove(option.key);
-                                }
-                              }),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(sheetContext),
-                            child: const Text('Cancel'),
-                          ),
-                          AppButton.tonal(
-                            onPressed: () => Navigator.pop(sheetContext, draft),
-                            label: 'Save',
-                          ),
-                        ],
-                      ),
+                    AppButton.tonal(
+                      label: 'Save',
+                      onPressed: () => Navigator.pop(sheetContext, draft),
                     ),
                   ],
                 ),
               ),
-            ),
-          );
-        },
+            ],
+          ),
+        ),
       );
       if (result == null || result.isEmpty) return;
       final controller = ref.read(contentPrefsProvider.notifier);
@@ -199,14 +170,8 @@ class SettingsScreen extends ConsumerWidget {
         AppSpacing.lg,
         AppSpacing.xl,
         AppSpacing.lg,
-        AppSpacing.xs,
+        AppSpacing.sm,
       ),
-    );
-
-    Widget leadingIcon(IconData icon) => Icon(
-      icon,
-      size: AppSizes.icon,
-      color: theme.colorScheme.onSurfaceVariant,
     );
 
     Widget settingTile({
@@ -214,26 +179,10 @@ class SettingsScreen extends ConsumerWidget {
       required String title,
       String? subtitle,
       required VoidCallback onTap,
-    }) => ListTile(
-      leading: leadingIcon(icon),
-      title: Text(title, style: theme.textTheme.titleSmall),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-      trailing: Icon(
-        LucideIcons.chevronRight,
-        size: AppSizes.iconSm,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      minTileHeight: AppSizes.settingsRowHeight,
+    }) => SettingsTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
       onTap: onTap,
     );
 
@@ -243,20 +192,12 @@ class SettingsScreen extends ConsumerWidget {
       required String subtitle,
       required bool value,
       required ValueChanged<bool> onChanged,
-    }) => ListTile(
-      leading: leadingIcon(icon),
-      title: Text(title, style: theme.textTheme.titleSmall),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-      trailing: Switch(value: value, onChanged: onChanged),
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      minTileHeight: AppSizes.settingsRowHeight,
+    }) => SettingsTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      value: value,
+      onChanged: onChanged,
     );
 
     return Scaffold(
@@ -335,30 +276,43 @@ class SettingsScreen extends ConsumerWidget {
                   .read(contentPrefsProvider.notifier)
                   .update(strictHome: value),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.sm,
-                AppSpacing.lg,
-                AppSpacing.xs,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Local content share · ${(settings.localRatio * 100).round()}%',
-                    style: theme.textTheme.titleSmall,
+            settingTile(
+              icon: LucideIcons.slidersHorizontal,
+              title: 'Home content mix',
+              subtitle: '${(settings.localRatio * 100).round()}% local content',
+              onTap: () {
+                var ratio = settings.localRatio;
+                showAppSheet<void>(
+                  context,
+                  title: 'Home content mix',
+                  fit: true,
+                  builder: (sheetContext, _) => StatefulBuilder(
+                    builder: (context, setSheetState) => Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${(ratio * 100).round()}% local content',
+                            style: AppTextStyles.settingsTitle,
+                          ),
+                          Slider(
+                            value: ratio,
+                            divisions: 10,
+                            label: '${(ratio * 100).round()}%',
+                            onChanged: (value) {
+                              setSheetState(() => ratio = value);
+                              ref
+                                  .read(contentPrefsProvider.notifier)
+                                  .update(localRatio: value);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  Slider(
-                    value: settings.localRatio,
-                    divisions: 10,
-                    label: '${(settings.localRatio * 100).round()}%',
-                    onChanged: (value) => ref
-                        .read(contentPrefsProvider.notifier)
-                        .update(localRatio: value),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
             section('Playback'),
             switchTile(
@@ -369,7 +323,7 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(contentPrefsProvider.notifier).setAutoplay(value),
             ),
-            section('Privacy'),
+            section('Privacy & data'),
             FutureBuilder<String?>(
               future: ref.watch(dbProvider).getValue('history_enabled'),
               builder: (ctx, snap) {
@@ -406,7 +360,6 @@ class SettingsScreen extends ConsumerWidget {
                 );
               },
             ),
-            section('Data'),
             settingTile(
               icon: LucideIcons.trash2,
               title: 'Clear app database',

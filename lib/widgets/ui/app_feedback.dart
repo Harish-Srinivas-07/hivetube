@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../../features/watch/mini_player_inset.dart';
 
 /// Single snackbar helper. Call anywhere via AppSnackbar.show(context, ...).
 abstract final class AppSnackbar {
@@ -11,19 +15,37 @@ abstract final class AppSnackbar {
     String? actionLabel,
     VoidCallback? onAction,
     bool isError = false,
-    Duration duration = AppMotion.slow,
+    Duration duration = AppMotion.snackbar,
   }) {
-    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final snackbarBg = isDark
+        ? AppColors.snackbarDark
+        : AppColors.snackbarLight;
+    final snackbarFg = isDark ? AppColors.black : AppColors.white;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(
+          message,
+          style: AppTextStyles.body.copyWith(color: snackbarFg),
+        ),
         duration: duration,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(AppSpacing.md),
+        margin: EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md + MiniPlayerInset.of(context),
+        ),
         shape: const RoundedRectangleBorder(borderRadius: AppRadius.smBorder),
-        backgroundColor: isError ? cs.error : null,
+        backgroundColor: snackbarBg,
+        elevation: 0,
+        width: AppSizes.snackbarMaxWidth,
         action: (actionLabel != null && onAction != null)
-            ? SnackBarAction(label: actionLabel, onPressed: onAction)
+            ? SnackBarAction(
+                label: actionLabel,
+                textColor: snackbarFg,
+                onPressed: onAction,
+              )
             : null,
       ),
     );
@@ -32,20 +54,3 @@ abstract final class AppSnackbar {
   static void showError(BuildContext context, String message) =>
       show(context, message, isError: true);
 }
-
-/// Standard section divider (hairline, no leading/trailing space).
-class AppDivider extends StatelessWidget {
-  const AppDivider({super.key, this.indent = 0});
-  final double indent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      thickness: AppSpacing.borderWidth,
-      indent: indent,
-      color: Theme.of(context).colorScheme.outlineVariant,
-    );
-  }
-}
-

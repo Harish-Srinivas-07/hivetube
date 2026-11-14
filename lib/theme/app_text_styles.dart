@@ -1,6 +1,56 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppTextStyles {
+  static const watchTitle = TextStyle(
+    fontSize: 16,
+    height: 22 / 16,
+    fontWeight: FontWeight.w500,
+  );
+  static const pageTitle = TextStyle(
+    fontSize: 20,
+    height: 28 / 20,
+    fontWeight: FontWeight.w600,
+  );
+  static const sectionTitle = TextStyle(
+    fontSize: 18,
+    height: 24 / 18,
+    fontWeight: FontWeight.w600,
+  );
+  static const videoTitle = TextStyle(
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
+  );
+  static const bodyStrong = TextStyle(
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
+  );
+  static const meta = TextStyle(
+    fontSize: 12,
+    height: 16 / 12,
+    fontWeight: FontWeight.w400,
+  );
+  static const subscriptionChannelSelected = TextStyle(
+    fontSize: 12,
+    height: 16 / 12,
+    fontWeight: FontWeight.w600,
+  );
+  static const badge = TextStyle(
+    fontSize: 12,
+    height: 16 / 12,
+    fontWeight: FontWeight.w500,
+  );
+  static const settingsTitle = TextStyle(
+    fontSize: 16,
+    height: 24 / 16,
+    fontWeight: FontWeight.w400,
+  );
+  static const settingsSub = TextStyle(
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w400,
+  );
   static const feedTitle = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w500,
@@ -52,10 +102,9 @@ abstract final class AppTextStyles {
     fontVariations: [FontVariation('wght', 500)],
   );
   static const body = TextStyle(
-    fontFamily: 'Manrope',
     fontSize: 14,
-    fontWeight: FontWeight.w500,
-    fontVariations: [FontVariation('wght', 500)],
+    height: 20 / 14,
+    fontWeight: FontWeight.w400,
   );
   static const bodySmall = TextStyle(
     fontFamily: 'Manrope',
@@ -70,21 +119,18 @@ abstract final class AppTextStyles {
     fontVariations: [FontVariation('wght', 600)],
   );
   static const chipLabel = TextStyle(
-    fontFamily: 'Manrope',
-    fontSize: 13,
-    fontWeight: FontWeight.w600,
-    fontVariations: [FontVariation('wght', 600)],
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
   );
   static const buttonLabel = TextStyle(
-    fontFamily: 'Manrope',
     fontSize: 14,
-    fontWeight: FontWeight.w600,
-    fontVariations: [FontVariation('wght', 600)],
+    height: 20 / 14,
+    fontWeight: FontWeight.w500,
   );
   static const caption = TextStyle(
-    fontFamily: 'Manrope',
     fontSize: 11,
-    fontWeight: FontWeight.w500,
-    fontVariations: [FontVariation('wght', 500)],
+    height: 16 / 11,
+    fontWeight: FontWeight.w400,
   );
 }
