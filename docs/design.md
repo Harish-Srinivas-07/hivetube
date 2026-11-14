@@ -284,6 +284,7 @@ States: loading=header skeleton (circle 72 + bars) + tab body skeleton | error=E
 Behavior: subscribe toggles local subscription + optimistic UI; notification bell sheet (All/Personalized/None) when subscribed.
 
 ### 5.6 LIBRARY (tab 3, "You")
+Library gutter = 16, applies to the header, shelves, rows
 Layout top->bottom:
  1. Header row pad 16: avatar 72 (local profile) | 16 | Column(name pageTitle, "N videos watched · M playlists" meta). Below (pad T12): chips-style tonal buttons row: "Edit profile", "Backup" AppButton.tonal (height 36, pill). Settings gear 48 in top bar right.
  2. History shelf: SectionHeader("History","View all") -> horizontal list of cards (thumb 160x90 radius 8? use radius 12, title 13 max2, meta 12 max1; width 160) gap 12 pad L12. Empty: EmptyState compact (icon + "Videos you watch will show here"), no button.
