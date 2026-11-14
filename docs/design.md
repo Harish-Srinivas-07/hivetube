@@ -94,8 +94,8 @@ Rules:
 ## 3. GLOBAL LAYOUT
 - Root tabs (bottom nav, 4): Home, Shorts, Subscriptions, Library. Search is an icon in the top bar. Settings via Library.
 - Bottom nav: flat bar, bg=background, no top border, no glass/blur, 56 + safe area. Item: icon 24 + label 11. Selected = onSurface filled icon, unselected = onSurfaceVariant outline icon. Selection change = icon swap, no animation beyond fade.
-- Mini player: sits directly above bottom nav, height 56, bg=surfaceVariant, flat. Contents: thumb 16:9 (100x56) | title 14 w500 1 line + channel 12 meta | play/pause 48 | close 48. Thin red progress line 2px at top edge. Tap => expand to watch panel. Swipe down/ close => dismiss.
-- Scroll bottom padding on every root screen = bottomNav + (miniPlayerVisible ? miniPlayerH : 0) + safeArea + lg. Applied ONCE (use SliverBottomInset; do not add an extra spacer).
+- Mini player: floating, draggable, width 55% of screen, 16:9, radius 12, flat (no shadow, no border). Snaps to the 4 corners (default bottom-right), clears the bottom nav and safe area. Tap or swipe up expands the watch panel. Controls: play/pause top-left, close top-right, each 40x40 on a black@60% circle, icon 16 white. 2px primary progress line on the bottom edge. Position persists for the session. Swipe is blocked while dragging.
+- Scroll bottom padding on every root screen = bottomNav + safeArea + lg. The floating mini player does not add bottom padding. Applied ONCE (use SliverBottomInset; do not add an extra spacer).
 - Status bar: transparent, icon brightness follows theme. Watch fullscreen hides system UI.
 - Pull-to-refresh on Home, Subscriptions, Library lists, Channel, Search results (not Shorts, not Watch). Indicator color = onSurface, bg = surface.
 - Tab re-tap (tabRefreshProvider): scroll to top first; if already at top, refresh.
@@ -316,10 +316,9 @@ States: loading=skeleton strip + FeedSkeleton | empty (no subs)=EmptyState("No s
 
 ### 5.9 HISTORY (/history)
 TopBar: back, title "History", search 48 (filter local), more (Clear all, Pause history).
-Optional ChipBar (All, Videos, Shorts).
 Body: grouped by day: header sectionTitle 16 ("Today", "Yesterday", "Mon, Nov 10") pad L12 T16 B8; rows = VideoCard compact with watched progress bar; trailing 3-dot (Remove from history, Add to playlist, Share).
 Swipe to dismiss row = remove (snackbar "Removed from history" + Undo).
-Shorts entries rendered as compact with 9:16 thumb 64x114? keep compact 16:9 box with cover crop; badge "Shorts".
+No Shorts distinction: isShort is not persisted. All entries render as compact rows.
 States: loading=compact skeletons | empty=EmptyState("No watch history", "Videos you watch will appear here") | paused banner (InlineBanner "Watch history is paused", action "Turn on").
 Perf: paged from DB (limit 50, load more at end), grouped lazily.
 

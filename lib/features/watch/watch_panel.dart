@@ -246,14 +246,9 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   Future<void> _start(String id, PlaybackService? service) async {
     if (service == null) {
-      debugPrint('[PAUSEDBG] _start id=$id service=null');
       return;
     }
     final isAlreadyLoaded = _started == id && identical(_active, service);
-    debugPrint(
-      '[PAUSEDBG] _start id=$id loaded=$isAlreadyLoaded '
-      'status=${service.state.status}',
-    );
     if (isAlreadyLoaded) {
       // This callback is scheduled after every WatchPanel build. Re-entering
       // resume here undoes a user pause when playback state rebuilds the panel.

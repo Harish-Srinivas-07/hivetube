@@ -1202,13 +1202,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                             color: AppColors.shortsForeground,
                                             iconSize: 36,
                                             onPressed: () async {
-                                              debugPrint(
-                                                '[PAUSEDBG] player button '
-                                                'pressed status=${service.state.status} '
-                                                'playing=${service.state.playing} '
-                                                'panelMode=${ui.panelMode} '
-                                                'overlayVisible=${ui.overlayVisible}',
-                                              );
                                               await service.togglePlay();
                                               if (mounted) _scheduleHide();
                                             },
