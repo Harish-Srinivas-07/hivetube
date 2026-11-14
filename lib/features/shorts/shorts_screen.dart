@@ -319,6 +319,11 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     unawaited(service.preloadShort(nextId, generation: preloadGeneration));
   }
 
+  void _cancelShortPreloads() {
+    playbackGeneration++;
+    active?.cancelShortPreloads(disposePlayer: true);
+  }
+
   void _updateActiveShortMetadata(ShortItem item) {
     final handler = ref.read(audioHandlerProvider);
     if (handler == null) return;
@@ -506,20 +511,43 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
                             physics: const ClampingScrollPhysics(
                               parent: AlwaysScrollableScrollPhysics(),
                             ),
-                            itemCount: items.length,
+                            itemCount:
+                                items.length + (failed || loading ? 1 : 0),
                             onPageChanged: (index) {
                               setState(() => currentIndex = index);
-                              _updateActiveShortMetadata(items[index]);
-                              _playCurrent(service);
+                              if (index < items.length) {
+                                _updateActiveShortMetadata(items[index]);
+                                _playCurrent(service);
+                              } else {
+                                _cancelShortPreloads();
+                                unawaited(service?.setVisible(false));
+                              }
                               if (index >= items.length - 3 && cursor != null) {
                                 _load();
                               }
                             },
                             itemBuilder: (context, index) {
+                              if (index == items.length) {
+                                return Center(
+                                  child: failed
+                                      ? AppErrorState(
+                                          message: 'Unable to load Shorts',
+                                          onRetry: _load,
+                                        )
+                                      : const SizedBox.square(
+                                          dimension: AppSizes.iconLg,
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                );
+                              }
                               final item = items[index];
+                              final metadata = ref
+                                  .watch(shortMetadataProvider(item.id))
+                                  .value;
                               return _ShortPage(
                                 key: ValueKey(item.id),
                                 item: item,
+                                metadata: metadata,
                                 service: index == currentIndex ? service : null,
                                 muted: muted,
                                 reaction: ref.read(
@@ -547,12 +575,14 @@ class _ShortPage extends ConsumerStatefulWidget {
   const _ShortPage({
     super.key,
     required this.item,
+    required this.metadata,
     required this.service,
     required this.muted,
     required this.reaction,
     required this.onMute,
   });
   final ShortItem item;
+  final ShortItem? metadata;
   final PlaybackService? service;
   final bool muted;
   final _ShortReactionController reaction;
@@ -817,7 +847,7 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   Widget build(BuildContext context) {
     final service = widget.service;
     final state = service?.state;
-    final metadata = ref.watch(shortMetadataProvider(widget.item.id)).value;
+    final metadata = widget.metadata;
     final name = metadata?.channelName ?? widget.item.channelName;
     final title = metadata?.title ?? widget.item.title;
     final avatar = metadata?.channelAvatarUrl ?? widget.item.channelAvatarUrl;
@@ -826,8 +856,14 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
         ? false
         : ref.watch(_channelSubscriptionProvider(channelId)).value ?? false;
     final isSubscribed = _subscriptionOverride ?? subscription;
+    final wide =
+        MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
     final safe = MediaQuery.paddingOf(context);
-    final bottom = safe.bottom + AppSpacing.navHeight + AppSpacing.md;
+    final bottom =
+        safe.bottom +
+        (wide
+            ? AppSpacing.lg
+            : AppSpacing.navHeight + AppSpacing.lg + AppSpacing.lg);
     final duration = state?.duration.inMilliseconds ?? 0;
     final played = duration > 0
         ? (state!.position.inMilliseconds / duration).clamp(0.0, 1.0)
@@ -1012,9 +1048,8 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
           ),
         ),
         Positioned(
-          right: AppSpacing.md,
-          top: safe.top + AppSizes.touchMin,
-          bottom: safe.bottom + AppSpacing.navHeight + AppSpacing.xxxl * 2,
+          right: AppSpacing.sm,
+          bottom: bottom + AppSpacing.xxxl,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
             child: SingleChildScrollView(
@@ -1080,9 +1115,9 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
           ),
         ),
         Positioned(
-          left: AppSpacing.md,
-          right: AppSpacing.shortsRailWidth + AppSpacing.md,
-          bottom: safe.bottom + AppSpacing.navHeight + AppSpacing.md,
+          left: AppSpacing.lg,
+          right: AppSpacing.shortsRailWidth + AppSpacing.lg,
+          bottom: bottom + AppSpacing.xxl,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
             child: Column(
@@ -1177,7 +1212,7 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
         Positioned(
           left: 0,
           right: 0,
-          bottom: safe.bottom + AppSpacing.navHeight,
+          bottom: 0,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final currentPlayed = _scrubbing ? _scrubFraction : played;
