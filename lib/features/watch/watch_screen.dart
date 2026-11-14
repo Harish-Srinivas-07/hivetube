@@ -11,6 +11,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/playback/player_ui_state.dart';
+import '../../core/playback/session_queue.dart';
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
@@ -29,6 +30,7 @@ import '../../widgets/player/player_controls.dart';
 import '../../widgets/video_options_menu.dart';
 import 'watch_panel.dart';
 import 'watch_rules.dart';
+import 'queue_sheet.dart';
 import '../home/home_variety.dart';
 import '../playlist/save_to_playlist_sheet.dart';
 import '../../core/db/app_db.dart';
@@ -85,7 +87,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   final previous = <String>[];
   final finished = <String>{};
   final reactions = <String, int>{};
-  final queue = <VideoItem>[];
   final extra = <VideoItem>[];
   String? continuation;
   bool paging = false;
@@ -361,6 +362,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     debugPrint(
       '[WatchRelated] fetched=${relatedCandidates.length}, kept=${related.length}',
     );
+    final queueEntries = ref.watch(sessionQueueProvider);
+    final queue = queueEntries.map((entry) => entry.video).toList();
     final next = selectUpNext(
       queue: queue,
       related: related,
@@ -382,8 +385,24 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         setState(() => seconds--);
         if (seconds <= 0) {
           timer.cancel();
-          if (queue.isNotEmpty && queue.first.id == next.id) queue.removeAt(0);
-          _open(next.id);
+          final currentQueue = ref
+              .read(sessionQueueProvider)
+              .map((entry) => entry.video)
+              .toList();
+          final target = selectUpNext(
+            queue: currentQueue,
+            related: related,
+            finished: finished,
+            currentId: id,
+          );
+          if (target == null) {
+            countdownFor = null;
+            return;
+          }
+          if (currentQueue.isNotEmpty && currentQueue.first.id == target.id) {
+            ref.read(sessionQueueProvider.notifier).takeNext();
+          }
+          _open(target.id);
         }
       });
     }
@@ -412,7 +431,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         ? null
                         : () {
                             if (queue.isNotEmpty && queue.first.id == next.id) {
-                              queue.removeAt(0);
+                              ref
+                                  .read(sessionQueueProvider.notifier)
+                                  .takeNext();
                             }
                             _open(next.id);
                           },
@@ -900,12 +921,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     _action(
                       LucideIcons.listVideo,
                       'Queue',
-                      () => _openPanel(
-                        'Queue',
-                        info,
-                        related,
-                        heavyContentReady: heavyContentReady,
-                        wide: wide,
+                      () => showQueueSheet(
+                        context,
+                        current: VideoItem(
+                          id: info.id,
+                          title: info.title,
+                          channelId: info.channelId,
+                          channelName: info.channelName,
+                          thumbUrl: info.thumbnail,
+                        ),
+                        onPlay: _open,
                       ),
                     ),
                   ],
@@ -1161,8 +1186,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     onPressed: () => showVideoOptionsMenu(
       context,
       videoId: item.id,
-      onPlayNext: () => setState(() => queue.insert(0, item)),
-      onAddToQueue: () => setState(() => queue.add(item)),
+      ref: ref,
+      video: item,
+      media: MediaCompanion.insert(
+        videoId: item.id,
+        title: item.title,
+        channelId: item.channelId,
+        channelName: item.channelName,
+        thumbUrl: item.thumbUrl,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
     ),
   );
   Widget _panel(
@@ -1279,25 +1312,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         ),
       ],
     ),
-    'Queue' => ListView(
-      controller: scrollController,
-      children: [
-        ListTile(title: const Text('Now playing'), subtitle: Text(info.title)),
-        for (final item in queue)
-          ListTile(
-            title: Text(item.title),
-            subtitle: Text(item.channelName),
-            onTap: () {
-              queue.remove(item);
-              _open(item.id);
-            },
-            trailing: IconButton(
-              icon: const Icon(LucideIcons.x),
-              onPressed: () => setState(() => queue.remove(item)),
-            ),
-          ),
-      ],
-    ),
+    'Queue' => const SizedBox.shrink(),
     'Description' => const Center(child: CircularProgressIndicator()),
     'Comments' when heavyContentReady =>
       info.commentsToken == null

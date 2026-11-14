@@ -6,7 +6,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/db/app_db.dart';
+import '../core/playback/session_queue.dart';
 import '../core/providers.dart';
+import '../core/yt/models.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
 import 'sheets/app_sheet.dart';
 import 'ui/app_feedback.dart';
@@ -20,7 +22,25 @@ Future<void> showVideoOptionsMenu(
   bool onVideo = false,
   WidgetRef? ref,
   MediaCompanion? media,
+  VideoItem? video,
 }) async {
+  final queueController = ref?.read(sessionQueueProvider.notifier);
+  final playNext =
+      onPlayNext ??
+      (queueController != null && video != null
+          ? () {
+              queueController.playNext(video, media: media);
+              AppSnackbar.show(context, 'Will play next');
+            }
+          : null);
+  final addToQueue =
+      onAddToQueue ??
+      (queueController != null && video != null
+          ? () {
+              queueController.add(video, media: media);
+              AppSnackbar.show(context, 'Added to queue');
+            }
+          : null);
   final action = await showAppSheet<String>(
     context,
     fit: true,
@@ -28,13 +48,13 @@ Future<void> showVideoOptionsMenu(
     builder: (sheetContext, _) => ListView(
       shrinkWrap: true,
       children: [
-        if (onPlayNext != null)
+        if (playNext != null)
           AppSheetRow(
             icon: LucideIcons.listStart,
             label: 'Play next',
             onTap: () => Navigator.pop(sheetContext, 'next'),
           ),
-        if (onAddToQueue != null)
+        if (addToQueue != null)
           AppSheetRow(
             icon: LucideIcons.listPlus,
             label: 'Add to queue',
@@ -66,9 +86,9 @@ Future<void> showVideoOptionsMenu(
   if (!context.mounted || action == null) return;
   switch (action) {
     case 'next':
-      onPlayNext?.call();
+      playNext?.call();
     case 'queue':
-      onAddToQueue?.call();
+      addToQueue?.call();
     case 'save_playlist':
       await showSaveToPlaylistSheet(context, videoId: videoId, media: media);
     case 'watch_later':

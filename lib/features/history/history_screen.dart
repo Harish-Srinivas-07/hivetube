@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/db/app_db.dart';
+import '../../core/playback/session_queue.dart';
 import '../../core/providers.dart';
 import '../../core/yt/models.dart';
 import '../../theme/app_radius.dart';
@@ -213,6 +214,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         shrinkWrap: true,
         children: [
           AppSheetRow(
+            icon: LucideIcons.listStart,
+            label: 'Play next',
+            onTap: () => Navigator.of(sheetContext).pop('next'),
+          ),
+          AppSheetRow(
+            icon: LucideIcons.listPlus,
+            label: 'Add to queue',
+            onTap: () => Navigator.of(sheetContext).pop('queue'),
+          ),
+          AppSheetRow(
             icon: LucideIcons.trash2,
             label: 'Remove from history',
             onTap: () => Navigator.of(sheetContext).pop('remove'),
@@ -232,6 +243,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case 'next':
+        ref.read(sessionQueueProvider.notifier).playNext(_toVideo(item));
+        AppSnackbar.show(context, 'Will play next');
+        break;
+      case 'queue':
+        ref.read(sessionQueueProvider.notifier).add(_toVideo(item));
+        AppSnackbar.show(context, 'Added to queue');
+        break;
       case 'remove':
         await _removeItem(item);
         break;

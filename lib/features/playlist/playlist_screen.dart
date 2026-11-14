@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/db/app_db.dart';
+import '../../core/playback/session_queue.dart';
 import '../../core/providers.dart';
 import '../../core/yt/models.dart';
 import '../../features/watch/mini_player_inset.dart';
@@ -20,6 +21,7 @@ import '../../theme/app_text_styles.dart';
 import '../../widgets/common/common.dart';
 import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/ui/app_controls.dart';
+import '../../widgets/ui/app_feedback.dart';
 import 'save_to_playlist_sheet.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
@@ -331,6 +333,16 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
       builder: (sheetContext, _) => ListView(
         shrinkWrap: true,
         children: [
+          AppSheetRow(
+            icon: LucideIcons.listStart,
+            label: 'Play next',
+            onTap: () => Navigator.of(sheetContext).pop('next'),
+          ),
+          AppSheetRow(
+            icon: LucideIcons.listPlus,
+            label: 'Add to queue',
+            onTap: () => Navigator.of(sheetContext).pop('queue'),
+          ),
           if (_isLocal)
             AppSheetRow(
               icon: LucideIcons.listMinus,
@@ -360,6 +372,18 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case 'next':
+        ref
+            .read(sessionQueueProvider.notifier)
+            .playNext(video, media: _mediaCompanion(video));
+        AppSnackbar.show(context, 'Will play next');
+        break;
+      case 'queue':
+        ref
+            .read(sessionQueueProvider.notifier)
+            .add(video, media: _mediaCompanion(video));
+        AppSnackbar.show(context, 'Added to queue');
+        break;
       case 'remove':
         await _removeItem(_videos.indexOf(video));
         break;

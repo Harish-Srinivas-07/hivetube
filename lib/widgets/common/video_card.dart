@@ -301,6 +301,7 @@ class _FeedCard extends StatelessWidget {
                           context,
                           videoId: video.id,
                           ref: ref,
+                          video: video,
                           media: MediaCompanion.insert(
                             videoId: video.id,
                             title: video.title,
@@ -536,6 +537,7 @@ class _SearchResultCard extends StatelessWidget {
                       context,
                       videoId: video.id,
                       ref: ref,
+                      video: video,
                       media: MediaCompanion.insert(
                         videoId: video.id,
                         title: video.title,
