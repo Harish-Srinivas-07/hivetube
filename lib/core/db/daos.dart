@@ -668,7 +668,7 @@ class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMi
           .map((r) => r.query)
           .toList();
 
-  Future<void> addSearch(String query, {String scope = 'yt'}) =>
+  Future<void> saveSearchTerm(String query, {String scope = 'yt'}) =>
       into(searchHistory).insertOnConflictUpdate(
         SearchHistoryCompanion.insert(
           query: query,
@@ -676,6 +676,9 @@ class SearchHistoryDao extends DatabaseAccessor<AppDb> with _$SearchHistoryDaoMi
           at: DateTime.now().millisecondsSinceEpoch,
         ),
       );
+
+  Future<void> addSearch(String query, {String scope = 'yt'}) =>
+      saveSearchTerm(query, scope: scope);
 
   Future<void> removeSearch(String query, {String scope = 'yt'}) =>
       (delete(searchHistory)

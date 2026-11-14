@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -19,8 +20,9 @@ import '../../theme/app_spacing.dart';
 import '../../widgets/ui/ui.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key, this.initialQuery});
+  const SearchScreen({super.key, this.initialQuery, this.suggestionSource});
   final String? initialQuery;
+  final SearchSuggestionSource? suggestionSource;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -29,28 +31,28 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final input = TextEditingController();
   final scroll = ScrollController();
-  late final YoutubeSearchSuggestionSource suggestionSource;
+  late final SearchSuggestionSource suggestionSource;
   late final SearchSuggestionController suggestionController;
   List<SearchResultItem> results = [];
   List<SearchFilterChip> filterChips = [];
   String? activeFilterParam;
   String? continuation;
   String activeQuery = '';
+  Object? searchError;
+  Object? loadMoreError;
   bool searching = false, loadingMore = false, showHidden = false;
-
-  List<String> get suggestions => suggestionController.suggestions;
-  bool get loadingSuggestions => suggestionController.isLoading;
 
   @override
   void initState() {
     super.initState();
     final prefs = ref.read(contentPrefsProvider);
-    suggestionSource = YoutubeSearchSuggestionSource(
-      hl: 'en',
-      gl: prefs.gl == 'AUTO' ? '' : prefs.gl,
-    );
-    suggestionController = SearchSuggestionController(source: suggestionSource)
-      ..addListener(_onSuggestionsChanged);
+    suggestionSource =
+        widget.suggestionSource ??
+        YoutubeSearchSuggestionSource(
+          hl: 'en',
+          gl: prefs.gl == 'AUTO' ? '' : prefs.gl,
+        );
+    suggestionController = SearchSuggestionController(source: suggestionSource);
     scroll.addListener(() {
       if (scroll.position.extentAfter < 400) unawaited(loadMore());
     });
@@ -64,17 +66,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
-    suggestionController
-      ..removeListener(_onSuggestionsChanged)
-      ..dispose();
+    suggestionController.dispose();
     suggestionSource.dispose();
     input.dispose();
     scroll.dispose();
     super.dispose();
-  }
-
-  void _onSuggestionsChanged() {
-    if (mounted) setState(() {});
   }
 
   void queryChanged(String value) {
@@ -86,6 +82,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       continuation = null;
       activeQuery = '';
       showHidden = false;
+      searchError = null;
+      loadMoreError = null;
     });
   }
 
@@ -102,7 +100,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       continuation = null;
       searching = true;
       showHidden = false;
+      searchError = null;
+      loadMoreError = null;
     });
+    try {
+      await ref.read(dbProvider).searchHistoryDao.saveSearchTerm(normalized);
+    } catch (error, stackTrace) {
+      dev.log(
+        'Failed to save search term "$normalized"',
+        name: 'SearchScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted && activeQuery == normalized) {
+        setState(() => searchError = error);
+      }
+    }
     try {
       final api = await ref.read(ytApiProvider.future);
       final page = await api.search.search(normalized, params: filterParam);
@@ -114,9 +127,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           filterChips = page.filters;
         }
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      dev.log(
+        'Search request failed for "$normalized"',
+        name: 'SearchScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted && activeQuery == normalized) {
-        setState(() => continuation = null);
+        setState(() {
+          continuation = null;
+          searchError = error;
+        });
       }
     } finally {
       if (mounted && activeQuery == normalized) {
@@ -129,7 +151,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final token = continuation;
     final query = activeQuery;
     if (token == null || query.isEmpty || loadingMore || searching) return;
-    setState(() => loadingMore = true);
+    setState(() {
+      loadingMore = true;
+      loadMoreError = null;
+    });
     try {
       final api = await ref.read(ytApiProvider.future);
       final page = await api.search.search(
@@ -142,12 +167,95 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         results.addAll(page.items);
         continuation = page.continuation;
       });
-    } catch (_) {
-      if (mounted && activeQuery == query) setState(() => continuation = null);
+    } catch (error, stackTrace) {
+      dev.log(
+        'Loading more search results failed for "$query"',
+        name: 'SearchScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted && activeQuery == query) {
+        setState(() {
+          continuation = null;
+          loadMoreError = error;
+        });
+      }
     } finally {
       if (mounted && activeQuery == query) setState(() => loadingMore = false);
     }
   }
+
+  Widget _buildSuggestionState() {
+    if (input.text.trim().isEmpty || activeQuery.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: suggestionController,
+      builder: (context, _) {
+        if (suggestionController.isLoading) {
+          return const Column(
+            children: [
+              LinearProgressIndicator(minHeight: 2),
+              ListTile(
+                leading: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                title: Text('Loading suggestions…'),
+              ),
+            ],
+          );
+        }
+        if (suggestionController.error != null) {
+          return Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.error_outline),
+                title: const Text('Suggestions unavailable'),
+                subtitle: const Text('Tap to retry or search this text.'),
+                trailing: IconButton(
+                  tooltip: 'Retry suggestions',
+                  onPressed: () => suggestionController.updateQuery(input.text),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              _buildTypedQueryRow(),
+            ],
+          );
+        }
+        if (suggestionController.suggestions.isEmpty) {
+          return Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.search_off),
+                title: const Text('No suggestions found'),
+              ),
+              _buildTypedQueryRow(),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            for (final suggestion in suggestionController.suggestions)
+              ListTile(
+                key: ValueKey('suggestion_$suggestion'),
+                leading: const Icon(LucideIcons.search),
+                title: Text(suggestion),
+                onTap: () => search(suggestion),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTypedQueryRow() => ListTile(
+    key: const ValueKey('searchTypedQueryFallback'),
+    leading: const Icon(LucideIcons.search),
+    title: Text('Search for “${input.text.trim()}”'),
+    onTap: () => search(input.text),
+  );
 
   Widget _buildChannelRow(ChannelItem item) {
     final theme = Theme.of(context);
@@ -213,7 +321,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         ),
         SizedBox(
-          height: 140.0 +
+          height:
+              140.0 +
               AppSpacing.xs +
               MediaQuery.textScalerOf(context).scale(40.0),
           child: ListView.separated(
@@ -354,33 +463,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 child: ListView(
                   controller: scroll,
                   padding: EdgeInsets.only(
-                    bottom: MediaQuery.paddingOf(context).bottom +
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
                         MiniPlayerInset.of(context) +
                         AppSpacing.lg,
                   ),
                   children: [
-                    if (loadingSuggestions)
-                      const LinearProgressIndicator(minHeight: 2),
-
-                    // Suggestions
-                    if (activeQuery.isEmpty)
-                      for (final suggestion in suggestions)
-                        ListTile(
-                          key: ValueKey('suggestion_$suggestion'),
-                          leading: const Icon(LucideIcons.search),
-                          title: Text(suggestion),
-                          onTap: () => search(suggestion),
-                        ),
-                    if (activeQuery.isEmpty &&
-                        input.text.trim().isNotEmpty &&
-                        !loadingSuggestions &&
-                        suggestions.isEmpty)
-                      ListTile(
-                        key: const ValueKey('searchTypedQueryFallback'),
-                        leading: const Icon(LucideIcons.search),
-                        title: Text('Search for “${input.text.trim()}”'),
-                        onTap: () => search(input.text),
-                      ),
+                    _buildSuggestionState(),
 
                     // Loading
                     if (searching) ...[
@@ -430,6 +519,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                       ],
 
+                    if (activeQuery.isNotEmpty &&
+                        !searching &&
+                        searchError != null)
+                      ListTile(
+                        leading: const Icon(Icons.error_outline),
+                        title: const Text('Search failed'),
+                        subtitle: const Text(
+                          'Check your connection and retry.',
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Retry search',
+                          onPressed: () => search(
+                            activeQuery,
+                            filterParam: activeFilterParam,
+                          ),
+                          icon: const Icon(Icons.refresh),
+                        ),
+                      ),
+
                     if (activeQuery.isNotEmpty && !searching && results.isEmpty)
                       const AppEmptyState(
                         icon: LucideIcons.search,
@@ -441,6 +549,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       const Padding(
                         padding: EdgeInsets.all(AppSpacing.md),
                         child: Center(child: CircularProgressIndicator()),
+                      ),
+                    if (loadMoreError != null)
+                      const ListTile(
+                        leading: Icon(Icons.error_outline),
+                        title: Text('Could not load more results'),
                       ),
                   ],
                 ),

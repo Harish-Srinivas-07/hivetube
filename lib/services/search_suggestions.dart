@@ -1,65 +1,11 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-abstract interface class SearchSuggestionSource {
-  Future<List<String>> fetch(String query);
+import 'youtube_search_suggestion_source.dart';
 
-  void dispose();
-}
-
-/// YouTube's type-ahead endpoint, usable with an app-owned Dio client.
-class YoutubeSearchSuggestionSource implements SearchSuggestionSource {
-  YoutubeSearchSuggestionSource({
-    Dio? dio,
-    this.endpoint = 'https://suggestqueries.google.com/complete/search',
-    this.hl = 'en',
-    this.gl = 'IN',
-  }) : _ownsDio = dio == null,
-       _dio =
-           dio ??
-           Dio(
-             BaseOptions(
-               connectTimeout: const Duration(seconds: 8),
-               receiveTimeout: const Duration(seconds: 8),
-             ),
-           );
-
-  final Dio _dio;
-  final bool _ownsDio;
-  final String endpoint;
-  final String hl;
-  final String gl;
-
-  @override
-  Future<List<String>> fetch(String query) async {
-    final response = await _dio.get<dynamic>(
-      endpoint,
-      queryParameters: {
-        'client': 'firefox',
-        'ds': 'yt',
-        'q': query,
-        'hl': hl,
-        'gl': gl,
-      },
-    );
-    final data = response.data;
-    if (data is! List || data.length < 2 || data[1] is! List) {
-      return const [];
-    }
-    return (data[1] as List)
-        .whereType<String>()
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .toList();
-  }
-
-  @override
-  void dispose() {
-    if (_ownsDio) _dio.close();
-  }
-}
+export 'youtube_search_suggestion_source.dart';
 
 class SearchSuggestionController extends ChangeNotifier {
   SearchSuggestionController({
@@ -75,6 +21,7 @@ class SearchSuggestionController extends ChangeNotifier {
   bool _disposed = false;
   List<String> suggestions = const [];
   bool isLoading = false;
+  Object? error;
 
   void updateQuery(String value) {
     _debounce?.cancel();
@@ -82,6 +29,7 @@ class SearchSuggestionController extends ChangeNotifier {
     final query = value.trim();
     suggestions = const [];
     isLoading = query.isNotEmpty;
+    error = null;
     notifyListeners();
     if (query.isEmpty) return;
 
@@ -98,9 +46,15 @@ class SearchSuggestionController extends ChangeNotifier {
       final values = await source.fetch(query);
       if (_disposed || generation != _generation) return;
       suggestions = values;
-    } catch (_) {
+    } catch (caught, stackTrace) {
+      dev.log(
+        'Suggestion request failed for "$query"',
+        name: 'SearchSuggestionController',
+        error: caught,
+        stackTrace: stackTrace,
+      );
       if (_disposed || generation != _generation) return;
-      suggestions = const [];
+      error = caught;
     } finally {
       if (!_disposed && generation == _generation) {
         isLoading = false;
