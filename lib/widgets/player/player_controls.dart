@@ -17,6 +17,7 @@ import '../../core/settings/app_settings.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
@@ -60,7 +61,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   int seekTotal = 0;
   Duration? seekTarget;
   bool sheetOpen = false, longPress = false;
-  bool liked = false, disliked = false, saved = false;
   double? oldRate, dragStartValue;
   String? hud;
   IconData? hudIcon;
@@ -326,8 +326,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     required IconData icon,
     required String tooltip,
     required VoidCallback? onPressed,
-    double size = 23,
-    double diameter = 48,
+    double size = AppSizes.iconMd,
+    double diameter = AppSizes.buttonIconTouch,
     bool dimmed = false,
   }) => SizedBox(
     width: diameter,
@@ -341,21 +341,13 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         padding: EdgeInsets.zero,
       ),
       icon: Icon(icon, size: size),
-      color: dimmed ? Colors.white38 : Colors.white,
-      disabledColor: Colors.white38,
+      color: dimmed
+          ? AppColors.white.withValues(alpha: AppColors.disabledOpacity)
+          : AppColors.white,
+      disabledColor: AppColors.white.withValues(
+        alpha: AppColors.disabledOpacity,
+      ),
     ),
-  );
-
-  Widget _actionControl({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onPressed,
-    bool selected = false,
-  }) => IconButton(
-    tooltip: tooltip,
-    onPressed: onPressed,
-    visualDensity: VisualDensity.compact,
-    icon: Icon(icon, color: selected ? AppColors.primary : Colors.white),
   );
 
   Future<void> _copyVideoLink() async {
@@ -366,12 +358,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Video link copied')));
-  }
-
-  void _showActionMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
   }
 
   Widget _fullscreenOverlay({
@@ -396,9 +382,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final bufferMs = ui.buffered.inMilliseconds
         .clamp(positionMs.toInt(), durationMs.toInt())
         .toDouble();
-    final thumbnailUrl = state.videoId == null
-        ? null
-        : 'https://i.ytimg.com/vi/${state.videoId}/mqdefault.jpg';
     return IgnorePointer(
       ignoring: !ui.overlayVisible,
       child: AnimatedOpacity(
@@ -408,65 +391,27 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0, .24, .55, 1],
-                    colors: [
-                      Color(0xB8000000),
-                      Color(0x00000000),
-                      Color(0x12000000),
-                      Color(0xC9000000),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            const IgnorePointer(child: ColoredBox(color: AppColors.scrim)),
             SafeArea(
               child: Stack(
                 children: [
                   Positioned(
-                    top: 6,
-                    left: 14,
-                    right: 14,
+                    top: AppSpacing.lg,
+                    left: AppSpacing.lg,
+                    right: AppSpacing.lg,
                     child: Row(
                       children: [
-                        _roundControl(
-                          icon: Icons.keyboard_arrow_down_rounded,
-                          tooltip: 'Exit fullscreen',
-                          onPressed: () => _fullscreen(false),
-                          diameter: 42,
-                          size: 29,
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // allowed: player title fade
-                              ShaderMask(
-                                shaderCallback: (bounds) =>
-                                    const LinearGradient(
-                                      colors: [
-                                        Colors.white,
-                                        Colors.white70,
-                                        Colors.transparent,
-                                      ],
-                                      stops: [0, .8, 1],
-                                    ).createShader(bounds),
-                                blendMode: BlendMode.dstIn,
-                                child: Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.watchTitle.copyWith(
+                                  color: AppColors.white,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               if (channel.isNotEmpty)
@@ -476,15 +421,15 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                       : '@$channel',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
+                                  style: AppTextStyles.meta.copyWith(
+                                    color: AppColors.white.withValues(
+                                      alpha: AppColors.disabledOpacity,
+                                    ),
                                   ),
                                 ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
                         if (!compactFullscreen)
                           Material(
                             color: AppColors.playerControlGlass,
@@ -496,67 +441,61 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                   .setAutoplay(!autoplay),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 4,
+                                  horizontal: AppSpacing.xs,
+                                  vertical: AppSpacing.xs,
                                 ),
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 28,
-                                      height: 28,
+                                      width: AppSizes.iconLg,
+                                      height: AppSizes.iconLg,
                                       decoration: const BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.white24,
+                                        color: AppColors.playerControlBorder,
                                       ),
                                       child: Icon(
                                         autoplay
                                             ? Icons.pause_rounded
                                             : Icons.play_arrow_rounded,
-                                        size: 18,
-                                        color: Colors.white,
+                                        size: AppSizes.iconSm,
+                                        color: AppColors.white,
                                       ),
                                     ),
-                                    const SizedBox(width: 7),
-                                    const Text(
+                                    const SizedBox(width: AppSpacing.iconGap),
+                                    Text(
                                       'Autoplay',
-                                      style: TextStyle(
-                                        color: Colors.white,
+                                      style: AppTextStyles.meta.copyWith(
+                                        color: AppColors.white,
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: AppSpacing.sm),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                        if (!compactFullscreen)
+                        if (state.captions.isNotEmpty)
                           _roundControl(
-                            icon: Icons.cast_rounded,
-                            tooltip: 'Cast',
-                            onPressed: () =>
-                                _showActionMessage('Cast is unavailable'),
-                            diameter: 42,
+                            icon: Icons.closed_caption_rounded,
+                            tooltip: 'Captions',
+                            onPressed: () => unawaited(
+                              service.setCaption(
+                                state.selectedCaption == null ? 0 : null,
+                              ),
+                            ),
                           ),
-                        _roundControl(
-                          icon: Icons.closed_caption_rounded,
-                          tooltip: 'Captions',
-                          onPressed: state.captions.isEmpty
-                              ? null
-                              : () => unawaited(
-                                  service.setCaption(
-                                    state.selectedCaption == null ? 0 : null,
-                                  ),
-                                ),
-                          diameter: 42,
-                        ),
                         _roundControl(
                           icon: Icons.settings_rounded,
                           tooltip: 'Settings',
                           onPressed: _settings,
-                          diameter: 42,
                         ),
+                        if (state.videoId != null)
+                          _roundControl(
+                            icon: Icons.ios_share_rounded,
+                            tooltip: 'Share',
+                            onPressed: () => unawaited(_copyVideoLink()),
+                          ),
                       ],
                     ),
                   ),
@@ -568,11 +507,11 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           icon: Icons.skip_previous_rounded,
                           tooltip: 'Previous',
                           onPressed: widget.onPrevious,
-                          diameter: 58,
-                          size: 31,
+                          diameter: AppSizes.touchMin + AppSpacing.sm,
+                          size: AppSizes.iconLg,
                           dimmed: widget.onPrevious == null,
                         ),
-                        const SizedBox(width: 30),
+                        const SizedBox(width: AppSpacing.xxl),
                         _roundControl(
                           icon: state.playing
                               ? Icons.pause_rounded
@@ -581,226 +520,124 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               : Icons.play_arrow_rounded,
                           tooltip: state.playing ? 'Pause' : 'Play',
                           onPressed: () => unawaited(service.togglePlay()),
-                          diameter: 76,
-                          size: 43,
+                          diameter: AppSizes.touchMin + AppSpacing.xxl,
+                          size: AppSizes.iconLg + AppSpacing.md,
                         ),
-                        const SizedBox(width: 30),
+                        const SizedBox(width: AppSpacing.xxl),
                         _roundControl(
                           icon: Icons.skip_next_rounded,
                           tooltip: 'Next',
                           onPressed: widget.onNext,
-                          diameter: 58,
-                          size: 31,
+                          diameter: AppSizes.touchMin + AppSpacing.sm,
+                          size: AppSizes.iconLg,
                           dimmed: widget.onNext == null,
                         ),
                       ],
                     ),
                   ),
                   Positioned(
-                    left: 22,
-                    right: 22,
-                    bottom: 98,
-                    child: Row(
+                    left: AppSpacing.lg,
+                    right: AppSpacing.lg,
+                    bottom: AppSpacing.none,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: AppColors.playerControlGlass,
-                            borderRadius: AppRadius.pillBorder,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 11,
-                              vertical: 6,
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: AppSizes.seekTrack,
+                            activeTrackColor: AppColors.primary,
+                            secondaryActiveTrackColor: AppColors.white
+                                .withValues(alpha: 0.7),
+                            inactiveTrackColor: AppColors.white.withValues(
+                              alpha: AppColors.disabledOpacity,
                             ),
-                            child: Text(
-                              '${_time(Duration(milliseconds: positionMs.round()))} / ${_time(ui.duration)}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
+                            thumbColor: AppColors.primary,
+                            overlayColor: AppColors.primary.withValues(
+                              alpha: 0.13,
+                            ),
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: AppSizes.seekThumb / 2,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: AppSizes.seekThumb,
                             ),
                           ),
-                        ),
-                        const Spacer(),
-                        _roundControl(
-                          icon: Icons.fullscreen_exit_rounded,
-                          tooltip: 'Exit fullscreen',
-                          onPressed: () => _fullscreen(false),
-                          diameter: 42,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    left: 18,
-                    right: 18,
-                    bottom: 72,
-                    height: 24,
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        activeTrackColor: const Color(0xFFFF1744),
-                        secondaryActiveTrackColor: Colors.white70,
-                        inactiveTrackColor: Colors.white38,
-                        thumbColor: const Color(0xFFFF1744),
-                        overlayColor: const Color(0x22FF1744),
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14,
-                        ),
-                      ),
-                      child: Slider(
-                        min: 0,
-                        max: durationMs,
-                        value: ui.scrubbing
-                            ? ui.scrubPosition.inMilliseconds
-                                  .clamp(0, durationMs.toInt())
-                                  .toDouble()
-                            : positionMs,
-                        secondaryTrackValue: bufferMs,
-                        onChangeStart: (value) {
-                          hideTimer?.cancel();
-                          notifier.setOverlayVisible(true);
-                          notifier.setScrubbing(true);
-                          notifier.setScrubPosition(
-                            Duration(milliseconds: value.round()),
-                          );
-                        },
-                        onChanged: (value) => notifier.setScrubPosition(
-                          Duration(milliseconds: value.round()),
-                        ),
-                        onChangeEnd: (value) {
-                          notifier.setScrubbing(false);
-                          unawaited(
-                            service.seekTo(
+                          child: Slider(
+                            min: 0,
+                            max: durationMs,
+                            value: ui.scrubbing
+                                ? ui.scrubPosition.inMilliseconds
+                                      .clamp(0, durationMs.toInt())
+                                      .toDouble()
+                                : positionMs,
+                            secondaryTrackValue: bufferMs,
+                            onChangeStart: (value) {
+                              hideTimer?.cancel();
+                              notifier.setOverlayVisible(true);
+                              notifier.setScrubbing(true);
+                              notifier.setScrubPosition(
+                                Duration(milliseconds: value.round()),
+                              );
+                            },
+                            onChanged: (value) => notifier.setScrubPosition(
                               Duration(milliseconds: value.round()),
                             ),
-                          );
-                          _scheduleHide();
-                        },
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 14,
-                    right: 14,
-                    bottom: 8,
-                    child: Container(
-                      height: 54,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0x99000000),
-                        borderRadius: AppRadius.lgBorder,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _actionControl(
-                                    icon: liked
-                                        ? Icons.thumb_up_rounded
-                                        : Icons.thumb_up_outlined,
-                                    tooltip: 'Like',
-                                    selected: liked,
-                                    onPressed: () => setState(() {
-                                      liked = !liked;
-                                      if (liked) disliked = false;
-                                    }),
-                                  ),
-                                  _actionControl(
-                                    icon: disliked
-                                        ? Icons.thumb_down_rounded
-                                        : Icons.thumb_down_outlined,
-                                    tooltip: 'Dislike',
-                                    selected: disliked,
-                                    onPressed: () => setState(() {
-                                      disliked = !disliked;
-                                      if (disliked) liked = false;
-                                    }),
-                                  ),
-                                  _actionControl(
-                                    icon: Icons.chat_bubble_outline_rounded,
-                                    tooltip: 'Comments',
-                                    onPressed: () => _showActionMessage(
-                                      'Open the watch page to view comments',
-                                    ),
-                                  ),
-                                  _actionControl(
-                                    icon: Icons.forum_outlined,
-                                    tooltip: 'Live chat',
-                                    onPressed: () => _showActionMessage(
-                                      'Live chat is unavailable for this video',
-                                    ),
-                                  ),
-                                  _actionControl(
-                                    icon: saved
-                                        ? Icons.bookmark_rounded
-                                        : Icons.bookmark_border_rounded,
-                                    tooltip: 'Save',
-                                    selected: saved,
-                                    onPressed: () =>
-                                        setState(() => saved = !saved),
-                                  ),
-                                  _actionControl(
-                                    icon: Icons.ios_share_rounded,
-                                    tooltip: 'Share',
-                                    onPressed: () =>
-                                        unawaited(_copyVideoLink()),
-                                  ),
-                                  _actionControl(
-                                    icon: Icons.auto_awesome_rounded,
-                                    tooltip: 'More options',
-                                    onPressed: () => _showActionMessage(
-                                      'More options are available on the watch page',
-                                    ),
-                                  ),
-                                  _actionControl(
-                                    icon: Icons.more_horiz_rounded,
-                                    tooltip: 'More',
-                                    onPressed: _moreVideos,
-                                  ),
-                                ],
-                              ),
-                            ),
+                            onChangeEnd: (value) {
+                              notifier.setScrubbing(false);
+                              unawaited(
+                                service.seekTo(
+                                  Duration(milliseconds: value.round()),
+                                ),
+                              );
+                              _scheduleHide();
+                            },
                           ),
-                          TextButton(
-                            onPressed: _moreVideos,
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
+                        ),
+                        Row(
+                          children: [
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: AppColors.playerControlGlass,
+                                borderRadius: AppRadius.pillBorder,
                               ),
-                            ),
-                            child: const Text('More videos'),
-                          ),
-                          if (thumbnailUrl != null)
-                            InkWell(
-                              onTap: _moreVideos,
-                              borderRadius: AppRadius.smBorder,
-                              child: ClipRRect(
-                                borderRadius: AppRadius.smBorder,
-                                child: Image.network(
-                                  thumbnailUrl,
-                                  width: 68,
-                                  height: 38,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const SizedBox(
-                                    width: 68,
-                                    height: 38,
-                                    child: Icon(Icons.play_arrow_rounded),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                  vertical: AppSpacing.xs,
+                                ),
+                                child: Text(
+                                  '${_time(Duration(milliseconds: positionMs.round()))} / ${_time(ui.duration)}',
+                                  style: AppTextStyles.meta.copyWith(
+                                    color: AppColors.white,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
-                          const SizedBox(width: 8),
-                        ],
-                      ),
+                            if (widget.onNext != null) ...[
+                              const Spacer(),
+                              TextButton(
+                                onPressed: _moreVideos,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.sm,
+                                  ),
+                                ),
+                                child: const Text('More videos / Play next'),
+                              ),
+                            ],
+                            const Spacer(),
+                            _roundControl(
+                              icon: Icons.fullscreen_exit_rounded,
+                              tooltip: 'Exit fullscreen',
+                              onPressed: () => _fullscreen(false),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
