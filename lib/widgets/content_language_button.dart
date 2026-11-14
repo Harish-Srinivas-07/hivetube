@@ -9,7 +9,9 @@ import 'glass_surface.dart';
 import 'content_language_sheet.dart';
 
 class ContentLanguageButton extends ConsumerWidget {
-  const ContentLanguageButton({super.key});
+  const ContentLanguageButton({super.key, this.plain = false});
+
+  final bool plain;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -22,6 +24,35 @@ class ContentLanguageButton extends ConsumerWidget {
         prefs.gl != 'AUTO' ||
         prefs.localRatio != .6;
     final colors = Theme.of(context).colorScheme;
+    if (plain) {
+      return IconButton(
+        key: const ValueKey('contentLanguageButton'),
+        tooltip: 'Content language',
+        onPressed: () => showContentLanguageSheet(context, ref),
+        icon: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(LucideIcons.languages),
+            if (changed)
+              Positioned(
+                right: -AppSpacing.xxs,
+                top: -AppSpacing.xxs,
+                child: DecoratedBox(
+                  key: const ValueKey('contentLanguageChangedDot'),
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox(
+                    width: AppSpacing.badgeDotSize,
+                    height: AppSpacing.badgeDotSize,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
     return Tooltip(
       message: 'Content language',
       child: Semantics(

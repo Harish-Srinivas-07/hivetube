@@ -16,6 +16,9 @@ abstract final class AppSizes {
   static const double avatarSm = 28;
   static const double avatar = 40;
   static const double avatarLg = 72;
+  static const double searchResultAvatar = 36;
+  static const double libraryHistoryCardWidth = 160;
+  static const double libraryRowHeight = 52;
 
   // Controls
   static const double chipHeight = 36;
@@ -35,7 +38,8 @@ abstract final class AppSizes {
   static const double sheetMaxWidth = 640;
   static const double sheetCardMaxWidth = 480;
   static const double snackbarMaxWidth = 560;
-  static const double miniPlayerHeightFraction = 0.55; // fraction of screen width
+  static const double miniPlayerHeightFraction =
+      0.55; // fraction of screen width
 
   // Icons
   static const double iconInline = 18;
@@ -58,9 +62,9 @@ abstract final class AppSizes {
   static const double listRowHeight = 72;
   static const double settingsRowHeight = 56;
   static const double horizontalThumbCardHeight = 140;
+  static const double searchCompactThumbnailWidth = 120;
 
   // Shorts
   static const double shortsRailWidth = 64;
   static const double shortsRailIconSize = 28;
 }
-

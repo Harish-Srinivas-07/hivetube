@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +12,8 @@ import 'package:drift/drift.dart' show Value;
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_colors.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
 import '../../core/yt/takeout_parser.dart';
@@ -74,7 +77,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   }
                 },
                 child: CircleAvatar(
-                  radius: 36,
+                  radius: AppSizes.avatarLg / 2,
                   backgroundImage:
                       avatarPath != null && File(avatarPath!).existsSync()
                       ? FileImage(File(avatarPath!)) as ImageProvider
@@ -332,6 +335,135 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
   }
 
+  Widget _libraryTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    String? count,
+  }) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: AppSizes.libraryRowHeight,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: AppSizes.icon,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.libraryRowTitle.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              if (count != null)
+                Text(
+                  count,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistTile(PlaylistRow playlist) => Consumer(
+    builder: (context, ref, _) {
+      final theme = Theme.of(context);
+      final items = ref.watch(playlistItemsStreamProvider(playlist.id));
+      final count = items.asData?.value.length;
+
+      return Padding(
+        padding: const EdgeInsets.only(right: AppSpacing.md),
+        child: InkWell(
+          onTap: () => context.push('/playlist/${playlist.id}'),
+          child: SizedBox(
+            width: AppSizes.horizontalThumbCardHeight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: AppRadius.libraryThumbnailBorder,
+                  child: SizedBox.square(
+                    dimension: AppSizes.horizontalThumbCardHeight,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (playlist.thumbUrl?.isNotEmpty == true)
+                          CachedNetworkImage(
+                            imageUrl: playlist.thumbUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) => ColoredBox(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                            ),
+                            errorWidget: (_, _, _) => ColoredBox(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              child: Icon(
+                                LucideIcons.listMusic,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        else
+                          ColoredBox(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            child: Icon(
+                              LucideIcons.listMusic,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        Positioned(
+                          right: AppSpacing.xs,
+                          bottom: AppSpacing.xs,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.xs,
+                              vertical: AppSpacing.xxs,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.thumbnailBadge,
+                              borderRadius: AppRadius.xsBorder,
+                            ),
+                            child: Text(
+                              '${count ?? 0} videos',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: AppColors.thumbnailBadgeText,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  playlist.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
     ref.listen(tabRefreshProvider, (_, request) {
@@ -340,22 +472,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ref.invalidate(historyStreamProvider);
       ref.invalidate(playlistsStreamProvider);
       ref.invalidate(likedVideosStreamProvider);
+      ref.invalidate(subscriptionsStreamProvider);
     });
     final profileAsync = ref.watch(profileStreamProvider);
     final historyAsync = ref.watch(historyStreamProvider);
     final playlistsAsync = ref.watch(playlistsStreamProvider);
     final likedVideosAsync = ref.watch(likedVideosStreamProvider);
+    final subscriptionsAsync = ref.watch(subscriptionsStreamProvider);
     final theme = Theme.of(context);
+    final playlists = playlistsAsync.asData?.value ?? const <PlaylistRow>[];
+    PlaylistRow? watchLaterPlaylist;
+    for (final playlist in playlists) {
+      if (playlist.remoteId == 'watch_later') {
+        watchLaterPlaylist = playlist;
+        break;
+      }
+    }
+    final watchLaterItems = watchLaterPlaylist == null
+        ? null
+        : ref.watch(playlistItemsStreamProvider(watchLaterPlaylist.id));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('You'),
         actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.hardDriveDownload),
-            tooltip: 'Backup & Restore',
-            onPressed: _showBackupSheet,
-          ),
           IconButton(
             icon: const Icon(LucideIcons.settings),
             tooltip: 'Settings',
@@ -367,106 +507,132 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Profile Card
             Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: profileAsync.when(
-                data: (profile) => Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 32,
-                      backgroundImage:
-                          profile?.avatarPath != null &&
-                              File(profile!.avatarPath!).existsSync()
-                          ? FileImage(File(profile.avatarPath!))
-                                as ImageProvider
-                          : null,
-                      child: profile?.avatarPath == null
-                          ? const Icon(LucideIcons.user, size: AppSizes.iconLg)
-                          : null,
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                data: (profile) {
+                  final avatarPath = profile?.avatarPath;
+                  final hasAvatar =
+                      avatarPath != null && File(avatarPath).existsSync();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            profile?.name ?? 'HiveUser',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                          CircleAvatar(
+                            radius: AppSizes.avatarLg / 2,
+                            backgroundImage: hasAvatar
+                                ? FileImage(File(avatarPath))
+                                : null,
+                            child: hasAvatar
+                                ? null
+                                : const Icon(
+                                    LucideIcons.user,
+                                    size: AppSizes.iconLg,
+                                  ),
                           ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            'Local profile',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  profile?.name ?? 'HiveUser',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.profileName.copyWith(
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                Text(
+                                  'Local profile',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _editProfile(profile),
-                      icon: const Icon(
-                        LucideIcons.pencil,
-                        size: AppSizes.iconXs,
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        children: [
+                          FilledButton.tonalIcon(
+                            onPressed: () => _editProfile(profile),
+                            icon: const Icon(LucideIcons.pencil),
+                            label: const Text('Edit profile'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor:
+                                  theme.colorScheme.surfaceContainerHighest,
+                              foregroundColor: theme.colorScheme.onSurface,
+                              minimumSize: Size.fromHeight(
+                                AppSizes.buttonCompact,
+                              ),
+                              side: BorderSide.none,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.profileChipBorder,
+                              ),
+                            ),
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: _showBackupSheet,
+                            icon: const Icon(LucideIcons.hardDriveDownload),
+                            label: const Text('Backup'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor:
+                                  theme.colorScheme.surfaceContainerHighest,
+                              foregroundColor: theme.colorScheme.onSurface,
+                              minimumSize: Size.fromHeight(
+                                AppSizes.buttonCompact,
+                              ),
+                              side: BorderSide.none,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.profileChipBorder,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      label: const Text('Edit'),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                },
                 loading: () => const SizedBox(height: AppSizes.listRowHeight),
                 error: (_, _) => const SizedBox(height: AppSizes.listRowHeight),
               ),
             ),
-            const AppDivider(),
-
-            // History Section
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.xs,
+            SectionHeader(
+              title: 'History',
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xs,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'History',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => context.push('/history'),
-                    child: const Text('See all'),
-                  ),
-                ],
+              trailing: TextButton(
+                onPressed: () => context.push('/history'),
+                child: const Text('View all'),
               ),
             ),
             historyAsync.when(
               data: (items) {
                 if (items.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Text(
-                      'No watch history yet',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                  return EmptyState(
+                    icon: LucideIcons.history,
+                    title: 'No watch history yet',
+                    actionLabel: 'Explore videos',
+                    onAction: () => context.go('/home'),
+                    compact: true,
                   );
                 }
-                final scaler = MediaQuery.textScalerOf(context);
-                final historyHeight = (150 / AppSpacing.thumbnailRatio) +
-                    AppSpacing.xs +
-                    scaler.scale(72);
                 return SizedBox(
-                  height: historyHeight,
+                  height: AppSizes.libraryHistoryCardWidth + AppSpacing.md,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
+                      horizontal: AppSpacing.lg,
                     ),
                     itemCount: items.take(15).length,
                     itemBuilder: (ctx, idx) {
@@ -493,14 +659,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           onTap: () =>
                               context.push('/watch/${item.history.videoId}'),
                           child: SizedBox(
-                            width: 150,
+                            width: AppSizes.libraryHistoryCardWidth,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 ThumbnailWithDuration(
                                   url: thumbUrl,
                                   progress: progress,
-                                  borderRadius: AppRadius.mdBorder,
+                                  borderRadius:
+                                      AppRadius.libraryThumbnailBorder,
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
                                 Text(
@@ -511,8 +678,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                       : 'Untitled video',
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    fontSize: 14,
+                                  style: theme.textTheme.bodySmall?.copyWith(
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -522,8 +688,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                       : 'Unknown channel',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontSize: 12,
+                                  style: theme.textTheme.labelLarge?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                 ),
@@ -541,131 +706,98 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               error: (_, _) =>
                   const SizedBox(height: AppSizes.horizontalThumbCardHeight),
             ),
-            const AppDivider(),
 
-            // Playlists Section
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.xs,
+            SectionHeader(
+              title: 'Playlists',
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xs,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Playlists',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _createPlaylistDialog,
-                    icon: const Icon(LucideIcons.plus, size: AppSizes.iconXs),
-                    label: const Text('New playlist'),
-                  ),
-                ],
+              trailing: TextButton.icon(
+                onPressed: _createPlaylistDialog,
+                icon: const Icon(LucideIcons.plus, size: AppSizes.iconSm),
+                label: const Text('Create'),
               ),
             ),
-
-            // Watch Later Tile
-            ListTile(
-              leading: const CircleAvatar(
-                child: Icon(LucideIcons.clock, size: AppSizes.avatarXs),
-              ),
-              title: const Text('Watch Later'),
-              subtitle: const Text('Saved videos'),
-              trailing: const Icon(
-                LucideIcons.chevronRight,
-                size: AppSizes.iconSm,
-              ),
-              onTap: () => context.push('/playlist/watch_later'),
+            playlistsAsync.when(
+              data: (items) {
+                final userPlaylists = items
+                    .where((playlist) => playlist.remoteId != 'watch_later')
+                    .toList();
+                if (userPlaylists.isEmpty) {
+                  return EmptyState(
+                    icon: LucideIcons.listMusic,
+                    title: 'Create a playlist to save videos',
+                    actionLabel: 'Create playlist',
+                    onAction: _createPlaylistDialog,
+                    compact: true,
+                  );
+                }
+                return SizedBox(
+                  height:
+                      AppSizes.horizontalThumbCardHeight +
+                      AppSizes.listRowHeight,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    itemCount: userPlaylists.length,
+                    itemBuilder: (context, index) =>
+                        _buildPlaylistTile(userPlaylists[index]),
+                  ),
+                );
+              },
+              loading: () =>
+                  const SizedBox(height: AppSizes.horizontalThumbCardHeight),
+              error: (_, _) =>
+                  const SizedBox(height: AppSizes.horizontalThumbCardHeight),
             ),
 
             // Liked Videos Tile
             likedVideosAsync.when(
-              data: (liked) => ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(LucideIcons.thumbsUp, size: AppSizes.avatarXs),
-                ),
-                title: const Text('Liked videos'),
-                subtitle: Text('${liked.length} videos'),
-                trailing: const Icon(
-                  LucideIcons.chevronRight,
-                  size: AppSizes.iconSm,
-                ),
+              data: (liked) => _libraryTile(
+                icon: LucideIcons.thumbsUp,
+                title: 'Liked videos',
+                count: '${liked.length}',
                 onTap: () => context.push('/playlist/liked'),
               ),
               loading: () => const SizedBox(),
               error: (_, _) => const SizedBox(),
             ),
 
-            // User Playlists
-            playlistsAsync.when(
-              data: (playlists) {
-                final userPlaylists = playlists
-                    .where((p) => p.remoteId != 'watch_later')
-                    .toList();
-                return Column(
-                  children: userPlaylists.map((pl) {
-                    return ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(
-                          LucideIcons.listMusic,
-                          size: AppSizes.avatarXs,
-                        ),
-                      ),
-                      title: Text(pl.name),
-                      trailing: const Icon(
-                        LucideIcons.chevronRight,
-                        size: AppSizes.iconSm,
-                      ),
-                      onTap: () => context.push('/playlist/${pl.id}'),
-                    );
-                  }).toList(),
-                );
-              },
+            _libraryTile(
+              icon: LucideIcons.clock,
+              title: 'Watch later',
+              count: '${watchLaterItems?.asData?.value.length ?? 0}',
+              onTap: () => context.push('/playlist/watch_later'),
+            ),
+            subscriptionsAsync.when(
+              data: (subscriptions) => _libraryTile(
+                icon: LucideIcons.circlePlay,
+                title: 'Subscriptions',
+                count: '${subscriptions.length}',
+                onTap: () => context.push('/subscriptions'),
+              ),
               loading: () => const SizedBox(),
               error: (_, _) => const SizedBox(),
             ),
-            const AppDivider(),
-
-            // Downloads Placeholder
-            ListTile(
-              leading: const Icon(LucideIcons.download),
-              title: const Text('Downloads'),
-              subtitle: const Text('Coming in Phase 5'),
-              trailing: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs,
-                  vertical: AppSpacing.xxs,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHigh,
-                  borderRadius: AppRadius.smBorder,
-                ),
-                child: Text('Soon', style: theme.textTheme.labelSmall),
-              ),
+            _libraryTile(
+              icon: LucideIcons.download,
+              title: 'Downloads',
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Downloads will be available in Phase 5!'),
+                    content: Text('Downloads are not available yet'),
                   ),
                 );
               },
             ),
-
-            // Settings Tile
-            ListTile(
-              leading: const Icon(LucideIcons.settings),
-              title: const Text('Settings'),
-              trailing: const Icon(
-                LucideIcons.chevronRight,
-                size: AppSizes.iconSm,
-              ),
-              onTap: () => context.push('/settings'),
-            ),
             SizedBox(
-              height: MediaQuery.paddingOf(context).bottom +
+              height:
+                  MediaQuery.paddingOf(context).bottom +
                   MiniPlayerInset.of(context) +
                   AppSpacing.xl,
             ),

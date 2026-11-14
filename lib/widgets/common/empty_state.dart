@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../theme/app_layout.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
-import '../ui/app_controls.dart';
 
 /// Standard empty state display with icon, title, description, and action button.
 class EmptyState extends StatelessWidget {
@@ -13,6 +12,7 @@ class EmptyState extends StatelessWidget {
     this.message,
     this.actionLabel,
     this.onAction,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -20,6 +20,7 @@ class EmptyState extends StatelessWidget {
   final String? message;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -28,18 +29,28 @@ class EmptyState extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(AppLayout.sheetPadding),
+        padding: EdgeInsets.all(
+          compact ? AppSpacing.md : AppLayout.sheetPadding,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: AppSizes.iconLg * 2, color: cs.outlineVariant),
-            const SizedBox(height: AppSpacing.lg),
+            Icon(
+              icon,
+              size: compact ? AppSizes.icon : AppSizes.iconLg * 2,
+              color: cs.onSurfaceVariant,
+            ),
+            SizedBox(height: compact ? AppSpacing.xs : AppSpacing.lg),
             Text(
               title,
-              style: theme.textTheme.titleLarge,
+              style: compact
+                  ? theme.textTheme.bodyMedium
+                  : theme.textTheme.titleLarge,
               textAlign: TextAlign.center,
+              maxLines: compact ? 1 : null,
+              overflow: compact ? TextOverflow.ellipsis : null,
             ),
-            if (message != null && message!.isNotEmpty) ...[
+            if (!compact && message != null && message!.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
                 message!,
@@ -50,12 +61,8 @@ class EmptyState extends StatelessWidget {
               ),
             ],
             if (onAction != null && actionLabel != null) ...[
-              const SizedBox(height: AppSpacing.xl),
-              AppButton(
-                label: actionLabel!,
-                variant: AppButtonVariant.filled,
-                onPressed: onAction,
-              ),
+              SizedBox(height: compact ? AppSpacing.xs : AppSpacing.xl),
+              TextButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],
         ),
@@ -63,4 +70,3 @@ class EmptyState extends StatelessWidget {
     );
   }
 }
-

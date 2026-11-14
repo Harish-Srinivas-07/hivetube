@@ -7,7 +7,10 @@ import '../home/home_controller.dart';
 import '../home/home_screen.dart';
 import '../home/home_variety.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 import 'content_debug_screen.dart';
 
@@ -56,32 +59,48 @@ class SettingsScreen extends ConsumerWidget {
       String current,
       Future<void> Function(String) update,
     ) async {
-      final chosen = await showDialog<String>(
+      final chosen = await showModalBottomSheet<String>(
         context: context,
-        builder: (context) => AppDialog(
-          title: title,
-          content: SizedBox(
-            width: AppSpacing.searchMaxWidth,
-            child: ListView(
-              shrinkWrap: true,
+        isScrollControlled: true,
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: AppRadius.sheetTopBorder,
+        ),
+        builder: (sheetContext) => SafeArea(
+          child: SizedBox(
+            height:
+                MediaQuery.sizeOf(context).height *
+                AppSpacing.contentRegionPickerHeightFactor,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final e in values.entries)
-                  ListTile(
-                    title: Text(e.value),
-                    trailing: e.key == current
-                        ? const Icon(LucideIcons.check)
-                        : null,
-                    onTap: () => Navigator.pop(context, e.key),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.sm,
                   ),
+                  child: Text(title, style: theme.textTheme.titleLarge),
+                ),
+                Expanded(
+                  child: RadioGroup<String>(
+                    groupValue: current,
+                    onChanged: (value) => Navigator.pop(sheetContext, value),
+                    child: ListView(
+                      children: [
+                        for (final entry in values.entries)
+                          RadioListTile<String>(
+                            value: entry.key,
+                            title: Text(entry.value),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          actions: [
-            AppButton.text(
-              onPressed: () => Navigator.pop(context),
-              label: 'Cancel',
-            ),
-          ],
         ),
       );
       if (chosen != null) await update(chosen);
@@ -92,44 +111,73 @@ class SettingsScreen extends ConsumerWidget {
       Set<String> selected,
       bool hidden,
     ) async {
-      final result = await showDialog<Set<String>>(
+      final result = await showModalBottomSheet<Set<String>>(
         context: context,
-        builder: (dialogContext) {
+        isScrollControlled: true,
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: AppRadius.sheetTopBorder,
+        ),
+        builder: (sheetContext) {
           final draft = selected.toSet();
           return StatefulBuilder(
-            builder: (context, setDialogState) => AppDialog(
-              title: title,
-              content: SizedBox(
-                width: AppSpacing.searchMaxWidth,
-                child: ListView(
-                  shrinkWrap: true,
+            builder: (context, setDialogState) => SafeArea(
+              child: SizedBox(
+                height:
+                    MediaQuery.sizeOf(context).height *
+                    AppSpacing.contentRegionPickerHeightFactor,
+                child: Column(
                   children: [
-                    for (final option in contentLanguageOptions.entries)
-                      CheckboxListTile(
-                        dense: true,
-                        title: Text(option.value),
-                        value: draft.contains(option.key),
-                        onChanged: (value) => setDialogState(() {
-                          if (value == true) {
-                            draft.add(option.key);
-                          } else {
-                            draft.remove(option.key);
-                          }
-                        }),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.sm,
                       ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(title, style: theme.textTheme.titleLarge),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          for (final option in contentLanguageOptions.entries)
+                            CheckboxListTile(
+                              dense: true,
+                              title: Text(option.value),
+                              value: draft.contains(option.key),
+                              onChanged: (value) => setDialogState(() {
+                                if (value == true) {
+                                  draft.add(option.key);
+                                } else {
+                                  draft.remove(option.key);
+                                }
+                              }),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            child: const Text('Cancel'),
+                          ),
+                          AppButton.tonal(
+                            onPressed: () => Navigator.pop(sheetContext, draft),
+                            label: 'Save',
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-              actions: [
-                AppButton.text(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  label: 'Cancel',
-                ),
-                AppButton.filled(
-                  onPressed: () => Navigator.pop(dialogContext, draft),
-                  label: 'Save',
-                ),
-              ],
             ),
           );
         },
@@ -142,6 +190,75 @@ class SettingsScreen extends ConsumerWidget {
       );
     }
 
+    Widget section(String title) => SectionHeader(
+      title: title,
+      titleStyle: AppTextStyles.bodySmall.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xl,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+    );
+
+    Widget leadingIcon(IconData icon) => Icon(
+      icon,
+      size: AppSizes.icon,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    Widget settingTile({
+      required IconData icon,
+      required String title,
+      String? subtitle,
+      required VoidCallback onTap,
+    }) => ListTile(
+      leading: leadingIcon(icon),
+      title: Text(title, style: theme.textTheme.titleSmall),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+      trailing: Icon(
+        LucideIcons.chevronRight,
+        size: AppSizes.iconSm,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      minTileHeight: AppSizes.settingsRowHeight,
+      onTap: onTap,
+    );
+
+    Widget switchTile({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required bool value,
+      required ValueChanged<bool> onChanged,
+    }) => ListTile(
+      leading: leadingIcon(icon),
+      title: Text(title, style: theme.textTheme.titleSmall),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Switch(value: value, onChanged: onChanged),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      minTileHeight: AppSizes.settingsRowHeight,
+    );
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -151,158 +268,166 @@ class SettingsScreen extends ConsumerWidget {
         ),
         title: const Text('Settings'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Material(
-          color: theme.colorScheme.surfaceContainer,
-          borderRadius: AppRadius.mdBorder,
-          clipBehavior: Clip.antiAlias,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                  ListTile(
-                    title: const Text('Location'),
-                    subtitle: Text(regions[settings.gl] ?? settings.gl),
-                    trailing: const Icon(LucideIcons.chevronRight),
-                    onTap: () => pick(
-                      'Location',
-                      regions,
-                      settings.gl,
-                      (value) => ref
-                          .read(contentPrefsProvider.notifier)
-                          .update(gl: value),
-                    ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom:
+              MediaQuery.paddingOf(context).bottom +
+              MiniPlayerInset.of(context) +
+              AppSpacing.xl,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            section('General'),
+            settingTile(
+              icon: LucideIcons.mapPin,
+              title: 'Location',
+              subtitle: regions[settings.gl] ?? settings.gl,
+              onTap: () => pick(
+                'Location',
+                regions,
+                settings.gl,
+                (value) =>
+                    ref.read(contentPrefsProvider.notifier).update(gl: value),
+              ),
+            ),
+            switchTile(
+              icon: LucideIcons.map,
+              title: 'Local content',
+              subtitle: settings.localContent ? 'On' : 'Off',
+              value: settings.localContent,
+              onChanged: (value) => ref
+                  .read(contentPrefsProvider.notifier)
+                  .update(localContent: value),
+            ),
+            settingTile(
+              icon: LucideIcons.languages,
+              title: 'Content languages',
+              subtitle: settings.contentLanguages
+                  .map((code) => contentLanguageOptions[code] ?? code)
+                  .join(', '),
+              onTap: () => pickLanguages(
+                'Content languages',
+                settings.contentLanguages,
+                false,
+              ),
+            ),
+            settingTile(
+              icon: LucideIcons.eyeOff,
+              title: 'Hide languages',
+              subtitle: settings.hiddenLanguages
+                  .map((code) => contentLanguageOptions[code] ?? code)
+                  .join(', '),
+              onTap: () => pickLanguages(
+                'Hide languages',
+                settings.hiddenLanguages,
+                true,
+              ),
+            ),
+            switchTile(
+              icon: LucideIcons.listFilter,
+              title: 'Strict Home',
+              subtitle: settings.strictHome
+                  ? 'Only selected languages'
+                  : 'All allowed languages',
+              value: settings.strictHome,
+              onChanged: (value) => ref
+                  .read(contentPrefsProvider.notifier)
+                  .update(strictHome: value),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.xs,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Local content share · ${(settings.localRatio * 100).round()}%',
+                    style: theme.textTheme.titleSmall,
                   ),
-                  SwitchListTile(
-                    title: const Text('Local content'),
-                    value: settings.localContent,
+                  Slider(
+                    value: settings.localRatio,
+                    divisions: 10,
+                    label: '${(settings.localRatio * 100).round()}%',
                     onChanged: (value) => ref
                         .read(contentPrefsProvider.notifier)
-                        .update(localContent: value),
-                  ),
-                  ListTile(
-                    title: const Text('Content languages'),
-                    subtitle: Text(
-                      settings.contentLanguages
-                          .map((code) => contentLanguageOptions[code] ?? code)
-                          .join(', '),
-                    ),
-                    trailing: const Icon(LucideIcons.chevronRight),
-                    onTap: () => pickLanguages(
-                      'Content languages',
-                      settings.contentLanguages,
-                      false,
-                    ),
-                  ),
-                  ListTile(
-                    title: const Text('Hide languages'),
-                    subtitle: Text(
-                      settings.hiddenLanguages
-                          .map((code) => contentLanguageOptions[code] ?? code)
-                          .join(', '),
-                    ),
-                    trailing: const Icon(LucideIcons.chevronRight),
-                    onTap: () => pickLanguages(
-                      'Hide languages',
-                      settings.hiddenLanguages,
-                      true,
-                    ),
-                  ),
-                  SwitchListTile(
-                    title: const Text('Strict Home'),
-                    subtitle: const Text(
-                      'Show only videos in selected languages',
-                    ),
-                    value: settings.strictHome,
-                    onChanged: (value) => ref
-                        .read(contentPrefsProvider.notifier)
-                        .update(strictHome: value),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Local-language share: ${(settings.localRatio * 100).round()}%',
-                        ),
-                        Slider(
-                          value: settings.localRatio,
-                          divisions: 10,
-                          label: '${(settings.localRatio * 100).round()}%',
-                          onChanged: (value) => ref
-                              .read(contentPrefsProvider.notifier)
-                              .update(localRatio: value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  FutureBuilder<String?>(
-                    future: ref.watch(dbProvider).getValue('history_enabled'),
-                    builder: (ctx, snap) {
-                      final enabled = snap.data != 'false';
-                      return SwitchListTile(
-                        title: const Text('Save watch history'),
-                        subtitle: const Text(
-                          'Record videos and resume playback position',
-                        ),
-                        value: enabled,
-                        onChanged: (val) async {
-                          await ref
-                              .read(dbProvider)
-                              .setValue('history_enabled', val.toString());
-                          (ctx as Element).markNeedsBuild();
-                        },
-                      );
-                    },
-                  ),
-                  FutureBuilder<String?>(
-                    future: ref.watch(dbProvider).getValue('history_paused'),
-                    builder: (ctx, snap) {
-                      final paused = snap.data == 'true';
-                      return SwitchListTile(
-                        title: const Text('Pause watch history'),
-                        subtitle: const Text(
-                          'Temporarily pause adding new videos to history',
-                        ),
-                        value: paused,
-                        onChanged: (val) async {
-                          await ref
-                              .read(dbProvider)
-                              .setValue('history_paused', val.toString());
-                          (ctx as Element).markNeedsBuild();
-                        },
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(LucideIcons.bug),
-                    title: const Text('Content debug'),
-                    subtitle: const Text(
-                      'Home trace and language filter diagnostic log',
-                    ),
-                    trailing: const Icon(LucideIcons.chevronRight),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => const ContentDebugScreen(),
-                      ),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(LucideIcons.trash2),
-                    title: const Text('Clear app database'),
-                    subtitle: const Text('Remove saved data from this device'),
-                    onTap: clearDatabase,
+                        .update(localRatio: value),
                   ),
                 ],
               ),
             ),
-          ),
+            section('Playback'),
+            switchTile(
+              icon: LucideIcons.play,
+              title: 'Autoplay',
+              subtitle: settings.autoplay ? 'On' : 'Off',
+              value: settings.autoplay,
+              onChanged: (value) =>
+                  ref.read(contentPrefsProvider.notifier).setAutoplay(value),
+            ),
+            section('Privacy'),
+            FutureBuilder<String?>(
+              future: ref.watch(dbProvider).getValue('history_enabled'),
+              builder: (ctx, snap) {
+                final enabled = snap.data != 'false';
+                return switchTile(
+                  icon: LucideIcons.history,
+                  title: 'Save watch history',
+                  subtitle: enabled ? 'On' : 'Off',
+                  value: enabled,
+                  onChanged: (value) async {
+                    await ref
+                        .read(dbProvider)
+                        .setValue('history_enabled', value.toString());
+                    (ctx as Element).markNeedsBuild();
+                  },
+                );
+              },
+            ),
+            FutureBuilder<String?>(
+              future: ref.watch(dbProvider).getValue('history_paused'),
+              builder: (ctx, snap) {
+                final paused = snap.data == 'true';
+                return switchTile(
+                  icon: LucideIcons.pause,
+                  title: 'Pause watch history',
+                  subtitle: paused ? 'On' : 'Off',
+                  value: paused,
+                  onChanged: (value) async {
+                    await ref
+                        .read(dbProvider)
+                        .setValue('history_paused', value.toString());
+                    (ctx as Element).markNeedsBuild();
+                  },
+                );
+              },
+            ),
+            section('Data'),
+            settingTile(
+              icon: LucideIcons.trash2,
+              title: 'Clear app database',
+              subtitle: 'Remove saved data from this device',
+              onTap: clearDatabase,
+            ),
+            section('About'),
+            settingTile(
+              icon: LucideIcons.bug,
+              title: 'Content debug',
+              subtitle: 'Home trace and language filter diagnostics',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const ContentDebugScreen(),
+                ),
+              ),
+            ),
+          ],
         ),
+      ),
     );
   }
 }

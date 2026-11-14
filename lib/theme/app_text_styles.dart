@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppTextStyles {
+  static const feedTitle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    height: 1.3,
+  );
+  static const feedMeta = TextStyle(fontSize: 12, fontWeight: FontWeight.w400);
+  static const homeShelfTitle = TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+  );
+  static const homeShortTitle = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+  );
   static const displayLarge = TextStyle(
     fontFamily: 'Manrope',
     fontSize: 32,
@@ -24,6 +38,18 @@ abstract final class AppTextStyles {
     fontSize: 16,
     fontWeight: FontWeight.w600,
     fontVariations: [FontVariation('wght', 600)],
+  );
+  static const profileName = TextStyle(
+    fontFamily: 'Manrope',
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    fontVariations: [FontVariation('wght', 600)],
+  );
+  static const libraryRowTitle = TextStyle(
+    fontFamily: 'Manrope',
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+    fontVariations: [FontVariation('wght', 500)],
   );
   static const body = TextStyle(
     fontFamily: 'Manrope',

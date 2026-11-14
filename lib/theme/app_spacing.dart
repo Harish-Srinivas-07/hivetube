@@ -13,6 +13,9 @@ abstract final class AppSpacing {
   // ── Video / content geometry ───────────────────────────────────────────────
   static const double videoMaxWidth = 360,
       shortWidth = 128,
+      homeShortWidth = 150,
+      homeShortRatio = 2 / 3,
+      homeTrendingWidth = 280,
       thumbnailRatio = 16 / 9,
       shortRatio = 9 / 16;
 
@@ -48,7 +51,8 @@ abstract final class AppSpacing {
       progressHeight = 3;
 
   // ── Home chips ─────────────────────────────────────────────────────────────
-  static const double homeChipHeight = 36, // was 44, now matches AppSizes.chipHeight
+  static const double homeChipHeight =
+          36, // was 44, now matches AppSizes.chipHeight
       homeChipHorizontalPadding = 16,
       homeMoreIcon = 24,
       homeInlineIconSize = 18,

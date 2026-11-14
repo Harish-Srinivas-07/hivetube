@@ -45,7 +45,15 @@ class _MockPlaybackService extends Fake implements PlaybackService {
     ..position = const Duration(minutes: 1);
   bool stopped = false;
   int toggleCalls = 0;
+  int pauseCalls = 0;
+  int resumeCalls = 0;
   final List<VoidCallback> _listeners = [];
+
+  void _notifyListeners() {
+    for (final listener in List<VoidCallback>.of(_listeners)) {
+      listener();
+    }
+  }
 
   @override
   PlaybackSnapshot get state => _snapshot;
@@ -69,7 +77,9 @@ class _MockPlaybackService extends Fake implements PlaybackService {
   Future<void> play(PlayRequest value) async {
     _request = value;
     stopped = false;
+    _snapshot.playing = true;
     _snapshot.status = PlayerStatus.playing;
+    _notifyListeners();
   }
 
   @override
@@ -80,12 +90,18 @@ class _MockPlaybackService extends Fake implements PlaybackService {
 
   @override
   Future<void> pause() async {
+    pauseCalls++;
+    _snapshot.playing = false;
     _snapshot.status = PlayerStatus.paused;
+    _notifyListeners();
   }
 
   @override
   Future<void> resume() async {
+    resumeCalls++;
+    _snapshot.playing = true;
     _snapshot.status = PlayerStatus.playing;
+    _notifyListeners();
   }
 
   @override
@@ -96,12 +112,10 @@ class _MockPlaybackService extends Fake implements PlaybackService {
   @override
   Future<void> togglePlay() async {
     toggleCalls++;
-    _snapshot.playing = !_snapshot.playing;
-    _snapshot.status = _snapshot.playing
-        ? PlayerStatus.playing
-        : PlayerStatus.paused;
-    for (final listener in _listeners) {
-      listener();
+    if (_snapshot.playing) {
+      await pause();
+    } else {
+      await resume();
     }
   }
 }
@@ -132,10 +146,29 @@ class _FakeUi extends PlayerUiController {
   );
 }
 
+class _ListeningUi extends PlayerUiController {
+  @override
+  PlayerUiState build() {
+    final service = ref.watch(playbackProvider);
+    if (service == null) return const PlayerUiState(dismissed: false);
+    void changed() {
+      state = state.copyWith(
+        playing: service.state.playing,
+        recovering: service.state.recovering,
+      );
+    }
+
+    service.addListener(changed);
+    ref.onDispose(() => service.removeListener(changed));
+    return PlayerUiState(playing: service.state.playing, dismissed: false);
+  }
+}
+
 Widget _buildTestApp({
   required PlaybackService service,
   required void Function(WidgetRef ref) onRef,
   Widget? child,
+  bool listenPlayback = false,
 }) {
   final db = AppDb(NativeDatabase.memory());
   addTearDown(db.close);
@@ -143,7 +176,9 @@ Widget _buildTestApp({
     overrides: [
       dbProvider.overrideWithValue(db),
       playbackProvider.overrideWith(() => _MockPlaybackController(service)),
-      playerUiProvider.overrideWith(_FakeUi.new),
+      playerUiProvider.overrideWith(
+        listenPlayback ? _ListeningUi.new : _FakeUi.new,
+      ),
       shortMetadataProvider('vid1').overrideWith((ref) async => null),
       relatedVideosProvider('vid1').overrideWith(_NoRelated.new),
       watchInfoProvider(
@@ -176,6 +211,46 @@ Widget _buildTestApp({
 }
 
 void main() {
+  testWidgets(
+    'expanded player pause does not resume during WatchPanel rebuild',
+    (tester) async {
+      final service = _MockPlaybackService();
+      late WidgetRef capturedRef;
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          service: service,
+          onRef: (r) => capturedRef = r,
+          listenPlayback: true,
+        ),
+      );
+      capturedRef.read(watchPanelProvider.notifier).open('vid1');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(
+        capturedRef.read(playerUiProvider).panelMode,
+        PlayerPanelMode.expanded,
+      );
+      expect(
+        find.byKey(const ValueKey('playerPlayPauseButton')),
+        findsOneWidget,
+      );
+
+      service.pauseCalls = 0;
+      service.resumeCalls = 0;
+      await tester.tap(find.byKey(const ValueKey('playerPlayPauseButton')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(service.pauseCalls, 1);
+      expect(service.resumeCalls, 0);
+      expect(service.state.status, PlayerStatus.paused);
+    },
+  );
+
   testWidgets('mini card always shows only play and close controls', (
     tester,
   ) async {

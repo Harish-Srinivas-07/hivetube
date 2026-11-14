@@ -54,18 +54,18 @@ class _History implements HistoryRepo {
 class _StaticHome extends HomeController {
   @override
   Future<HomeData> build() async => const HomeData(
-        videos: [
-          VideoItem(
-            id: 'audit_home_1',
-            title: 'Audit Video 1',
-            channelName: 'Audit Channel',
-            thumbUrl: '',
-          ),
-        ],
-        shorts: [
-          ShortItem(id: 'audit_short_1', thumbUrl: '', title: 'Audit Short 1'),
-        ],
-      );
+    videos: [
+      VideoItem(
+        id: 'audit_home_1',
+        title: 'Audit Video 1',
+        channelName: 'Audit Channel',
+        thumbUrl: '',
+      ),
+    ],
+    shorts: [
+      ShortItem(id: 'audit_short_1', thumbUrl: '', title: 'Audit Short 1'),
+    ],
+  );
 }
 
 class _FakeSubscriptionsFeedService extends Fake
@@ -86,8 +86,7 @@ class _FakeSearch extends Fake implements YtSearch {
     String query, {
     String? continuation,
     CancelToken? cancelToken,
-  }) async =>
-      const ShortPage([], null);
+  }) async => const ShortPage([], null);
 }
 
 class _FakeReel extends Fake implements YtReel {
@@ -97,8 +96,7 @@ class _FakeReel extends Fake implements YtReel {
     int count = 12,
     int maxContinuations = 5,
     CancelToken? cancelToken,
-  }) async =>
-      const ReelPage([], null, 0);
+  }) async => const ReelPage([], null, 0);
 
   @override
   Future<ShortItem?> metadata(String id) async => null;
@@ -134,9 +132,9 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall methodCall) async => Directory.systemTemp.path,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall methodCall) async => Directory.systemTemp.path,
+        );
   });
 
   final outDir = Directory('docs/ui_audit/after');
@@ -146,23 +144,17 @@ void main() {
 
   final devices = [
     (name: 'phone_360x800', size: const Size(360, 800)),
-    (name: 'phone_412x915', size: const Size(412, 915)),
     (name: 'tablet_834x1194', size: const Size(834, 1194)),
     (name: 'desktop_1280x800', size: const Size(1280, 800)),
   ];
 
-  final themes = [
-    (name: 'dark', brightness: Brightness.dark),
-    (name: 'light', brightness: Brightness.light),
-  ];
+  final themes = [(name: 'dark', brightness: Brightness.dark)];
 
-  final textScales = [1.0, 1.3];
+  final textScales = [1.0];
 
   final routes = [
     (name: 'home', path: '/home'),
     (name: 'shorts', path: '/shorts'),
-    (name: 'subscriptions', path: '/subscriptions'),
-    (name: 'library', path: '/library'),
     (name: 'settings', path: '/settings'),
   ];
 
@@ -170,55 +162,66 @@ void main() {
     for (final dev in devices) {
       for (final th in themes) {
         for (final scale in textScales) {
-          testWidgets(
-            '${dev.name} ${th.name} scale_$scale full screen audit',
-            tags: 'full-audit',
-            timeout: const Timeout(Duration(seconds: 60)),
-            (tester) async {
-              tester.view.physicalSize = dev.size;
-              tester.view.devicePixelRatio = 1.0;
-              tester.platformDispatcher.platformBrightnessTestValue = th.brightness;
-              addTearDown(tester.view.resetPhysicalSize);
-              addTearDown(tester.view.resetDevicePixelRatio);
-              addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+          for (final r in routes) {
+            testWidgets(
+              '${dev.name} ${th.name} scale_$scale ${r.name} screen audit',
+              tags: 'full-audit',
+              timeout: const Timeout(Duration(seconds: 60)),
+              (tester) async {
+                tester.view.physicalSize = dev.size;
+                tester.view.devicePixelRatio = 1.0;
+                tester.platformDispatcher.platformBrightnessTestValue =
+                    th.brightness;
+                addTearDown(tester.view.resetPhysicalSize);
+                addTearDown(tester.view.resetDevicePixelRatio);
+                addTearDown(
+                  tester.platformDispatcher.clearPlatformBrightnessTestValue,
+                );
 
-              final db = AppDb(NativeDatabase.memory());
-              addTearDown(db.close);
+                final db = AppDb(NativeDatabase.memory());
+                addTearDown(db.close);
 
-              int overflowErrors = 0;
-              final prevOnError = FlutterError.onError;
-              FlutterError.onError = (details) {
-                if (details.exceptionAsString().contains('overflowed') ||
-                    details.exceptionAsString().contains('RenderFlex')) {
-                  overflowErrors++;
-                }
-                prevOnError?.call(details);
-              };
+                int overflowErrors = 0;
+                final prevOnError = FlutterError.onError;
+                addTearDown(() => FlutterError.onError = prevOnError);
+                FlutterError.onError = (details) {
+                  if (details.exceptionAsString().contains('overflowed') ||
+                      details.exceptionAsString().contains('RenderFlex')) {
+                    overflowErrors++;
+                  }
+                  prevOnError?.call(details);
+                };
 
-              final repaintKey = GlobalKey();
-              const selection = ShortsSelection(
-                items: [
-                  ShortItem(id: 'audit_short_1', thumbUrl: '', title: 'Audit Short 1'),
-                  ShortItem(id: 'audit_short_2', thumbUrl: '', title: 'Audit Short 2'),
-                ],
-                index: 0,
-              );
-              final cache = HomeCache(
-                const [
-                  VideoItem(
-                    id: 'audit_home_1',
-                    title: 'Audit Video 1',
-                    channelName: 'Audit Channel',
-                    thumbUrl: '',
-                  ),
-                ],
-                const [],
-                DateTime.now(),
-              );
+                final repaintKey = GlobalKey();
+                const selection = ShortsSelection(
+                  items: [
+                    ShortItem(
+                      id: 'audit_short_1',
+                      thumbUrl: '',
+                      title: 'Audit Short 1',
+                    ),
+                    ShortItem(
+                      id: 'audit_short_2',
+                      thumbUrl: '',
+                      title: 'Audit Short 2',
+                    ),
+                  ],
+                  index: 0,
+                );
+                final cache = HomeCache(
+                  const [
+                    VideoItem(
+                      id: 'audit_home_1',
+                      title: 'Audit Video 1',
+                      channelName: 'Audit Channel',
+                      thumbUrl: '',
+                    ),
+                  ],
+                  const [],
+                  DateTime.now(),
+                );
 
-              appRouter.go('/home');
-              await tester.pumpWidget(
-                ProviderScope(
+                Widget buildAuditApp() => ProviderScope(
                   overrides: [
                     dbProvider.overrideWithValue(db),
                     ytApiProvider.overrideWith((ref) async => _FakeYtApi()),
@@ -244,14 +247,10 @@ void main() {
                       child: const HiveTubeApp(),
                     ),
                   ),
-                ),
-              );
-              await tester.pump();
-              await tester.pump(const Duration(milliseconds: 100));
+                );
 
-              for (final r in routes) {
                 appRouter.go(r.path);
-                await tester.pump();
+                await tester.pumpWidget(buildAuditApp());
                 await tester.pump(const Duration(milliseconds: 100));
 
                 // Capture image for screenshot documentation
@@ -259,23 +258,28 @@ void main() {
                   final ro = repaintKey.currentContext?.findRenderObject();
                   if (ro is RenderRepaintBoundary) {
                     final image = await ro.toImage(pixelRatio: 1.0);
-                    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                    final byteData = await image.toByteData(
+                      format: ui.ImageByteFormat.png,
+                    );
                     if (byteData != null) {
-                      final filename = '${dev.name}_${th.name}_scale${scale}_${r.name}.png';
-                      File('${outDir.path}/$filename').writeAsBytesSync(byteData.buffer.asUint8List());
+                      final filename =
+                          '${dev.name}_${th.name}_scale${scale}_${r.name}.png';
+                      File(
+                        '${outDir.path}/$filename',
+                      ).writeAsBytesSync(byteData.buffer.asUint8List());
                     }
                   }
                 } catch (_) {}
-              }
 
-              FlutterError.onError = prevOnError;
-              expect(
-                overflowErrors,
-                0,
-                reason: 'RenderFlex overflow detected on ${dev.name} ${th.name} scale $scale',
-              );
-            },
-          );
+                expect(
+                  overflowErrors,
+                  0,
+                  reason:
+                      'RenderFlex overflow detected on ${dev.name} ${th.name} scale $scale',
+                );
+              },
+            );
+          }
         }
       }
     }

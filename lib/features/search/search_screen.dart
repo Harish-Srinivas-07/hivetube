@@ -17,6 +17,7 @@ import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -193,18 +194,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       listenable: suggestionController,
       builder: (context, _) {
         if (suggestionController.isLoading) {
-          return const Column(
-            children: [
-              LinearProgressIndicator(minHeight: 2),
-              ListTile(
-                leading: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                title: Text('Loading suggestions…'),
-              ),
-            ],
+          return Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: Column(
+              children: [
+                for (var i = 0; i < 4; i++)
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        SkeletonBox(
+                          width: 20,
+                          height: 20,
+                          borderRadius: AppRadius.pill,
+                        ),
+                        SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: SkeletonBox(
+                            height: 14,
+                            borderRadius: AppRadius.xs,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           );
         }
         if (suggestionController.error != null) {
@@ -238,15 +256,88 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return Column(
           children: [
             for (final suggestion in suggestionController.suggestions)
-              ListTile(
-                key: ValueKey('suggestion_$suggestion'),
-                leading: const Icon(LucideIcons.search),
-                title: Text(suggestion),
-                onTap: () => search(suggestion),
-              ),
+              _buildSuggestionRow(suggestion),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSuggestionRow(String suggestion) {
+    final theme = Theme.of(context);
+    final query = input.text.trim();
+    final startsWithQuery =
+        query.isNotEmpty &&
+        suggestion.toLowerCase().startsWith(query.toLowerCase());
+    final titleStyle = theme.textTheme.bodyLarge;
+    final matchStyle = titleStyle?.copyWith(fontWeight: FontWeight.w700);
+
+    return Column(
+      children: [
+        InkWell(
+          key: ValueKey('suggestion_$suggestion'),
+          onTap: () => search(suggestion),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
+            child: SizedBox(
+              height: 44,
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.search,
+                    size: 19,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        style: titleStyle,
+                        children: startsWithQuery
+                            ? [
+                                TextSpan(
+                                  text: suggestion.substring(0, query.length),
+                                  style: matchStyle,
+                                ),
+                                TextSpan(
+                                  text: suggestion.substring(query.length),
+                                ),
+                              ]
+                            : [TextSpan(text: suggestion)],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Use suggestion',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.north_west, size: 19),
+                    onPressed: () {
+                      input.value = TextEditingValue(
+                        text: suggestion,
+                        selection: TextSelection.collapsed(
+                          offset: suggestion.length,
+                        ),
+                      );
+                      queryChanged(suggestion);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Divider(
+          height: 1,
+          indent: AppSpacing.md + 19 + AppSpacing.md,
+          endIndent: AppSpacing.md,
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ],
     );
   }
 
@@ -259,110 +350,147 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildChannelRow(ChannelItem item) {
     final theme = Theme.of(context);
-    return ListTile(
-      leading: ChannelAvatar(
-        name: item.title,
-        url: item.avatarUrl,
-        size: AppSizes.avatarSm * 2,
-      ),
-      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        [
-          item.handle,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        leading: ChannelAvatar(
+          name: item.title,
+          url: item.avatarUrl,
+          size: AppSizes.avatarLg,
+        ),
+        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
           item.subscriberCountText,
-        ].where((s) => s.isNotEmpty).join(' · '),
-        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        onTap: () => context.push('/channel/${item.id}'),
       ),
-      trailing: FilledButton.tonal(
-        onPressed: () => context.push('/channel/${item.id}'),
-        child: const Text('View'),
-      ),
-      onTap: () => context.push('/channel/${item.id}'),
     );
   }
 
   Widget _buildPlaylistRow(PlaylistItem item) {
     final theme = Theme.of(context);
-    return ListTile(
-      leading: SizedBox(
-        width: 80,
-        child: ThumbnailWithDuration(
-          url: item.thumbUrl,
-          borderRadius: AppRadius.smBorder,
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: AppSpacing.md,
+        right: AppSpacing.md,
+        bottom: AppSpacing.lg,
+      ),
+      child: InkWell(
+        onTap: () => context.push('/playlist/${item.id}'),
+        child: Row(
+          children: [
+            SizedBox(
+              width: AppSizes.searchCompactThumbnailWidth,
+              child: ThumbnailWithDuration(
+                url: item.thumbUrl,
+                borderRadius: AppRadius.mdBorder,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    [
+                      item.channelName,
+                      item.videoCountText,
+                    ].where((value) => value.isNotEmpty).join(' · '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        [
-          item.channelName,
-          item.videoCountText,
-        ].where((s) => s.isNotEmpty).join(' · '),
-        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
-      ),
-      onTap: () => context.push('/playlist/${item.id}'),
     );
   }
 
   Widget _buildShortsShelf(List<ShortItem> shorts) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.xs,
-          ),
-          child: Text(
-            'Shorts',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
+            child: Text(
+              'Shorts',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-        ),
-        SizedBox(
-          height:
-              140.0 +
-              AppSpacing.xs +
-              MediaQuery.textScalerOf(context).scale(40.0),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            itemCount: shorts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-            itemBuilder: (context, i) {
-              final s = shorts[i];
-              return GestureDetector(
-                onTap: () => openWatchPanel(ref, s.id),
-                child: SizedBox(
-                  width: 100,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: AppRadius.mdBorder,
-                        child: CachedNetworkImage(
-                          imageUrl: s.thumbUrl,
-                          width: 100,
-                          height: 140,
-                          fit: BoxFit.cover,
+          SizedBox(
+            height:
+                AppSizes.horizontalThumbCardHeight +
+                AppSpacing.xs +
+                MediaQuery.textScalerOf(
+                  context,
+                ).scale(AppTextStyles.caption.fontSize! * 2),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              itemCount: shorts.length,
+              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+              itemBuilder: (context, i) {
+                final s = shorts[i];
+                return GestureDetector(
+                  onTap: () => openWatchPanel(ref, s.id),
+                  child: SizedBox(
+                    width: AppSpacing.shortWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: AppRadius.mdBorder,
+                          child: CachedNetworkImage(
+                            imageUrl: s.thumbUrl,
+                            width: AppSpacing.shortWidth,
+                            height: AppSizes.horizontalThumbCardHeight,
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        s.title ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall,
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          s.title ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -389,55 +517,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            AppSpacing.sm,
-          ),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
           child: Column(
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).backButtonTooltip,
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(LucideIcons.arrowLeft),
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: AppSpacing.searchMaxWidth,
-                        ),
-                        child: SizedBox(
-                          height: AppSpacing.searchHeight,
-                          child: TextField(
-                            key: const ValueKey('searchQueryField'),
-                            controller: input,
-                            autofocus: widget.initialQuery == null,
-                            textInputAction: TextInputAction.search,
-                            onChanged: queryChanged,
-                            onSubmitted: (q) => search(q),
-                            decoration: const InputDecoration(
-                              hintText: 'Search HiveTube',
-                              prefixIcon: Icon(LucideIcons.search),
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: AppRadius.pillBorder,
-                                borderSide: BorderSide.none,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).backButtonTooltip,
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(LucideIcons.arrowLeft),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: AppSpacing.searchMaxWidth,
+                          ),
+                          child: SizedBox(
+                            height: AppSpacing.searchHeight,
+                            child: TextField(
+                              key: const ValueKey('searchQueryField'),
+                              controller: input,
+                              autofocus: widget.initialQuery == null,
+                              textInputAction: TextInputAction.search,
+                              onChanged: queryChanged,
+                              onSubmitted: (q) => search(q),
+                              decoration: const InputDecoration(
+                                hintText: 'Search HiveTube',
+                                prefixIcon: Icon(LucideIcons.search),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: AppRadius.pillBorder,
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
 
               // Filter Chips
@@ -473,23 +599,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
                     // Loading
                     if (searching) ...[
-                      const SkeletonVideoCard(),
-                      const SizedBox(height: AppSpacing.lg),
-                      const SkeletonVideoCard(),
+                      const SkeletonVideoCard(searchResult: true),
+                      const SkeletonVideoCard(searchResult: true),
+                      const SkeletonVideoCard(searchResult: true),
                     ],
 
                     // Results
                     if (activeQuery.isNotEmpty && !searching)
                       for (final res in filteredResults) ...[
                         if (res is VideoSearchResult)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.md,
-                            ),
-                            child: VideoCard.grid(
-                              video: res.video,
-                              onTap: () => openWatchPanel(ref, res.video.id),
-                            ),
+                          VideoCard.searchResult(
+                            video: res.video,
+                            onTap: () => openWatchPanel(ref, res.video.id),
                           )
                         else if (res is ChannelSearchResult)
                           _buildChannelRow(res.channel)
@@ -502,7 +623,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             padding: const EdgeInsets.only(
                               bottom: AppSpacing.md,
                             ),
-                            child: VideoCard.grid(
+                            child: VideoCard.compact(
                               video: VideoItem(
                                 id: res.short.id,
                                 title: res.short.title ?? '',

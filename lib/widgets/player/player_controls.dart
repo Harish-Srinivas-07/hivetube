@@ -486,50 +486,50 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                         const SizedBox(width: 8),
                         if (!compactFullscreen)
                           Material(
-                          color: AppColors.playerControlGlass,
-                          borderRadius: AppRadius.pillBorder,
-                          child: InkWell(
+                            color: AppColors.playerControlGlass,
                             borderRadius: AppRadius.pillBorder,
-                            onTap: () => ref
-                                .read(contentPrefsProvider.notifier)
-                                .setAutoplay(!autoplay),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 4,
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.white24,
+                            child: InkWell(
+                              borderRadius: AppRadius.pillBorder,
+                              onTap: () => ref
+                                  .read(contentPrefsProvider.notifier)
+                                  .setAutoplay(!autoplay),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 4,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white24,
+                                      ),
+                                      child: Icon(
+                                        autoplay
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        size: 18,
+                                        color: Colors.white,
+                                      ),
                                     ),
-                                    child: Icon(
-                                      autoplay
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      size: 18,
-                                      color: Colors.white,
+                                    const SizedBox(width: 7),
+                                    const Text(
+                                      'Autoplay',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  const Text(
-                                    'Autoplay',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
+                                    const SizedBox(width: 8),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
                         if (!compactFullscreen)
                           _roundControl(
                             icon: Icons.cast_rounded,
@@ -1037,13 +1037,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                           width: 36,
                                           height: 20,
                                           decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
                                             border: Border.all(
                                               color: autoplay
                                                   ? AppColors.shortsForeground
                                                   : AppColors.shortsForeground
-                                                      .withValues(alpha: 0.5),
+                                                        .withValues(alpha: 0.5),
                                               width: 1.5,
                                             ),
                                           ),
@@ -1059,7 +1060,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               color: autoplay
                                                   ? AppColors.shortsForeground
                                                   : AppColors.shortsForeground
-                                                      .withValues(alpha: 0.7),
+                                                        .withValues(alpha: 0.7),
                                             ),
                                             child: Icon(
                                               autoplay
@@ -1084,8 +1085,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                                 : null,
                                           ),
                                         ),
-                                        borderRadius:
-                                            BorderRadius.circular(4),
+                                        borderRadius: BorderRadius.circular(4),
                                         child: Tooltip(
                                           message: 'Captions',
                                           child: Container(
@@ -1097,27 +1097,33 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               borderRadius:
                                                   BorderRadius.circular(4),
                                               border: Border.all(
-                                                color: state.selectedCaption !=
+                                                color:
+                                                    state.selectedCaption !=
                                                         null
                                                     ? AppColors.shortsForeground
                                                     : AppColors.shortsForeground
-                                                        .withValues(alpha: 0.5),
+                                                          .withValues(
+                                                            alpha: 0.5,
+                                                          ),
                                                 width: 1.5,
                                               ),
-                                              color: state.selectedCaption !=
-                                                      null
+                                              color:
+                                                  state.selectedCaption != null
                                                   ? AppColors.shortsForeground
-                                                      .withValues(alpha: 0.25)
+                                                        .withValues(alpha: 0.25)
                                                   : Colors.transparent,
                                             ),
                                             child: Text(
                                               'CC',
                                               style: TextStyle(
-                                                color: state.selectedCaption !=
+                                                color:
+                                                    state.selectedCaption !=
                                                         null
                                                     ? AppColors.shortsForeground
                                                     : AppColors.shortsForeground
-                                                        .withValues(alpha: 0.6),
+                                                          .withValues(
+                                                            alpha: 0.6,
+                                                          ),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -1152,8 +1158,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                       height: 48,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.black
-                                            .withValues(alpha: 0.4),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.4,
+                                        ),
                                       ),
                                       child: IconButton(
                                         icon: const Icon(
@@ -1172,8 +1179,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                     height: 64,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.black
-                                          .withValues(alpha: 0.5),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.5,
+                                      ),
                                     ),
                                     child: state.recovering
                                         ? const Center(
@@ -1187,9 +1195,19 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                             ),
                                           )
                                         : IconButton(
+                                            key: const ValueKey(
+                                              'playerPlayPauseButton',
+                                            ),
                                             color: AppColors.shortsForeground,
                                             iconSize: 36,
                                             onPressed: () async {
+                                              debugPrint(
+                                                '[PAUSEDBG] player button '
+                                                'pressed status=${service.state.status} '
+                                                'playing=${service.state.playing} '
+                                                'panelMode=${ui.panelMode} '
+                                                'overlayVisible=${ui.overlayVisible}',
+                                              );
                                               await service.togglePlay();
                                               if (mounted) _scheduleHide();
                                             },
@@ -1210,8 +1228,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                       height: 48,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.black
-                                            .withValues(alpha: 0.4),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.4,
+                                        ),
                                       ),
                                       child: IconButton(
                                         icon: const Icon(
@@ -1243,10 +1262,10 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                         vertical: AppSpacing.xs,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.45),
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.45,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
                                         '${_time(displayPosition)} / ${_time(ui.duration > Duration.zero ? ui.duration : service.state.duration)}',
@@ -1263,18 +1282,19 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                       const SizedBox(width: AppSpacing.sm),
                                       InkWell(
                                         onTap: widget.onChapters,
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(12),
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: AppSpacing.sm,
                                             vertical: AppSpacing.xs,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.45),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            color: Colors.black.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -1282,8 +1302,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               ConstrainedBox(
                                                 constraints:
                                                     const BoxConstraints(
-                                                  maxWidth: 140,
-                                                ),
+                                                      maxWidth: 140,
+                                                    ),
                                                 child: Text(
                                                   widget.chapters
                                                           .where(
@@ -1293,7 +1313,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                                           )
                                                           .lastOrNull
                                                           ?.title ??
-                                                      widget.chapters.first
+                                                      widget
+                                                          .chapters
+                                                          .first
                                                           .title,
                                                   maxLines: 1,
                                                   overflow:
@@ -1309,8 +1331,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               const Icon(
                                                 LucideIcons.chevronRight,
                                                 size: 14,
-                                                color: AppColors
-                                                    .shortsForeground,
+                                                color:
+                                                    AppColors.shortsForeground,
                                               ),
                                             ],
                                           ),
@@ -1323,14 +1345,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                       height: 36,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.black
-                                            .withValues(alpha: 0.45),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.45,
+                                        ),
                                       ),
                                       child: IconButton(
                                         padding: EdgeInsets.zero,
-                                        onPressed: () => _fullscreen(
-                                          !ui.isFullscreen,
-                                        ),
+                                        onPressed: () =>
+                                            _fullscreen(!ui.isFullscreen),
                                         tooltip: 'Fullscreen',
                                         icon: Icon(
                                           ui.isFullscreen
@@ -1357,6 +1379,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 left: 0,
                 right: 0,
                 bottom: 0,
+                height: 20,
                 child: PlayerSeekBar(
                   overlayVisible: ui.overlayVisible,
                   position: ui.displayPosition,

@@ -7,11 +7,16 @@ class SectionHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.trailing,
-    this.padding = const EdgeInsets.all(AppSpacing.lg),
+    this.titleStyle,
+    this.padding = const EdgeInsets.symmetric(
+      horizontal: AppSpacing.md,
+      vertical: AppSpacing.xs,
+    ),
   });
 
   final String title;
   final Widget? trailing;
+  final TextStyle? titleStyle;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -23,9 +28,9 @@ class SectionHeader extends StatelessWidget {
         padding: padding,
         child: Text(
           title,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style:
+              titleStyle ??
+              theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
       );
     }
@@ -38,9 +43,11 @@ class SectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style:
+                  titleStyle ??
+                  theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ),
           trailing!,
@@ -49,4 +56,3 @@ class SectionHeader extends StatelessWidget {
     );
   }
 }
-

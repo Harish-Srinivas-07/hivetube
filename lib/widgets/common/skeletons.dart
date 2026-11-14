@@ -3,6 +3,7 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 
 /// Animated shimmer placeholder box for loading states.
 class SkeletonBox extends StatefulWidget {
@@ -67,12 +68,87 @@ class VideoSkeleton extends StatelessWidget {
   const VideoSkeleton({
     super.key,
     this.compact = false,
+    this.searchResult = false,
   });
 
   final bool compact;
+  final bool searchResult;
 
   @override
   Widget build(BuildContext context) {
+    if (searchResult) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: AspectRatio(
+                aspectRatio: AppSpacing.thumbnailRatio,
+                child: SkeletonBox(
+                  height: double.infinity,
+                  borderRadius: AppRadius.md,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SkeletonBox(
+                    width: AppSizes.searchResultAvatar,
+                    height: AppSizes.searchResultAvatar,
+                    borderRadius: AppSizes.searchResultAvatar / 2,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonBox(
+                          height: AppTextStyles.body.fontSize!,
+                          borderRadius: AppRadius.xs,
+                        ),
+                        SizedBox(height: AppSpacing.xs),
+                        SkeletonBox(
+                          height: AppTextStyles.body.fontSize!,
+                          borderRadius: AppRadius.xs,
+                        ),
+                        SizedBox(height: AppSpacing.xxs),
+                        SkeletonBox(
+                          height: AppTextStyles.label.fontSize!,
+                          borderRadius: AppRadius.xs,
+                        ),
+                        SizedBox(height: AppSpacing.xxs),
+                        SkeletonBox(
+                          height: AppTextStyles.label.fontSize!,
+                          borderRadius: AppRadius.xs,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  SizedBox.square(
+                    dimension: AppSizes.touchMin,
+                    child: Center(
+                      child: SkeletonBox(
+                        width: AppSizes.iconSm,
+                        height: AppSizes.iconSm,
+                        borderRadius: AppRadius.pill,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (compact) {
       return Padding(
         padding: const EdgeInsets.symmetric(
@@ -82,19 +158,31 @@ class VideoSkeleton extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SkeletonBox(
-              width: 120,
-              height: 68,
-              borderRadius: AppRadius.sm,
+            SizedBox(
+              width: AppSizes.searchCompactThumbnailWidth,
+              child: const AspectRatio(
+                aspectRatio: AppSpacing.thumbnailRatio,
+                child: SkeletonBox(
+                  height: double.infinity,
+                  borderRadius: AppRadius.sm,
+                ),
+              ),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  SkeletonBox(height: 14, borderRadius: AppRadius.xs),
+                children: [
+                  SkeletonBox(
+                    height: AppTextStyles.body.fontSize!,
+                    borderRadius: AppRadius.xs,
+                  ),
                   SizedBox(height: AppSpacing.xs),
-                  SkeletonBox(width: 120, height: 12, borderRadius: AppRadius.xs),
+                  SkeletonBox(
+                    width: AppSizes.searchCompactThumbnailWidth,
+                    height: AppTextStyles.label.fontSize!,
+                    borderRadius: AppRadius.xs,
+                  ),
                 ],
               ),
             ),
@@ -156,12 +244,53 @@ class FeedSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.all(AppSpacing.lg),
       physics: const NeverScrollableScrollPhysics(),
       itemCount: count,
-      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.lg),
-      itemBuilder: (_, _) => const VideoSkeleton(),
+      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xl),
+      itemBuilder: (_, _) => Column(
+        children: [
+          const AspectRatio(
+            aspectRatio: AppSpacing.thumbnailRatio,
+            child: SkeletonBox(
+              height: double.infinity,
+              borderRadius: AppRadius.none,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SkeletonBox(
+                  width: AppSizes.searchResultAvatar,
+                  height: AppSizes.searchResultAvatar,
+                  borderRadius: AppSizes.searchResultAvatar / 2,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(
+                        height: AppTextStyles.body.fontSize!,
+                        borderRadius: AppRadius.xs,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      SkeletonBox(
+                        width: AppSizes.libraryHistoryCardWidth,
+                        height: AppTextStyles.label.fontSize!,
+                        borderRadius: AppRadius.xs,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSizes.buttonIcon),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
-

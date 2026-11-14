@@ -710,12 +710,26 @@ class _ShortPageState extends State<_ShortPage> {
           ),
         ),
         if (service != null)
-          Opacity(
-            opacity: frameReady ? 1 : 0,
-            child: Video(
-              controller: service.controller,
-              controls: NoVideoControls,
-              fit: portrait ? BoxFit.cover : BoxFit.contain,
+          Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = min(
+                  constraints.maxWidth,
+                  constraints.maxHeight * AppSpacing.shortRatio,
+                );
+                return SizedBox(
+                  width: width,
+                  height: width / AppSpacing.shortRatio,
+                  child: Opacity(
+                    opacity: frameReady ? 1 : 0,
+                    child: Video(
+                      controller: service.controller,
+                      controls: NoVideoControls,
+                      fit: portrait ? BoxFit.cover : BoxFit.contain,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         GestureDetector(

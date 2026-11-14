@@ -850,6 +850,9 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    debugPrint(
+      '[PAUSEDBG] pause status=${state.status} playing=${state.playing}',
+    );
     _userPaused = true;
     _resumeAfterFocus = false;
     _failureMonitor.cancel();
@@ -869,6 +872,10 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> togglePlay() async {
+    debugPrint(
+      '[PAUSEDBG] togglePlay status=${state.status} playing=${state.playing} '
+      'userPaused=$_userPaused recovering=${state.recovering}',
+    );
     if (state.status == PlayerStatus.ended || player.state.completed) {
       await seek(Duration.zero);
       await resume();
@@ -886,6 +893,10 @@ class PlaybackService extends ChangeNotifier {
   Future<void> togglePlayPause() => togglePlay();
 
   Future<void> resume() async {
+    debugPrint(
+      '[PAUSEDBG] resume status=${state.status} playing=${state.playing} '
+      'userPaused=$_userPaused',
+    );
     _userPaused = false;
     _resumeAfterFocus = false;
     if (!_visible) {

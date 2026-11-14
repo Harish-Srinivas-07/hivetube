@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../lib/services/youtube_search_suggestion_source.dart';
+import 'package:hivetube/services/search_suggestions.dart';
 
 Future<void> main(List<String> args) async {
   final query = args.isEmpty ? 'VJ siddhu' : args.join(' ');

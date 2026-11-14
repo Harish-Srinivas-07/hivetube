@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 abstract final class AppMotion {
   // Durations
   static const Duration fast = Duration(milliseconds: 120);
+  static const Duration imageFade = Duration(milliseconds: 150);
   static const Duration base = Duration(milliseconds: 200);
   static const Duration slow = Duration(milliseconds: 320);
   static const Duration page = Duration(milliseconds: 350);
@@ -22,4 +23,3 @@ abstract final class AppMotion {
   static final enterCurve = CurveTween(curve: enter);
   static final exitCurve = CurveTween(curve: exit);
 }
-

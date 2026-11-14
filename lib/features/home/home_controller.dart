@@ -56,6 +56,40 @@ final homeProvider = AsyncNotifierProvider<HomeController, HomeData>(
   HomeController.new,
 );
 
+final _avatarCoordinatorProvider = Provider<AvatarBackfillCoordinator>(
+  (ref) => AvatarBackfillCoordinator(),
+);
+final channelAvatarProvider =
+    FutureProvider.family<
+      ({String url, String channelId}),
+      ({String channelId, String videoId})
+    >((ref, key) async {
+      var channelId = key.channelId;
+      final cache = ref.read(channelAvatarCacheProvider);
+      if (channelId.isNotEmpty) {
+        final cached = cache.get(channelId);
+        if (cached != null) return (url: cached, channelId: channelId);
+      }
+      final url =
+          await ref.read(_avatarCoordinatorProvider).resolve(
+            channelId.isNotEmpty ? channelId : 'video:${key.videoId}',
+            () async {
+              final api = await ref.read(ytApiProvider.future);
+              if (channelId.isNotEmpty) {
+                return api.browse.channelAvatar(channelId);
+              }
+              final owner = await api.next.ownerMetadata(key.videoId);
+              channelId = owner?.channelId ?? '';
+              return owner?.channelAvatarUrl ?? '';
+            },
+          ) ??
+          '';
+      if (channelId.isNotEmpty && url.isNotEmpty) {
+        await cache.put(channelId, url);
+      }
+      return (url: url, channelId: channelId);
+    });
+
 class HomeController extends AsyncNotifier<HomeData> {
   final _refreshGuard = HomeRefreshGuard();
   final _paginationGuard = PaginationGuard();
@@ -66,75 +100,11 @@ class HomeController extends AsyncNotifier<HomeData> {
   final Map<String, HomeData> _sessionDataByChip = {};
   final Map<String, HomeMixer> _mixersByChip = {};
   final Map<String, CancelToken> _tokensByChip = {};
-  final _avatarBackfill = AvatarBackfillCoordinator();
   HomeMixer? _mixer;
   List<VideoItem> _pendingFresh = [];
   String? _sessionKey;
   int _seed = DateTime.now().microsecondsSinceEpoch;
   Set<String> _refreshExcluded = {};
-
-  Future<void> ensureAvatar(VideoItem item) async {
-    if (item.channelAvatarUrl.isNotEmpty) return;
-    final cache = ref.read(channelAvatarCacheProvider);
-    if (item.channelId.isNotEmpty) {
-      final cached = cache.get(item.channelId);
-      if (cached != null) {
-        _applyAvatar(item, item.channelId, cached);
-        return;
-      }
-    }
-    final key = item.channelId.isNotEmpty ? item.channelId : 'video:${item.id}';
-    var resolvedChannelId = item.channelId;
-    final avatar = await _avatarBackfill.resolve(key, () async {
-      final api = await ref.read(ytApiProvider.future);
-      if (resolvedChannelId.isNotEmpty) {
-        return api.browse.channelAvatar(resolvedChannelId);
-      } else {
-        final owner = await api.next.ownerMetadata(item.id);
-        if (owner != null) {
-          resolvedChannelId = owner.channelId ?? '';
-          return owner.channelAvatarUrl ?? '';
-        }
-        return '';
-      }
-    });
-    if (avatar == null) return;
-    if (resolvedChannelId.isNotEmpty) {
-      await cache.put(resolvedChannelId, avatar);
-    }
-    _applyAvatar(item, resolvedChannelId, avatar);
-  }
-
-  void _applyAvatar(VideoItem item, String channelId, String avatar) {
-    final current = state.value;
-    if (current == null) return;
-    VideoItem updated(VideoItem video) {
-      if (video.id != item.id &&
-          (channelId.isEmpty || video.channelId != channelId)) {
-        return video;
-      }
-      return VideoItem(
-        id: video.id,
-        title: video.title,
-        channelId: channelId.isEmpty ? video.channelId : channelId,
-        channelName: video.channelName,
-        channelAvatarUrl: avatar,
-        thumbUrl: video.thumbUrl,
-        durationText: video.durationText,
-        viewsText: video.viewsText,
-        publishedText: video.publishedText,
-        publishedAt: video.publishedAt,
-        isShort: video.isShort,
-      );
-    }
-
-    state = AsyncData(
-      current.copy(
-        videos: current.videos.map(updated).toList(),
-        trending: current.trending.map(updated).toList(),
-      ),
-    );
-  }
 
   @override
   FutureOr<HomeData> build() {

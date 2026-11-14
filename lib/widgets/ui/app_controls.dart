@@ -33,10 +33,10 @@ class AppChip extends StatelessWidget {
     final cs = theme.colorScheme;
 
     final bgColor = selected ? cs.onSurface : cs.surfaceContainerHighest;
-    final fgColor = selected ? cs.surface : cs.onSurfaceVariant;
+    final fgColor = selected ? cs.surface : cs.onSurface;
 
-    final height = compact ? AppSizes.chipHeightCompact : AppSizes.chipHeight;
-    final labelStyle = AppTextStyles.chipLabel.copyWith(color: fgColor);
+    final height = AppSizes.chipHeightCompact;
+    final labelStyle = AppTextStyles.body.copyWith(color: fgColor);
 
     return AnimatedContainer(
       duration: AppMotion.fast,
@@ -44,17 +44,15 @@ class AppChip extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: AppRadius.pillBorder,
+        borderRadius: AppRadius.smBorder,
       ),
       child: Material(
         color: AppColors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: AppRadius.pillBorder,
+          borderRadius: AppRadius.smBorder,
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -82,47 +80,35 @@ class AppChip extends StatelessWidget {
 
 /// Horizontally scrolling chip bar with right-edge fade and standard gutters.
 class AppChipBar extends StatelessWidget {
-  const AppChipBar({
-    super.key,
-    required this.children,
-    this.padding,
-  });
+  const AppChipBar({super.key, required this.children, this.padding});
 
   final List<Widget> children;
   final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
-    final effectivePadding = padding ??
+    final effectivePadding =
+        padding ??
         const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
+          horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
         );
 
     return SizedBox(
       height: AppSizes.chipHeightCompact + AppSpacing.sm * 2,
-      child: ShaderMask(
-        shaderCallback: (Rect bounds) {
-          return const LinearGradient(
-            begin: Alignment(0.85, 0.0),
-            end: Alignment.centerRight,
-            colors: [AppColors.maskOpaque, AppColors.transparent],
-          ).createShader(bounds);
-        },
-        blendMode: BlendMode.dstIn,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: effectivePadding,
-          itemCount: children.length,
-          separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-          itemBuilder: (_, index) => children[index],
-        ),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: effectivePadding,
+        itemCount: children.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (_, index) => children[index],
       ),
     );
   }
 }
 
 enum AppButtonSize { compact, standard, large }
+
 enum AppButtonVariant { filled, tonal, destructive, text, outlined }
 
 /// YouTube-style pill button with tactile press feedback.
@@ -204,10 +190,10 @@ class _AppButtonState extends State<AppButton> {
   bool _pressed = false;
 
   double get _height => switch (widget.size) {
-        AppButtonSize.compact => AppSizes.buttonCompact,
-        AppButtonSize.standard => AppSizes.buttonStandard,
-        AppButtonSize.large => AppSizes.buttonLarge,
-      };
+    AppButtonSize.compact => AppSizes.buttonCompact,
+    AppButtonSize.standard => AppSizes.buttonStandard,
+    AppButtonSize.large => AppSizes.buttonLarge,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +254,11 @@ class _AppButtonState extends State<AppButton> {
               ),
               if (widget.trailingIcon != null) ...[
                 const SizedBox(width: AppSpacing.iconGap),
-                Icon(widget.trailingIcon, size: AppSizes.iconXs, color: fgColor),
+                Icon(
+                  widget.trailingIcon,
+                  size: AppSizes.iconXs,
+                  color: fgColor,
+                ),
               ],
             ],
           );
@@ -300,9 +290,7 @@ class _AppButtonState extends State<AppButton> {
               borderRadius: AppRadius.pillBorder,
               child: Container(
                 height: _height,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 alignment: Alignment.center,
                 child: content,
               ),
@@ -334,10 +322,10 @@ class AppLikeDislikeSegment extends StatelessWidget {
   final AppButtonSize size;
 
   double get _height => switch (size) {
-        AppButtonSize.compact => AppSizes.buttonCompact,
-        AppButtonSize.standard => AppSizes.buttonStandard,
-        AppButtonSize.large => AppSizes.buttonLarge,
-      };
+    AppButtonSize.compact => AppSizes.buttonCompact,
+    AppButtonSize.standard => AppSizes.buttonStandard,
+    AppButtonSize.large => AppSizes.buttonLarge,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -362,9 +350,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
                 left: Radius.circular(AppRadius.pill),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -377,7 +363,9 @@ class AppLikeDislikeSegment extends StatelessWidget {
                       const SizedBox(width: AppSpacing.iconGap),
                       Text(
                         likeCount,
-                        style: AppTextStyles.buttonLabel.copyWith(color: likeFg),
+                        style: AppTextStyles.buttonLabel.copyWith(
+                          color: likeFg,
+                        ),
                       ),
                     ],
                   ],
@@ -395,9 +383,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
                 right: Radius.circular(AppRadius.pill),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -410,7 +396,9 @@ class AppLikeDislikeSegment extends StatelessWidget {
                       const SizedBox(width: AppSpacing.iconGap),
                       Text(
                         dislikeCount,
-                        style: AppTextStyles.buttonLabel.copyWith(color: dislikeFg),
+                        style: AppTextStyles.buttonLabel.copyWith(
+                          color: dislikeFg,
+                        ),
                       ),
                     ],
                   ],

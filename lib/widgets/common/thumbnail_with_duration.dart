@@ -5,6 +5,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../../theme/app_motion.dart';
 
 /// Unified YouTube-style video thumbnail with duration badge and watched progress bar.
 class ThumbnailWithDuration extends StatelessWidget {
@@ -41,21 +43,31 @@ class ThumbnailWithDuration extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (url.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => Container(
-                  color: theme.colorScheme.surfaceContainerHigh,
-                  child: const Center(
-                    child: Icon(
-                      LucideIcons.imageOff,
-                      color: AppColors.shortsProgressTrack,
-                      size: AppSizes.icon,
+              LayoutBuilder(
+                builder: (context, constraints) => CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  memCacheWidth:
+                      (constraints.maxWidth *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .ceil(),
+                  maxWidthDiskCache:
+                      (constraints.maxWidth *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .ceil(),
+                  fadeInDuration: AppMotion.imageFade,
+                  errorWidget: (_, _, _) => Container(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    child: const Center(
+                      child: Icon(
+                        LucideIcons.imageOff,
+                        color: AppColors.shortsProgressTrack,
+                        size: AppSizes.icon,
+                      ),
                     ),
                   ),
-                ),
-                placeholder: (_, _) => Container(
-                  color: theme.colorScheme.surfaceContainerHigh,
+                  placeholder: (_, _) =>
+                      Container(color: theme.colorScheme.surfaceContainerHigh),
                 ),
               )
             else
@@ -71,8 +83,8 @@ class ThumbnailWithDuration extends StatelessWidget {
               ),
             if (duration.isNotEmpty)
               Positioned(
-                right: AppSpacing.sm,
-                bottom: AppSpacing.sm,
+                right: AppSpacing.xs,
+                bottom: AppSpacing.xs,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.xs,
@@ -84,9 +96,9 @@ class ThumbnailWithDuration extends StatelessWidget {
                   ),
                   child: Text(
                     duration,
-                    style: theme.textTheme.labelSmall?.copyWith(
+                    style: AppTextStyles.label.copyWith(
                       color: AppColors.thumbnailBadgeText,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -100,7 +112,7 @@ class ThumbnailWithDuration extends StatelessWidget {
                   key: progressKey,
                   value: progress!.clamp(0.0, 1.0),
                   minHeight: AppSizes.progressBarHeight,
-                  color: AppColors.progressFill,
+                  color: theme.colorScheme.primary,
                   backgroundColor: AppColors.thumbnailBadge,
                 ),
               ),
@@ -110,4 +122,3 @@ class ThumbnailWithDuration extends StatelessWidget {
     );
   }
 }
-

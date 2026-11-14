@@ -44,17 +44,17 @@ class ChannelAvatar extends StatelessWidget {
         : trimmedName.characters.first.toUpperCase();
 
     Widget fallback() => CircleAvatar(
-          radius: size / 2,
-          backgroundColor: colors.surfaceVariant,
-          child: Text(
-            letter.isNotEmpty ? letter : '?',
-            style: TextStyle(
-              fontSize: size * 0.45,
-              fontWeight: FontWeight.w600,
-              color: colors.textPrimary,
-            ),
-          ),
-        );
+      radius: size / 2,
+      backgroundColor: colors.surfaceVariant,
+      child: Text(
+        letter.isNotEmpty ? letter : '?',
+        style: TextStyle(
+          fontSize: size * 0.45,
+          fontWeight: FontWeight.w600,
+          color: colors.textPrimary,
+        ),
+      ),
+    );
 
     final normalizedUrl = normalizeAvatarUrl(url, size: (size * 2).toInt());
 
@@ -69,6 +69,10 @@ class ChannelAvatar extends StatelessWidget {
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
+                memCacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .ceil(),
+                maxWidthDiskCache:
+                    (size * MediaQuery.devicePixelRatioOf(context)).ceil(),
                 fadeInDuration: AppMotion.fast,
                 placeholder: (_, _) => fallback(),
                 errorWidget: (_, _, _) => fallback(),
@@ -77,13 +81,9 @@ class ChannelAvatar extends StatelessWidget {
     );
 
     if (onTap != null) {
-      avatarWidget = GestureDetector(
-        onTap: onTap,
-        child: avatarWidget,
-      );
+      avatarWidget = GestureDetector(onTap: onTap, child: avatarWidget);
     }
 
     return avatarWidget;
   }
 }
-

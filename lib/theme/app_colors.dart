@@ -26,7 +26,7 @@ class AppColors {
   static const badge = primary;
   static const onBadge = onPrimary;
   static const progressFill = primary;
-  static const thumbnailBadge = Color(0xB3000000);
+  static const thumbnailBadge = Color(0xCC000000);
   static const shelfTitleScrim = Color(0xD9000000);
   static const thumbnailBadgeText = Colors.white;
   static const shortsBackground = Color(0xFF000000);
