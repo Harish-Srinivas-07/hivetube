@@ -8,6 +8,9 @@ abstract final class AppMotion {
   static const Duration imageFade = Duration(milliseconds: 150);
   static const Duration base = Duration(milliseconds: 200);
   static const Duration slow = Duration(milliseconds: 300);
+  static const Duration navSelection = Duration(milliseconds: 280);
+  static const Duration previewElectionDebounce = Duration(milliseconds: 300);
+  static const Duration previewVisibilityUpdate = Duration(milliseconds: 80);
   static const Duration page = Duration(milliseconds: 350);
   static const Duration feedback = Duration(milliseconds: 650);
   static const Duration snackbar = Duration(seconds: 4);

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:developer' as dev;
 import 'package:media_kit/media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'app/router.dart';
 import 'core/content/language_profile.dart';
 import 'core/settings/app_settings.dart';
+import 'core/streams/adaptive_quality_policy.dart';
 import 'core/db/app_db.dart';
 import 'core/providers.dart';
 import 'core/playback/audio_handler.dart';
@@ -13,9 +16,15 @@ import 'features/home/home_cache.dart';
 import 'features/home/home_controller.dart';
 import 'features/home/home_variety.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_motion.dart';
+import 'core/playback/preview_coordinator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  VisibilityDetectorController.instance.updateInterval =
+      AppMotion.previewVisibilityUpdate;
   MediaKit.ensureInitialized();
   await LanguageProfileRegistry.instance.ensureLoaded();
   final audioHandler = await AudioService.init(
@@ -33,6 +42,11 @@ Future<void> main() async {
   final savedGl = await db.getValue('settings_gl');
   final savedLocal = await db.getValue('settings_local_content');
   final savedAutoplay = await db.getValue('settings_autoplay');
+  final savedPreviewsEnabled = await db.getValue('settings_previews_enabled');
+  final savedPreviewsWifiOnly = await db.getValue(
+    'settings_previews_wifi_only',
+  );
+  final savedVideoQuality = await db.getValue('settings_video_quality');
   final savedContentLanguages = await db.getValue('settings_content_languages');
   final savedHiddenLanguages = await db.getValue('settings_hidden_languages');
   final savedLocalRatio =
@@ -65,6 +79,12 @@ Future<void> main() async {
     gl: regions.containsKey(savedGl) ? savedGl : defaults.gl,
     localContent: savedLocal != 'false',
     autoplay: savedAutoplay == 'true',
+    previewsEnabled: savedPreviewsEnabled != 'false',
+    previewsWifiOnly: savedPreviewsWifiOnly != 'false',
+    videoQualityPreference: VideoQualityPreference.values.firstWhere(
+      (preference) => preference.name == savedVideoQuality,
+      orElse: () => VideoQualityPreference.auto,
+    ),
     contentLanguages: parseLanguages(
       savedContentLanguages,
       defaults.contentLanguages,
@@ -120,5 +140,7 @@ class HiveTubeApp extends StatelessWidget {
     locale: const Locale('en'),
     supportedLocales: const [Locale('en')],
     routerConfig: appRouter,
+    builder: (context, child) =>
+        PreviewScrollListener(child: child ?? const SizedBox.shrink()),
   );
 }

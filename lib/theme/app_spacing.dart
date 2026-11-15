@@ -17,6 +17,8 @@ abstract final class AppSpacing {
   static const double videoMaxWidth = 360,
       shortWidth = 128,
       homeShortWidth = 150,
+      homeLandscapeShortWidth = 160,
+      homeLandscapeCardMaxWidth = 320,
       homeShortRatio = 2 / 3,
       homeTrendingWidth = 280,
       thumbnailRatio = 16 / 9,
@@ -40,6 +42,9 @@ abstract final class AppSpacing {
 
   // ── Glass / visual effects ─────────────────────────────────────────────────
   static const double glassBlur = 20,
+      navGlassBlur = 30,
+      glassScrollRange = 24,
+      glassBorderWidth = 0.5,
       borderWidth = 1,
       glowHeightFactor = 0.35,
       glowRadius = 1.0;

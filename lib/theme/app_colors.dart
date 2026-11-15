@@ -44,7 +44,16 @@ class AppColors {
   static const shortsProgressBuffer = Color(0x4DFFFFFF);
   static const shortsProgressPlayed = Color(0xFFFF0000);
   static const shortsSelected = Color(0xFFFF0033);
+  static const shortsActionShadow = Color(0x99000000);
+  static const shortsTopControlsTint = Color(0x40000000);
   static const error = Color(0xFFFF4E45);
+  static const navGlassFillLight = Color(0x24FFFFFF);
+  static const navGlassFillDark = Color(0x1FFFFFFF);
+  static const navGlassBorder = Color(0x33FFFFFF);
+  static const navGlassShadow = Color(0x26000000);
+  static const navSelectionFillLight = Color(0x24FFFFFF);
+  static const navSelectionFillDark = Color(0x2EFFFFFF);
+  static const navInactiveOpacity = 0.6;
 
   static const dark = AppColors._(
     background: Color(0xFF0F0F0F),

@@ -129,7 +129,7 @@ void main() {
   });
 
   group('AppSubscribedButton tests', () {
-    testWidgets('shows Subscribe when uncompleted and Subscribed when active', (
+    testWidgets('shows Subscribe and Unsubscribe states without extra icons', (
       tester,
     ) async {
       var changed = false;
@@ -156,8 +156,9 @@ void main() {
         ),
       );
 
-      expect(find.text('Subscribed'), findsOneWidget);
-      expect(find.byIcon(LucideIcons.bell), findsOneWidget);
+      expect(find.text('Unsubscribe'), findsOneWidget);
+      expect(find.byIcon(LucideIcons.bell), findsNothing);
+      expect(find.byIcon(LucideIcons.chevronDown), findsNothing);
     });
   });
 

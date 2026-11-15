@@ -133,4 +133,9 @@ abstract final class AppTextStyles {
     height: 16 / 11,
     fontWeight: FontWeight.w400,
   );
+  static const navLabel = TextStyle(
+    fontSize: 11,
+    height: 13 / 11,
+    fontWeight: FontWeight.w600,
+  );
 }

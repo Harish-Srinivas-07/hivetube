@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
+import '../streams/adaptive_quality_policy.dart';
 import '../../features/shorts/shorts_screen.dart';
 import '../content/language_profile.dart';
 
@@ -43,20 +44,26 @@ class AppSettings {
     required this.gl,
     this.localContent = true,
     this.autoplay = false,
+    this.previewsEnabled = true,
+    this.previewsWifiOnly = true,
     this.revision = 0,
     this.contentLanguages = const {'ta', 'en'},
     this.hiddenLanguages = const {'hi'},
     this.localRatio = 0.6,
     this.strictHome = true,
+    this.videoQualityPreference = VideoQualityPreference.auto,
   });
   String get hl => 'en';
   final String gl;
   final bool localContent;
   final bool autoplay;
+  final bool previewsEnabled;
+  final bool previewsWifiOnly;
   final int revision;
   final Set<String> contentLanguages, hiddenLanguages;
   final double localRatio;
   final bool strictHome;
+  final VideoQualityPreference videoQualityPreference;
   int get prefsVersion => revision;
   String get cacheKey {
     final shown = contentLanguages.toList()..sort();
@@ -71,20 +78,27 @@ class AppSettings {
     String? gl,
     bool? localContent,
     bool? autoplay,
+    bool? previewsEnabled,
+    bool? previewsWifiOnly,
     int? revision,
     Set<String>? contentLanguages,
     Set<String>? hiddenLanguages,
     double? localRatio,
     bool? strictHome,
+    VideoQualityPreference? videoQualityPreference,
   }) => AppSettings(
     gl: gl ?? this.gl,
     localContent: localContent ?? this.localContent,
     autoplay: autoplay ?? this.autoplay,
+    previewsEnabled: previewsEnabled ?? this.previewsEnabled,
+    previewsWifiOnly: previewsWifiOnly ?? this.previewsWifiOnly,
     revision: revision ?? this.revision,
     contentLanguages: contentLanguages ?? this.contentLanguages,
     hiddenLanguages: hiddenLanguages ?? this.hiddenLanguages,
     localRatio: localRatio ?? this.localRatio,
     strictHome: strictHome ?? this.strictHome,
+    videoQualityPreference:
+        videoQualityPreference ?? this.videoQualityPreference,
   );
 }
 
@@ -121,6 +135,32 @@ class AppSettingsController extends Notifier<AppSettings> {
         .read(dbProvider)
         .setValue('settings_autoplay', enabled.toString());
     state = state.copyWith(autoplay: enabled);
+  }
+
+  Future<void> setPreviewsEnabled(bool enabled) async {
+    if (state.previewsEnabled == enabled) return;
+    await ref
+        .read(dbProvider)
+        .setValue('settings_previews_enabled', enabled.toString());
+    state = state.copyWith(previewsEnabled: enabled);
+  }
+
+  Future<void> setPreviewsWifiOnly(bool wifiOnly) async {
+    if (state.previewsWifiOnly == wifiOnly) return;
+    await ref
+        .read(dbProvider)
+        .setValue('settings_previews_wifi_only', wifiOnly.toString());
+    state = state.copyWith(previewsWifiOnly: wifiOnly);
+  }
+
+  Future<void> setVideoQualityPreference(
+    VideoQualityPreference preference,
+  ) async {
+    if (state.videoQualityPreference == preference) return;
+    await ref
+        .read(dbProvider)
+        .setValue('settings_video_quality', preference.name);
+    state = state.copyWith(videoQualityPreference: preference);
   }
 
   void resetAfterDatabaseClear() {

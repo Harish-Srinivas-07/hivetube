@@ -56,3 +56,4 @@ ref/
 .codex-test-tmp
 .tmp_flutter
 .codex_test_temp
+logs/

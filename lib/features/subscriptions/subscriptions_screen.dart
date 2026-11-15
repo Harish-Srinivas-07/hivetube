@@ -17,6 +17,8 @@ import '../../theme/app_text_styles.dart';
 import '../watch/mini_player_inset.dart';
 import '../../widgets/common/common.dart';
 import '../../widgets/ui/app_controls.dart';
+import '../../widgets/home_top_bar.dart';
+import '../../widgets/content_language_button.dart';
 
 enum SubscriptionsFilter { all, today, videos, shorts, continueWatching }
 
@@ -52,6 +54,13 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
   Object? _refreshError;
   bool _refreshing = false;
   bool _initializing = true;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -146,97 +155,121 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
         const <String>{};
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Subscriptions', style: AppTextStyles.pageTitle),
-        actions: [
-          IconButton(
-            tooltip: 'Search',
-            constraints: const BoxConstraints.tightFor(
-              width: AppSizes.buttonIconTouch,
-              height: AppSizes.buttonIconTouch,
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: () => _refreshFeed(force: true),
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: AppSizes.appBarHeight),
+                ),
+                if (subscriptionStatus.loading)
+                  const SliverToBoxAdapter(child: ChannelStripSkeleton())
+                else if (subscriptionStatus.empty)
+                  const SliverToBoxAdapter(child: SizedBox.shrink())
+                else
+                  SliverToBoxAdapter(
+                    child: _SubscriptionsChannelStrip(
+                      selectedChannelId: _selectedChannelId,
+                      lastOpenedAt: _lastOpenedAt,
+                      onSelect: (channelId) =>
+                          setState(() => _selectedChannelId = channelId),
+                    ),
+                  ),
+                if (!subscriptionStatus.loading && !subscriptionStatus.empty)
+                  SliverToBoxAdapter(
+                    child: _buildFilterChips(historyAsync.hasValue),
+                  ),
+                if (subscriptionStatus.error)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: ErrorRetry(
+                      message: 'Unable to load subscriptions.',
+                      onRetry: () =>
+                          ref.invalidate(subscriptionsStreamProvider),
+                    ),
+                  )
+                else if (subscriptionStatus.loading)
+                  const FeedSkeletonSliver(count: 3)
+                else if (subscriptionStatus.empty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _SubscriptionsEmptyState(
+                      title: 'No subscriptions yet',
+                      message: 'Subscribe to channels to see their videos here',
+                      actionLabel: 'Find channels',
+                      onAction: () => context.push('/search'),
+                    ),
+                  )
+                else if (feedAsync.hasError ||
+                    (_refreshError != null && feedItems?.isEmpty == true))
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: ErrorRetry(
+                      message: 'Unable to load subscription videos.',
+                      onRetry: () => _refreshFeed(force: true),
+                    ),
+                  )
+                else if (feedAsync.isLoading ||
+                    (_initializing && feedItems?.isEmpty == true) ||
+                    (_refreshing && feedItems?.isEmpty == true)) ...[
+                  const FeedSkeletonSliver(count: 3),
+                ] else ...[
+                  if (_failedChannelIds.isNotEmpty ||
+                      (_refreshError != null && feedItems?.isNotEmpty == true))
+                    SliverToBoxAdapter(
+                      child: _PartialFeedBanner(
+                        onRetry: () => _refreshFeed(force: true),
+                      ),
+                    ),
+                  _feedSliver(feedItems ?? const [], continueIds),
+                ],
+                SliverBottomInset(
+                  extra:
+                      MediaQuery.paddingOf(context).bottom +
+                      AppSizes.bottomNav +
+                      AppSpacing.lg,
+                ),
+              ],
             ),
-            onPressed: () => context.push('/search'),
-            icon: const Icon(LucideIcons.search, size: AppSizes.icon),
           ),
-          TextButton(
-            onPressed: () => context.push('/subscriptions/manage'),
-            child: const Text('Manage'),
+          Positioned(
+            top: AppSpacing.none,
+            left: AppSpacing.none,
+            right: AppSpacing.none,
+            child: GlassAppBar(
+              scrollController: _scrollController,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Subscriptions',
+                        style: AppTextStyles.pageTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const ContentLanguageButton(plain: true),
+                    IconButton(
+                      tooltip: 'Search',
+                      constraints: const BoxConstraints.tightFor(
+                        width: AppSizes.buttonIconTouch,
+                        height: AppSizes.buttonIconTouch,
+                      ),
+                      onPressed: () => context.push('/search'),
+                      icon: const Icon(LucideIcons.search, size: AppSizes.icon),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => _refreshFeed(force: true),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            if (subscriptionStatus.loading)
-              const SliverToBoxAdapter(child: ChannelStripSkeleton())
-            else if (subscriptionStatus.empty)
-              const SliverToBoxAdapter(child: SizedBox.shrink())
-            else
-              SliverToBoxAdapter(
-                child: _SubscriptionsChannelStrip(
-                  selectedChannelId: _selectedChannelId,
-                  lastOpenedAt: _lastOpenedAt,
-                  onSelect: (channelId) =>
-                      setState(() => _selectedChannelId = channelId),
-                ),
-              ),
-            if (!subscriptionStatus.loading && !subscriptionStatus.empty)
-              SliverToBoxAdapter(
-                child: _buildFilterChips(historyAsync.hasValue),
-              ),
-            if (subscriptionStatus.error)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: ErrorRetry(
-                  message: 'Unable to load subscriptions.',
-                  onRetry: () => ref.invalidate(subscriptionsStreamProvider),
-                ),
-              )
-            else if (subscriptionStatus.loading)
-              const FeedSkeletonSliver(count: 3)
-            else if (subscriptionStatus.empty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _SubscriptionsEmptyState(
-                  title: 'No subscriptions yet',
-                  message: 'Subscribe to channels to see their videos here',
-                  actionLabel: 'Find channels',
-                  onAction: () => context.push('/search'),
-                ),
-              )
-            else if (feedAsync.hasError ||
-                (_refreshError != null && feedItems?.isEmpty == true))
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: ErrorRetry(
-                  message: 'Unable to load subscription videos.',
-                  onRetry: () => _refreshFeed(force: true),
-                ),
-              )
-            else if (feedAsync.isLoading ||
-                (_initializing && feedItems?.isEmpty == true) ||
-                (_refreshing && feedItems?.isEmpty == true)) ...[
-              const FeedSkeletonSliver(count: 3),
-            ] else ...[
-              if (_failedChannelIds.isNotEmpty ||
-                  (_refreshError != null && feedItems?.isNotEmpty == true))
-                SliverToBoxAdapter(
-                  child: _PartialFeedBanner(
-                    onRetry: () => _refreshFeed(force: true),
-                  ),
-                ),
-              _feedSliver(feedItems ?? const [], continueIds),
-            ],
-            SliverBottomInset(
-              extra:
-                  MediaQuery.paddingOf(context).bottom +
-                  AppSizes.bottomNav +
-                  AppSpacing.lg,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -365,7 +398,13 @@ class _SubscriptionsChannelStrip extends ConsumerWidget {
           return SizedBox(
             width: AppSizes.subscriptionsChannelWidth,
             child: InkWell(
-              onTap: () => onSelect(isAll ? null : sub!.channelId),
+              onTap: () {
+                if (isAll) {
+                  context.push('/subscriptions/manage');
+                } else {
+                  onSelect(sub!.channelId);
+                }
+              },
               child: Column(
                 children: [
                   if (isAll)

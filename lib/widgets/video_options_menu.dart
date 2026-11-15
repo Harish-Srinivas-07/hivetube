@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
@@ -19,7 +18,8 @@ Future<void> showVideoOptionsMenu(
   required String videoId,
   VoidCallback? onPlayNext,
   VoidCallback? onAddToQueue,
-  bool onVideo = false,
+  bool onVideo = true,
+  bool floatingInset = false,
   WidgetRef? ref,
   MediaCompanion? media,
   VideoItem? video,
@@ -45,8 +45,12 @@ Future<void> showVideoOptionsMenu(
     context,
     fit: true,
     onVideo: onVideo,
+    showClose: false,
+    floatingInset: floatingInset,
+    extendToBottom: true,
     builder: (sheetContext, _) => ListView(
       shrinkWrap: true,
+      padding: EdgeInsets.zero,
       children: [
         if (playNext != null)
           AppSheetRow(
@@ -74,11 +78,6 @@ Future<void> showVideoOptionsMenu(
           icon: LucideIcons.share,
           label: 'Share',
           onTap: () => Navigator.pop(sheetContext, 'share'),
-        ),
-        AppSheetRow(
-          icon: LucideIcons.copy,
-          label: 'Copy link',
-          onTap: () => Navigator.pop(sheetContext, 'copy'),
         ),
       ],
     ),
@@ -108,16 +107,5 @@ Future<void> showVideoOptionsMenu(
           ),
         ),
       );
-    case 'copy':
-      await Clipboard.setData(
-        ClipboardData(
-          text: Uri.https('www.youtube.com', '/watch', {
-            'v': videoId,
-          }).toString(),
-        ),
-      );
-      if (context.mounted) {
-        AppSnackbar.show(context, 'Link copied');
-      }
   }
 }

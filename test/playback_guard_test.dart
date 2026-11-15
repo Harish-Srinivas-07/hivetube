@@ -9,6 +9,13 @@ void main() {
     expect(guard.isCurrent(old), isFalse);
     expect(guard.isCurrent(current), isTrue);
   });
+  test('intentional quality switches are tagged on their load generation', () {
+    final guard = LoadGuard();
+    final switchGeneration = guard.next(intentional: true);
+    expect(guard.isIntentional(switchGeneration), isTrue);
+    final normalGeneration = guard.next();
+    expect(guard.isIntentional(normalGeneration), isFalse);
+  });
   test('recovery stops after three and resets after sixty seconds playing', () {
     final budget = RecoveryBudget();
     final start = DateTime(2026);

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'bandwidth_estimator.dart';
 import 'net_family.dart';
 import 'stream_selector.dart';
 
@@ -51,7 +52,9 @@ class _StreamLimiter {
       final next = queue.removeAt(0);
       if (next.isStale()) {
         if (!next.completer.isCompleted) {
-          next.completer.completeError(const HttpException('Stale request cancelled'));
+          next.completer.completeError(
+            const HttpException('Stale request cancelled'),
+          );
         }
         continue;
       }
@@ -65,9 +68,10 @@ class _StreamLimiter {
 }
 
 class RelayServer {
-  RelayServer(this.network, this.userAgent);
+  RelayServer(this.network, this.userAgent, {this.bandwidthEstimator});
   final NetworkFamily network;
   final String userAgent;
+  final BandwidthEstimator? bandwidthEstimator;
   HttpServer? _server;
   final Map<String, StreamFormat> _items = {};
   final Map<String, _ChunkCache> _caches = {};
@@ -115,6 +119,7 @@ class RelayServer {
     Duration timeout = const Duration(seconds: 6),
     bool isCancelled = false,
   }) async {
+    final stopwatch = Stopwatch()..start();
     if (isCancelled) {
       throw const SocketException('Client connection closed');
     }
@@ -145,7 +150,12 @@ class RelayServer {
     }
 
     try {
-      return await doFetch();
+      final result = await doFetch();
+      stopwatch.stop();
+      if (result.status == 206 || result.status == 200) {
+        bandwidthEstimator?.addSample(result.bytes.length, stopwatch.elapsed);
+      }
+      return result;
     } catch (e) {
       if (isCancelled) {
         throw const SocketException('Client connection closed');
@@ -153,7 +163,12 @@ class RelayServer {
       // 1 automatic retry on timeout or network glitch
       _debugLog('_fetchRange retrying range=$start-$end error=$e');
       try {
-        return await doFetch();
+        final result = await doFetch();
+        stopwatch.stop();
+        if (result.status == 206 || result.status == 200) {
+          bandwidthEstimator?.addSample(result.bytes.length, stopwatch.elapsed);
+        }
+        return result;
       } catch (err) {
         _debugLog('_fetchRange retry failed: $err');
         return (status: 502, bytes: Uint8List(0));
@@ -164,7 +179,9 @@ class RelayServer {
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     final segments = request.uri.pathSegments;
-    final token = segments.length == 2 && segments[0] == 's' ? segments[1] : null;
+    final token = segments.length == 2 && segments[0] == 's'
+        ? segments[1]
+        : null;
     final format = token != null ? _items[token] : null;
 
     if (token == null ||
@@ -317,7 +334,9 @@ class RelayServer {
 
         // Prefetch next chunk in background if within range
         if (chunkIdx + 1 <= endChunk && cache.get(chunkIdx + 1) == null) {
-          unawaited(getOrFetchChunk(chunkIdx + 1).catchError((_) => Uint8List(0)));
+          unawaited(
+            getOrFetchChunk(chunkIdx + 1).catchError((_) => Uint8List(0)),
+          );
         }
 
         final chunkData = await getOrFetchChunk(chunkIdx);
@@ -328,7 +347,10 @@ class RelayServer {
         final sliceEnd = min(chunkData.length, end - chunkBase + 1);
 
         if (sliceStart < sliceEnd && sliceStart < chunkData.length) {
-          final toSend = chunkData.sublist(sliceStart, min(sliceEnd, chunkData.length));
+          final toSend = chunkData.sublist(
+            sliceStart,
+            min(sliceEnd, chunkData.length),
+          );
           downstream.add(toSend);
           await downstream.flush();
         }

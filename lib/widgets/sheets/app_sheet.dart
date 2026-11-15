@@ -233,6 +233,8 @@ Future<T?> showAppSheet<T>(
   bool useSafeArea = true,
   bool isDismissible = true,
   bool enableDrag = true,
+  bool floatingInset = false,
+  bool extendToBottom = false,
   Color? backgroundColor,
   bool onVideo = false,
 }) {
@@ -241,6 +243,10 @@ Future<T?> showAppSheet<T>(
   final sheetBg = backgroundColor ?? cs.surface;
   final callerMiniInset = MiniPlayerInset.of(context);
   final callerBottomSafeArea = MediaQuery.viewPaddingOf(context).bottom;
+  final bottomInset = math.max(
+    MediaQuery.viewInsetsOf(context).bottom,
+    callerBottomSafeArea,
+  );
   final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
   final effectiveInitial = fraction ?? (fit ? 0.6 : initialFraction);
   final heightLimit = landscape ? AppSpacing.sheetMaxHeightFactor : 1.0;
@@ -254,7 +260,7 @@ Future<T?> showAppSheet<T>(
     useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: false,
-    isDismissible: isDismissible,
+    isDismissible: floatingInset || isDismissible,
     enableDrag: enableDrag,
     showDragHandle: false,
     barrierColor: AppColors.scrim50,
@@ -266,7 +272,9 @@ Future<T?> showAppSheet<T>(
       final effectiveBg = inheritedTheme.brightness == Brightness.dark
           ? AppColors.videoSheet
           : sheetBg;
-      final borderRadius = AppRadius.sheetTopBorder;
+      final borderRadius = floatingInset
+          ? AppRadius.xlBorder
+          : AppRadius.sheetTopBorder;
 
       Widget content;
 
@@ -285,7 +293,9 @@ Future<T?> showAppSheet<T>(
               bottom: false,
               child: Padding(
                 padding: EdgeInsets.only(
-                  bottom: AppSpacing.sm + callerMiniInset,
+                  bottom:
+                      callerMiniInset +
+                      (extendToBottom && !floatingInset ? bottomInset : 0),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -341,20 +351,43 @@ Future<T?> showAppSheet<T>(
         );
       }
 
-      return Theme(
+      final sheet = Theme(
         data: inheritedTheme,
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: math.max(mq.viewInsets.bottom, callerBottomSafeArea),
+            bottom: extendToBottom && !floatingInset ? 0 : bottomInset,
           ),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: SizedBox(
-              width: math.min(mq.size.width, AppSizes.sheetMaxWidth),
-              child: content,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: floatingInset ? AppSpacing.xs : AppSpacing.none,
+                right: floatingInset ? AppSpacing.xs : AppSpacing.none,
+                bottom: floatingInset ? AppSpacing.xs : AppSpacing.none,
+              ),
+              child: SizedBox(
+                width: math.min(
+                  mq.size.width -
+                      (floatingInset ? AppSpacing.xs * 2 : AppSpacing.none),
+                  AppSizes.sheetMaxWidth,
+                ),
+                child: content,
+              ),
             ),
           ),
         ),
+      );
+      if (!floatingInset && !isDismissible) return sheet;
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(modalContext).pop(),
+            child: const SizedBox.expand(),
+          ),
+          sheet,
+        ],
       );
     },
   );

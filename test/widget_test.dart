@@ -9,9 +9,13 @@ import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/theme/app_spacing.dart';
 
 void main() {
-  for (final width in [400.0, 1200.0]) {
-    testWidgets('navigation at width $width', (tester) async {
-      tester.view.physicalSize = Size(width, 800);
+  for (final size in [
+    const Size(400, 800),
+    const Size(800, 400),
+    const Size(1200, 800),
+  ]) {
+    testWidgets('navigation at $size', (tester) async {
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -25,13 +29,14 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 500));
-      final nav = width < 600
+      final wide = size.shortestSide >= 600;
+      final nav = !wide
           ? find.byKey(const ValueKey('floatingNavSurface'))
           : find.byType(NavigationRail);
       expect(nav, findsOneWidget);
       expect(find.byKey(const ValueKey('notificationBadge')), findsNothing);
       expect(find.byTooltip('Search'), findsOneWidget);
-      if (width >= 600) {
+      if (wide) {
         for (final label in ['Home', 'Shorts', 'Subscriptions', 'Library']) {
           expect(
             find.descendant(of: nav, matching: find.text(label)),
@@ -40,9 +45,9 @@ void main() {
         }
       } else {
         final bar = tester.getRect(nav);
-        expect(bar.center.dx, closeTo(width / 2, 0.1));
-        expect(bar.width, lessThan(width));
-        expect(bar.bottom, closeTo(800 - AppSpacing.sm, 0.1));
+        expect(bar.center.dx, closeTo(size.width / 2, 0.1));
+        expect(bar.width, lessThan(size.width));
+        expect(bar.bottom, closeTo(size.height - AppSpacing.sm, 0.1));
         expect(find.byTooltip('Home'), findsOneWidget);
         expect(find.byTooltip('Shorts'), findsOneWidget);
         expect(find.byTooltip('Subscriptions'), findsOneWidget);
@@ -56,7 +61,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byTooltip('Search'), findsOneWidget);
       await tester.tap(
-        width < 600
+        !wide
             ? find.byTooltip('Library')
             : find.descendant(of: nav, matching: find.text('Library')),
       );

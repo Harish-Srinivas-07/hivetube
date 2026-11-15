@@ -9,6 +9,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 
+import '../../core/orientation/orientation_policy.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/playback/audio_handler.dart';
 import '../../core/playback/player_ui_state.dart';
@@ -22,8 +23,42 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
 import '../sheets/app_sheet.dart';
+import '../logger.dart';
 import 'player_seek_bar.dart';
 import 'player_settings_menu.dart';
+
+double? videoAspectRatioFromController(PlaybackService? service) {
+  if (service == null) return null;
+  final videoSize = service.controller.player.state;
+  final width = videoSize.width;
+  final height = videoSize.height;
+  if (width == null || height == null || width <= 0 || height <= 0) {
+    return null;
+  }
+  return width / height;
+}
+
+Future<void> setPlayerFullscreenOrientation(
+  bool fullscreen, {
+  double? aspectRatio,
+}) {
+  if (fullscreen) {
+    return setVideoFullscreenOrientation(
+      true,
+      landscapeVideo: aspectRatio != null && aspectRatio >= 1,
+    ).then(
+      (_) => SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+  }
+  return _restoreOrientationAfterFullscreen();
+}
+
+Future<void> _restoreOrientationAfterFullscreen() async {
+  await lockPortraitForFullscreenExit();
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  await reapplyCurrentOrientationPolicy();
+}
 
 class SharedPlayer extends ConsumerStatefulWidget {
   const SharedPlayer({
@@ -71,6 +106,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   final TransformationController _videoTransform = TransformationController();
   String? _zoomVideoId;
   bool _wasFullscreen = false, _videoZoomedState = false;
+  bool? _fullscreenLandscapeVideo;
+  String? _lastLoggedVideoSize;
 
   bool get _videoZoomed => _videoTransform.value.getMaxScaleOnAxis() > 1.01;
 
@@ -93,6 +130,31 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     }
     _zoomVideoId = videoId;
     _wasFullscreen = ui.isFullscreen;
+  }
+
+  void _logVideoRatio(PlaybackService service, bool fullscreen) {
+    final videoId = service.state.videoId;
+    final videoSize = service.controller.player.state;
+    final width = videoSize.width;
+    final height = videoSize.height;
+    if (videoId == null ||
+        width == null ||
+        height == null ||
+        width <= 0 ||
+        height <= 0) {
+      _lastLoggedVideoSize = null;
+      return;
+    }
+    final sizeKey = '$videoId:$width:$height';
+    if (_lastLoggedVideoSize == sizeKey) return;
+    _lastLoggedVideoSize = sizeKey;
+    final ratio = width / height;
+    Logger.log(
+      'Player',
+      'VideoRatio id=$videoId size=${width}x$height '
+          'ratio=${ratio.toStringAsFixed(2)} '
+          'mode=${ratio < 1 ? 'portrait' : 'landscape'} fullscreen=$fullscreen',
+    );
   }
 
   void _changed() {
@@ -126,6 +188,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       _settingsSession = PlayerSettingsSession(widget.service);
       widget.service.addListener(_changed);
       lastStatus = null;
+      _lastLoggedVideoSize = null;
       _changed();
     }
   }
@@ -183,16 +246,23 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
 
   Future<void> _fullscreen(bool value) async {
     if (!value) _resetVideoZoom();
+    final aspectRatio = videoAspectRatioFromController(widget.service);
+    _fullscreenLandscapeVideo = value && aspectRatio != null
+        ? aspectRatio >= 1
+        : null;
     ref.read(playerUiProvider.notifier).setLocked(false);
     ref.read(playerUiProvider.notifier).setFullscreen(value);
-    await SystemChrome.setPreferredOrientations(
-      value
-          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : const [],
-    );
-    await SystemChrome.setEnabledSystemUIMode(
-      value ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
-    );
+    await setPlayerFullscreenOrientation(value, aspectRatio: aspectRatio);
+  }
+
+  void _syncFullscreenVideoOrientation(PlayerUiState ui) {
+    if (!ui.isFullscreen) return;
+    final aspectRatio = videoAspectRatioFromController(widget.service);
+    if (aspectRatio == null) return;
+    final landscapeVideo = aspectRatio >= 1;
+    if (_fullscreenLandscapeVideo == landscapeVideo) return;
+    _fullscreenLandscapeVideo = landscapeVideo;
+    unawaited(setPlayerFullscreenOrientation(true, aspectRatio: aspectRatio));
   }
 
   Future<void> _startVertical(
@@ -401,6 +471,12 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                     right: AppSpacing.lg,
                     child: Row(
                       children: [
+                        _roundControl(
+                          icon: LucideIcons.chevronDown,
+                          tooltip: 'Minimize player',
+                          onPressed: () => _fullscreen(false),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -475,6 +551,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               ),
                             ),
                           ),
+                        if (!compactFullscreen && state.captions.isNotEmpty)
+                          const SizedBox(width: AppSpacing.md),
                         if (state.captions.isNotEmpty)
                           _roundControl(
                             icon: Icons.closed_caption_rounded,
@@ -485,11 +563,15 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               ),
                             ),
                           ),
+                        if (state.captions.isNotEmpty || !compactFullscreen)
+                          const SizedBox(width: AppSpacing.md),
                         _roundControl(
                           icon: Icons.settings_rounded,
                           tooltip: 'Settings',
                           onPressed: _settings,
                         ),
+                        if (state.videoId != null)
+                          const SizedBox(width: AppSpacing.md),
                         if (state.videoId != null)
                           _roundControl(
                             icon: Icons.ios_share_rounded,
@@ -669,6 +751,11 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final notifier = ref.read(playerUiProvider.notifier);
     final service = widget.service;
     final state = service.state;
+    final videoAspectRatio = videoAspectRatioFromController(service);
+    final fillVerticalFullscreen =
+        ui.isFullscreen && videoAspectRatio != null && videoAspectRatio < 1;
+    _logVideoRatio(service, ui.isFullscreen);
+    _syncFullscreenVideoOrientation(ui);
     final compact =
         widget.compact ||
         (!widget.short &&
@@ -750,7 +837,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                     child: Video(
                       controller: service.controller,
                       controls: NoVideoControls,
-                      fit: widget.short ? BoxFit.cover : BoxFit.contain,
+                      fit: widget.short || fillVerticalFullscreen
+                          ? BoxFit.cover
+                          : BoxFit.contain,
                       subtitleViewConfiguration: SubtitleViewConfiguration(
                         visible: !ui.isFullscreen,
                         style: AppTextStyles.body.copyWith(
@@ -772,7 +861,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
           if (state.frozenFrame != null)
             Image.memory(
               state.frozenFrame!,
-              fit: BoxFit.contain,
+              fit: fillVerticalFullscreen ? BoxFit.cover : BoxFit.contain,
               gaplessPlayback: true,
             ),
           if (!compact) ...[
@@ -814,307 +903,320 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
               ),
             if (!ui.isFullscreen &&
                 (widget.short || ui.panelMode == PlayerPanelMode.expanded))
-              IgnorePointer(
-                ignoring: !ui.overlayVisible,
-                child: AnimatedOpacity(
-                  key: const ValueKey('playerOverlay'),
-                  opacity: ui.overlayVisible ? 1 : 0,
-                  duration: AppMotion.base,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                AppColors.playerControlGlass,
-                                AppColors.transparent,
-                                AppColors.playerControlGlass,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SafeArea(
-                        top: !widget.topInsetAlreadyApplied,
-                        child: Stack(
-                          children: [
-                            Align(
-                              alignment: Alignment.topCenter,
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  top: ui.isFullscreen
-                                      ? AppSpacing.md
-                                      : AppSpacing.sm,
-                                ),
-                                child: Row(
-                                  children: [
-                                    const SizedBox(width: AppSpacing.xs),
-                                    IconButton(
-                                      icon: const Icon(
-                                        LucideIcons.chevronDown,
-                                        color: AppColors.shortsForeground,
-                                      ),
-                                      tooltip: 'Minimize',
-                                      onPressed: widget.onMinimize,
-                                    ),
-                                    const Spacer(),
-                                    InkWell(
-                                      onTap: () => ref
-                                          .read(contentPrefsProvider.notifier)
-                                          .setAutoplay(!autoplay),
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Tooltip(
-                                        message: autoplay
-                                            ? 'Autoplay on'
-                                            : 'Autoplay off',
-                                        child: Container(
-                                          width: 36,
-                                          height: 20,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border.all(
-                                              color: autoplay
-                                                  ? AppColors.shortsForeground
-                                                  : AppColors.shortsForeground
-                                                        .withValues(alpha: 0.5),
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                          padding: const EdgeInsets.all(2),
-                                          alignment: autoplay
-                                              ? Alignment.centerRight
-                                              : Alignment.centerLeft,
-                                          child: Container(
-                                            width: 12,
-                                            height: 12,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: autoplay
-                                                  ? AppColors.shortsForeground
-                                                  : AppColors.shortsForeground
-                                                        .withValues(alpha: 0.7),
-                                            ),
-                                            child: Icon(
-                                              autoplay
-                                                  ? Icons.play_arrow_rounded
-                                                  : Icons.pause_rounded,
-                                              size: 9,
-                                              color: autoplay
-                                                  ? Colors.black
-                                                  : Colors.black87,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    if (state.captions.isNotEmpty) ...[
-                                      const SizedBox(width: AppSpacing.sm),
-                                      InkWell(
-                                        onTap: () => unawaited(
-                                          service.setCaption(
-                                            state.selectedCaption == null
-                                                ? 0
-                                                : null,
-                                          ),
-                                        ),
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Tooltip(
-                                          message: 'Captions',
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 5,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                              border: Border.all(
-                                                color:
-                                                    state.selectedCaption !=
-                                                        null
-                                                    ? AppColors.shortsForeground
-                                                    : AppColors.shortsForeground
-                                                          .withValues(
-                                                            alpha: 0.5,
-                                                          ),
-                                                width: 1.5,
-                                              ),
-                                              color:
-                                                  state.selectedCaption != null
-                                                  ? AppColors.shortsForeground
-                                                        .withValues(alpha: 0.25)
-                                                  : Colors.transparent,
-                                            ),
-                                            child: Text(
-                                              'CC',
-                                              style: TextStyle(
-                                                color:
-                                                    state.selectedCaption !=
-                                                        null
-                                                    ? AppColors.shortsForeground
-                                                    : AppColors.shortsForeground
-                                                          .withValues(
-                                                            alpha: 0.6,
-                                                          ),
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                    IconButton(
-                                      icon: const Icon(
-                                        LucideIcons.settings,
-                                        color: AppColors.shortsForeground,
-                                      ),
-                                      tooltip: 'Settings',
-                                      onPressed: _settings,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
+              Stack(
+                fit: StackFit.expand,
+                children: [
+                  IgnorePointer(
+                    ignoring: !ui.overlayVisible,
+                    child: AnimatedOpacity(
+                      key: const ValueKey('playerOverlay'),
+                      opacity: ui.overlayVisible ? 1 : 0,
+                      duration: AppMotion.base,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    AppColors.playerControlGlass,
+                                    AppColors.transparent,
+                                    AppColors.playerControlGlass,
                                   ],
                                 ),
                               ),
                             ),
-                            Center(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Opacity(
-                                    opacity: widget.onPrevious == null
-                                        ? 0.35
-                                        : 1.0,
-                                    child: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.black.withValues(
-                                          alpha: 0.4,
-                                        ),
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          LucideIcons.skipBack,
-                                          color: AppColors.shortsForeground,
-                                          size: 22,
-                                        ),
-                                        tooltip: 'Previous',
-                                        onPressed: widget.onPrevious,
-                                      ),
+                          ),
+                          SafeArea(
+                            top: !widget.topInsetAlreadyApplied,
+                            bottom: false,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      top: ui.isFullscreen
+                                          ? AppSpacing.md
+                                          : AppSpacing.sm,
                                     ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.xl),
-                                  Container(
-                                    width: 64,
-                                    height: 64,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.black.withValues(
-                                        alpha: 0.5,
-                                      ),
-                                    ),
-                                    child: state.recovering
-                                        ? const Center(
-                                            child: SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: Colors.white,
+                                    child: Row(
+                                      children: [
+                                        const SizedBox(width: AppSpacing.xs),
+                                        IconButton(
+                                          icon: const Icon(
+                                            LucideIcons.chevronDown,
+                                            color: AppColors.shortsForeground,
+                                          ),
+                                          tooltip: 'Minimize',
+                                          onPressed: widget.onMinimize,
+                                        ),
+                                        const Spacer(),
+                                        InkWell(
+                                          onTap: () => ref
+                                              .read(
+                                                contentPrefsProvider.notifier,
+                                              )
+                                              .setAutoplay(!autoplay),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          child: Tooltip(
+                                            message: autoplay
+                                                ? 'Autoplay on'
+                                                : 'Autoplay off',
+                                            child: Container(
+                                              width: 36,
+                                              height: 20,
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: autoplay
+                                                      ? AppColors
+                                                            .shortsForeground
+                                                      : AppColors
+                                                            .shortsForeground
+                                                            .withValues(
+                                                              alpha: 0.5,
+                                                            ),
+                                                  width: 1.5,
+                                                ),
+                                              ),
+                                              padding: const EdgeInsets.all(2),
+                                              alignment: autoplay
+                                                  ? Alignment.centerRight
+                                                  : Alignment.centerLeft,
+                                              child: Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: autoplay
+                                                      ? AppColors
+                                                            .shortsForeground
+                                                      : AppColors
+                                                            .shortsForeground
+                                                            .withValues(
+                                                              alpha: 0.7,
+                                                            ),
+                                                ),
+                                                child: Icon(
+                                                  autoplay
+                                                      ? Icons.play_arrow_rounded
+                                                      : Icons.pause_rounded,
+                                                  size: 9,
+                                                  color: autoplay
+                                                      ? Colors.black
+                                                      : Colors.black87,
+                                                ),
                                               ),
                                             ),
-                                          )
-                                        : IconButton(
-                                            key: const ValueKey(
-                                              'playerPlayPauseButton',
+                                          ),
+                                        ),
+                                        if (state.captions.isNotEmpty) ...[
+                                          const SizedBox(width: AppSpacing.sm),
+                                          InkWell(
+                                            onTap: () => unawaited(
+                                              service.setCaption(
+                                                state.selectedCaption == null
+                                                    ? 0
+                                                    : null,
+                                              ),
                                             ),
-                                            color: AppColors.shortsForeground,
-                                            iconSize: 36,
-                                            onPressed: () async {
-                                              await service.togglePlay();
-                                              if (mounted) _scheduleHide();
-                                            },
-                                            icon: Icon(
-                                              state.status == PlayerStatus.ended
-                                                  ? LucideIcons.rotateCcw
-                                                  : state.playing
-                                                  ? Icons.pause_rounded
-                                                  : Icons.play_arrow_rounded,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            child: Tooltip(
+                                              message: 'Captions',
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color:
+                                                        state.selectedCaption !=
+                                                            null
+                                                        ? AppColors
+                                                              .shortsForeground
+                                                        : AppColors
+                                                              .shortsForeground
+                                                              .withValues(
+                                                                alpha: 0.5,
+                                                              ),
+                                                    width: 1.5,
+                                                  ),
+                                                  color:
+                                                      state.selectedCaption !=
+                                                          null
+                                                      ? AppColors
+                                                            .shortsForeground
+                                                            .withValues(
+                                                              alpha: 0.25,
+                                                            )
+                                                      : Colors.transparent,
+                                                ),
+                                                child: Text(
+                                                  'CC',
+                                                  style: TextStyle(
+                                                    color:
+                                                        state.selectedCaption !=
+                                                            null
+                                                        ? AppColors
+                                                              .shortsForeground
+                                                        : AppColors
+                                                              .shortsForeground
+                                                              .withValues(
+                                                                alpha: 0.6,
+                                                              ),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.xl),
-                                  Opacity(
-                                    opacity: widget.onNext == null ? 0.35 : 1.0,
-                                    child: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.black.withValues(
-                                          alpha: 0.4,
+                                        ],
+                                        IconButton(
+                                          icon: const Icon(
+                                            LucideIcons.settings,
+                                            color: AppColors.shortsForeground,
+                                          ),
+                                          tooltip: 'Settings',
+                                          onPressed: _settings,
                                         ),
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          LucideIcons.skipForward,
-                                          color: AppColors.shortsForeground,
-                                          size: 22,
-                                        ),
-                                        tooltip: 'Next',
-                                        onPressed: widget.onNext,
-                                      ),
+                                        const SizedBox(width: AppSpacing.xs),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: ui.isFullscreen ? 28 : 16,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.md,
                                 ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.sm,
-                                        vertical: AppSpacing.xs,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.45,
-                                        ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${_time(displayPosition)} / ${_time(ui.duration > Duration.zero ? ui.duration : service.state.duration)}',
-                                        style: const TextStyle(
-                                          color: AppColors.shortsForeground,
-                                          fontSize: 12,
-                                          fontFeatures: [
-                                            FontFeature.tabularFigures(),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    if (widget.chapters.isNotEmpty) ...[
-                                      const SizedBox(width: AppSpacing.sm),
-                                      InkWell(
-                                        onTap: widget.onChapters,
-                                        borderRadius: BorderRadius.circular(12),
+                                Center(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Opacity(
+                                        opacity: widget.onPrevious == null
+                                            ? 0.35
+                                            : 1.0,
                                         child: Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                          ),
+                                          child: IconButton(
+                                            icon: const Icon(
+                                              LucideIcons.skipBack,
+                                              color: AppColors.shortsForeground,
+                                              size: 22,
+                                            ),
+                                            tooltip: 'Previous',
+                                            onPressed: widget.onPrevious,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.xl),
+                                      Container(
+                                        width: 64,
+                                        height: 64,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                        ),
+                                        child:
+                                            state.recovering ||
+                                                state.status ==
+                                                    PlayerStatus.buffering
+                                            ? const Center(
+                                                child: SizedBox(
+                                                  width: AppSizes.icon,
+                                                  height: AppSizes.icon,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth:
+                                                            AppSizes.seekTrack,
+                                                        color: AppColors.white,
+                                                      ),
+                                                ),
+                                              )
+                                            : IconButton(
+                                                key: const ValueKey(
+                                                  'playerPlayPauseButton',
+                                                ),
+                                                color:
+                                                    AppColors.shortsForeground,
+                                                iconSize: 36,
+                                                onPressed: () async {
+                                                  await service.togglePlay();
+                                                  if (mounted) _scheduleHide();
+                                                },
+                                                icon: Icon(
+                                                  state.status ==
+                                                          PlayerStatus.ended
+                                                      ? LucideIcons.rotateCcw
+                                                      : state.playing
+                                                      ? Icons.pause_rounded
+                                                      : Icons
+                                                            .play_arrow_rounded,
+                                                ),
+                                              ),
+                                      ),
+                                      const SizedBox(width: AppSpacing.xl),
+                                      Opacity(
+                                        opacity: widget.onNext == null
+                                            ? 0.35
+                                            : 1.0,
+                                        child: Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                          ),
+                                          child: IconButton(
+                                            icon: const Icon(
+                                              LucideIcons.skipForward,
+                                              color: AppColors.shortsForeground,
+                                              size: 22,
+                                            ),
+                                            tooltip: 'Next',
+                                            onPressed: widget.onNext,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Positioned(
+                                  key: const ValueKey('inlinePlayerFooter'),
+                                  left: 0,
+                                  right: 0,
+                                  bottom: widget.short
+                                      ? AppSpacing.lg
+                                      : AppSizes.iconSm + AppSpacing.sm,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: AppSpacing.sm,
                                             vertical: AppSpacing.xs,
@@ -1127,115 +1229,147 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               12,
                                             ),
                                           ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              ConstrainedBox(
-                                                constraints:
-                                                    const BoxConstraints(
-                                                      maxWidth: 140,
-                                                    ),
-                                                child: Text(
-                                                  widget.chapters
-                                                          .where(
-                                                            (c) =>
-                                                                c.start <=
-                                                                displayPosition,
-                                                          )
-                                                          .lastOrNull
-                                                          ?.title ??
-                                                      widget
-                                                          .chapters
-                                                          .first
-                                                          .title,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: AppColors
-                                                        .shortsForeground,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 2),
-                                              const Icon(
-                                                LucideIcons.chevronRight,
-                                                size: 14,
-                                                color:
-                                                    AppColors.shortsForeground,
-                                              ),
-                                            ],
+                                          child: Text(
+                                            '${_time(displayPosition)} / ${_time(ui.duration > Duration.zero ? ui.duration : service.state.duration)}',
+                                            style: const TextStyle(
+                                              color: AppColors.shortsForeground,
+                                              fontSize: 12,
+                                              fontFeatures: [
+                                                FontFeature.tabularFigures(),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                    const Spacer(),
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.black.withValues(
-                                          alpha: 0.45,
+                                        if (widget.chapters.isNotEmpty) ...[
+                                          const SizedBox(width: AppSpacing.sm),
+                                          InkWell(
+                                            onTap: widget.onChapters,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: AppSpacing.sm,
+                                                    vertical: AppSpacing.xs,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.45,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  ConstrainedBox(
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                          maxWidth: 140,
+                                                        ),
+                                                    child: Text(
+                                                      widget.chapters
+                                                              .where(
+                                                                (c) =>
+                                                                    c.start <=
+                                                                    displayPosition,
+                                                              )
+                                                              .lastOrNull
+                                                              ?.title ??
+                                                          widget
+                                                              .chapters
+                                                              .first
+                                                              .title,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        color: AppColors
+                                                            .shortsForeground,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 2),
+                                                  const Icon(
+                                                    LucideIcons.chevronRight,
+                                                    size: 14,
+                                                    color: AppColors
+                                                        .shortsForeground,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        const Spacer(),
+                                        Container(
+                                          width: 36,
+                                          height: 36,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                          ),
+                                          child: IconButton(
+                                            padding: EdgeInsets.zero,
+                                            onPressed: () =>
+                                                _fullscreen(!ui.isFullscreen),
+                                            tooltip: 'Fullscreen',
+                                            icon: Icon(
+                                              ui.isFullscreen
+                                                  ? Icons
+                                                        .fullscreen_exit_rounded
+                                                  : Icons.fullscreen_rounded,
+                                              color: AppColors.shortsForeground,
+                                              size: 22,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                      child: IconButton(
-                                        padding: EdgeInsets.zero,
-                                        onPressed: () =>
-                                            _fullscreen(!ui.isFullscreen),
-                                        tooltip: 'Fullscreen',
-                                        icon: Icon(
-                                          ui.isFullscreen
-                                              ? Icons.fullscreen_exit_rounded
-                                              : Icons.fullscreen_rounded,
-                                          color: AppColors.shortsForeground,
-                                          size: 22,
-                                        ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            if (!widget.short && !ui.isFullscreen)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 20,
-                child: PlayerSeekBar(
-                  overlayVisible: ui.overlayVisible,
-                  position: ui.displayPosition,
-                  buffered: ui.buffered,
-                  duration: ui.duration,
-                  chapters: widget.chapters,
-                  seeking: service.state.seekState == SeekState.seeking,
-                  buffering: service.state.status == PlayerStatus.buffering,
-                  onScrubStart: (p) {
-                    hideTimer?.cancel();
-                    notifier.setOverlayVisible(true);
-                    notifier.setScrubPosition(p);
-                    notifier.setScrubbing(true);
-                  },
-                  onScrubUpdate: notifier.setScrubPosition,
-                  onScrubCancel: () {
-                    notifier.setScrubbing(false);
-                    _scheduleHide();
-                  },
-                  onScrubEnd: (p) {
-                    notifier.setScrubbing(false);
-                    unawaited(service.seekTo(p));
-                    _scheduleHide();
-                  },
-                ),
+                  if (!widget.short)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: AppSizes.iconSm,
+                      child: PlayerSeekBar(
+                        overlayVisible: ui.overlayVisible,
+                        position: ui.displayPosition,
+                        buffered: ui.buffered,
+                        duration: ui.duration,
+                        chapters: widget.chapters,
+                        onScrubStart: (p) {
+                          hideTimer?.cancel();
+                          notifier.setOverlayVisible(true);
+                          notifier.setScrubPosition(p);
+                          notifier.setScrubbing(true);
+                        },
+                        onScrubUpdate: notifier.setScrubPosition,
+                        onScrubCancel: () {
+                          notifier.setScrubbing(false);
+                          _scheduleHide();
+                        },
+                        onScrubEnd: (p) {
+                          notifier.setScrubbing(false);
+                          unawaited(service.seekTo(p));
+                          _scheduleHide();
+                        },
+                      ),
+                    ),
+                ],
               ),
             if (seekTotal != 0)
               IgnorePointer(

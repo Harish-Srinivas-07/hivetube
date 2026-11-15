@@ -91,7 +91,6 @@ abstract final class AppTheme {
       textTheme: text,
       scaffoldBackgroundColor: colors.background,
       appBarTheme: AppBarTheme(
-        backgroundColor: colors.background,
         foregroundColor: colors.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,

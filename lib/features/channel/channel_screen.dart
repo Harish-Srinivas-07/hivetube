@@ -380,139 +380,147 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     final expandedHeight = headerTop + _profileHeaderHeight(channel);
 
     return Scaffold(
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: expandedHeight,
-            toolbarHeight: AppSizes.topBar,
-            backgroundColor: innerBoxIsScrolled || !hasBanner
-                ? colors.surface
-                : AppColors.transparent,
-            surfaceTintColor: AppColors.transparent,
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            leading: IconButton(
-              tooltip: 'Back',
-              onPressed: () => context.pop(),
-              icon: Icon(
-                LucideIcons.arrowLeft,
-                color: innerBoxIsScrolled || !hasBanner
-                    ? colors.onSurface
-                    : AppColors.white,
-              ),
-            ),
-            title: AnimatedSwitcher(
-              duration: AppMotion.base,
-              child: innerBoxIsScrolled
-                  ? Text(
-                      channel.name,
-                      key: const ValueKey('channelToolbarTitle'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyStrong.copyWith(
-                        color: colors.onSurface,
-                      ),
-                    )
-                  : const SizedBox.shrink(key: ValueKey('channelToolbarEmpty')),
-            ),
-            actions: [
-              IconButton(
-                tooltip: 'Search',
-                onPressed: () => context.push('/search'),
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: expandedHeight,
+              toolbarHeight: AppSizes.topBar,
+              backgroundColor: innerBoxIsScrolled || !hasBanner
+                  ? colors.surface
+                  : AppColors.transparent,
+              surfaceTintColor: AppColors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              leading: IconButton(
+                tooltip: 'Back',
+                onPressed: () => context.pop(),
                 icon: Icon(
-                  LucideIcons.search,
+                  LucideIcons.arrowLeft,
                   color: innerBoxIsScrolled || !hasBanner
                       ? colors.onSurface
                       : AppColors.white,
                 ),
               ),
-              IconButton(
-                tooltip: 'More',
-                onPressed: _showMenu,
-                icon: Icon(
-                  LucideIcons.ellipsis,
-                  color: innerBoxIsScrolled || !hasBanner
-                      ? colors.onSurface
-                      : AppColors.white,
+              title: AnimatedSwitcher(
+                duration: AppMotion.base,
+                child: innerBoxIsScrolled
+                    ? Text(
+                        channel.name,
+                        key: const ValueKey('channelToolbarTitle'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyStrong.copyWith(
+                          color: colors.onSurface,
+                        ),
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey('channelToolbarEmpty'),
+                      ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: 'Search',
+                  onPressed: () => context.push('/search'),
+                  icon: Icon(
+                    LucideIcons.search,
+                    color: innerBoxIsScrolled || !hasBanner
+                        ? colors.onSurface
+                        : AppColors.white,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'More',
+                  onPressed: _showMenu,
+                  icon: Icon(
+                    LucideIcons.ellipsis,
+                    color: innerBoxIsScrolled || !hasBanner
+                        ? colors.onSurface
+                        : AppColors.white,
+                  ),
+                ),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                collapseMode: CollapseMode.pin,
+                background: ClipRect(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      SingleChildScrollView(
+                        physics: const NeverScrollableScrollPhysics(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (hasBanner)
+                              SizedBox(
+                                height: bannerHeight,
+                                child: CachedNetworkImage(
+                                  imageUrl: channel.bannerUrl,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, _) => ColoredBox(
+                                    color: colors.surfaceContainerHighest,
+                                  ),
+                                  errorWidget: (_, _, _) => ColoredBox(
+                                    color: colors.surfaceContainerHighest,
+                                  ),
+                                ),
+                              )
+                            else
+                              const SizedBox(height: AppSizes.topBar),
+                            _profileHeader(context, channel),
+                          ],
+                        ),
+                      ),
+                      if (hasBanner)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: AppSizes.topBar,
+                          child: ColoredBox(color: AppColors.scrim),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              collapseMode: CollapseMode.pin,
-              background: ClipRect(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    SingleChildScrollView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (hasBanner)
-                            SizedBox(
-                              height: bannerHeight,
-                              child: CachedNetworkImage(
-                                imageUrl: channel.bannerUrl,
-                                fit: BoxFit.cover,
-                                placeholder: (_, _) => ColoredBox(
-                                  color: colors.surfaceContainerHighest,
-                                ),
-                                errorWidget: (_, _, _) => ColoredBox(
-                                  color: colors.surfaceContainerHighest,
-                                ),
-                              ),
-                            )
-                          else
-                            const SizedBox(height: AppSizes.topBar),
-                          _profileHeader(context, channel),
-                        ],
-                      ),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(
+                  AppSizes.settingsRowHeight,
+                ),
+                child: Container(
+                  color: colors.surface,
+                  alignment: Alignment.centerLeft,
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    padding: const EdgeInsets.only(left: AppSpacing.md),
+                    labelPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
                     ),
-                    if (hasBanner)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: AppSizes.topBar,
-                        child: ColoredBox(color: AppColors.scrim),
-                      ),
+                    labelStyle: AppTextStyles.videoTitle,
+                    unselectedLabelStyle: AppTextStyles.videoTitle,
+                    labelColor: colors.onSurface,
+                    unselectedLabelColor: colors.onSurfaceVariant,
+                    indicatorColor: colors.onSurface,
+                    indicatorWeight: AppSpacing.xs / 2,
+                    tabs: [for (final tab in _tabs) Tab(text: tab)],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          body: _tabController == null
+              ? const SizedBox.shrink()
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    for (final tab in _tabs) _tabBody(context, tab, channel),
                   ],
                 ),
-              ),
-            ),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(AppSizes.settingsRowHeight),
-              child: Container(
-                color: colors.surface,
-                alignment: Alignment.centerLeft,
-                child: TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  padding: const EdgeInsets.only(left: AppSpacing.md),
-                  labelPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                  ),
-                  labelStyle: AppTextStyles.videoTitle,
-                  unselectedLabelStyle: AppTextStyles.videoTitle,
-                  labelColor: colors.onSurface,
-                  unselectedLabelColor: colors.onSurfaceVariant,
-                  indicatorColor: colors.onSurface,
-                  indicatorWeight: AppSpacing.xs / 2,
-                  tabs: [for (final tab in _tabs) Tab(text: tab)],
-                ),
-              ),
-            ),
-          ),
-        ],
-        body: _tabController == null
-            ? const SizedBox.shrink()
-            : TabBarView(
-                controller: _tabController,
-                children: [
-                  for (final tab in _tabs) _tabBody(context, tab, channel),
-                ],
-              ),
+        ),
       ),
     );
   }
@@ -975,100 +983,106 @@ class _ChannelLoadingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                AppSizes.topBar + AppSpacing.lg,
-                AppSpacing.md,
-                AppSpacing.md,
-              ),
-              child: Row(
-                children: [
-                  const SkeletonBox(
-                    width: AppSizes.avatarLg,
-                    height: AppSizes.avatarLg,
-                    borderRadius: AppSizes.avatarLg / 2,
-                  ),
-                  const SizedBox(width: AppSpacing.lg),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonBox(height: AppTextStyles.pageTitle.fontSize!),
-                        const SizedBox(height: AppSpacing.xs),
-                        SkeletonBox(
-                          width: AppSizes.compactThumbW,
-                          height: AppTextStyles.meta.fontSize!,
-                        ),
-                      ],
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSizes.topBar + AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    const SkeletonBox(
+                      width: AppSizes.avatarLg,
+                      height: AppSizes.avatarLg,
+                      borderRadius: AppSizes.avatarLg / 2,
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: SkeletonBox(
-                height: AppSizes.buttonLarge,
-                borderRadius: AppRadius.pill,
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-              child: Row(
-                children: [
-                  for (var i = 0; i < 4; i++) ...[
-                    if (i > 0) const SizedBox(width: AppSpacing.lg),
-                    const SkeletonBox(width: AppSizes.compactThumbW / 4),
+                    const SizedBox(width: AppSpacing.lg),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonBox(
+                            height: AppTextStyles.pageTitle.fontSize!,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          SkeletonBox(
+                            width: AppSizes.compactThumbW,
+                            height: AppTextStyles.meta.fontSize!,
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          SliverList.builder(
-            itemCount: 3,
-            itemBuilder: (_, _) => Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SkeletonBox(
-                    width: AppSizes.trendingCardW / 2,
-                    height: AppTextStyles.sectionTitle.fontSize!,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  SizedBox(
-                    height:
-                        AppSizes.trendingCardW / AppSpacing.thumbnailRatio +
-                        AppSpacing.xxxl * 2,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: 2,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(width: AppSpacing.md),
-                      itemBuilder: (_, _) => const SizedBox(
-                        width: AppSizes.trendingCardW,
-                        child: SkeletonBox(
-                          height:
-                              AppSizes.trendingCardW /
-                              AppSpacing.thumbnailRatio,
-                          borderRadius: AppRadius.md,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: SkeletonBox(
+                  height: AppSizes.buttonLarge,
+                  borderRadius: AppRadius.pill,
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < 4; i++) ...[
+                      if (i > 0) const SizedBox(width: AppSpacing.lg),
+                      const SkeletonBox(width: AppSizes.compactThumbW / 4),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            SliverList.builder(
+              itemCount: 3,
+              itemBuilder: (_, _) => Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(
+                      width: AppSizes.trendingCardW / 2,
+                      height: AppTextStyles.sectionTitle.fontSize!,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    SizedBox(
+                      height:
+                          AppSizes.trendingCardW / AppSpacing.thumbnailRatio +
+                          AppSpacing.xxxl * 2,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: 2,
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(width: AppSpacing.md),
+                        itemBuilder: (_, _) => const SizedBox(
+                          width: AppSizes.trendingCardW,
+                          child: SkeletonBox(
+                            height:
+                                AppSizes.trendingCardW /
+                                AppSpacing.thumbnailRatio,
+                            borderRadius: AppRadius.md,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

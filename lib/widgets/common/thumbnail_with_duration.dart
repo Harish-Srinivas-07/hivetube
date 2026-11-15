@@ -7,6 +7,28 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_motion.dart';
+import 'preview_card_visibility.dart';
+
+String _posterForAnimatedThumbnail(String url, String videoId) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return url;
+  final path = uri.path.toLowerCase();
+  final animated =
+      path.contains('/an_webp/') ||
+      path.endsWith('.webp') ||
+      path.endsWith('.gif');
+  if (!animated) return url;
+
+  if (uri.host == 'i.ytimg.com' || uri.host == 'img.youtube.com') {
+    return 'https://i.ytimg.com/vi/$videoId/mqdefault.jpg';
+  }
+  return uri
+      .replace(
+        path: uri.path.replaceFirst(RegExp(r'\.(webp|gif)$'), '.jpg'),
+        query: null,
+      )
+      .toString();
+}
 
 /// Unified YouTube-style video thumbnail with duration badge and watched progress bar.
 class ThumbnailWithDuration extends StatelessWidget {
@@ -33,6 +55,10 @@ class ThumbnailWithDuration extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final radius = borderRadius ?? BorderRadius.zero;
+    final preview = PreviewCardScope.maybeOf(context);
+    final imageUrl = preview == null || preview.isActive
+        ? url
+        : _posterForAnimatedThumbnail(url, preview.videoId);
 
     return AspectRatio(
       key: thumbnailKey,
@@ -42,10 +68,10 @@ class ThumbnailWithDuration extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (url.isNotEmpty)
+            if (imageUrl.isNotEmpty)
               LayoutBuilder(
                 builder: (context, constraints) => CachedNetworkImage(
-                  imageUrl: url,
+                  imageUrl: imageUrl,
                   fit: BoxFit.cover,
                   memCacheWidth:
                       (constraints.maxWidth *

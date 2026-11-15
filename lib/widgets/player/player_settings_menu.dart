@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/playback/playback_service.dart';
+import '../../core/streams/adaptive_quality_policy.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_spacing.dart';
 import '../sheets/app_sheet.dart';
 
 /// Keeps sleep-timer state with the player UI, rather than with an open sheet.
@@ -38,10 +41,12 @@ Future<void> showPlayerSettingsMenu(
   BuildContext context, {
   required PlayerSettingsSession session,
   VoidCallback? onLock,
+  bool floating = false,
 }) => showAppSheet<void>(
   context,
   fit: true,
   onVideo: true,
+  floatingInset: floating,
   showClose: false,
   builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );
@@ -56,6 +61,8 @@ class _PlayerSettingsView extends StatefulWidget {
 
 class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
   String page = 'Settings';
+  bool _pageChangePending = false;
+  bool _selectionClosing = false;
   PlaybackService get service => widget.session.service;
   @override
   void initState() {
@@ -73,34 +80,72 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
     if (mounted) setState(() {});
   }
 
-  void _page(String value) => setState(() => page = value);
+  void _page(String value) {
+    if (_pageChangePending) return;
+    _pageChangePending = true;
+    unawaited(
+      Future<void>.delayed(AppMotion.imageFade, () {
+        if (!mounted) return;
+        setState(() {
+          page = value;
+          _pageChangePending = false;
+        });
+      }),
+    );
+  }
+
   Widget _choice(String label, bool selected, VoidCallback action) =>
       AppSheetRow(
         label: label,
         selected: selected,
         onTap: () {
+          if (_selectionClosing) return;
+          _selectionClosing = true;
           action();
           setState(() {});
+          unawaited(
+            Future<void>.delayed(AppMotion.imageFade, () {
+              if (mounted) {
+                Navigator.of(context, rootNavigator: true).pop();
+              }
+            }),
+          );
         },
       );
   @override
   Widget build(BuildContext context) {
     final state = service.state;
-    final actual = state.videoHeight;
     final quality = state.quality;
-    final currentQuality = quality == null
-        ? 'Auto${actual == null ? '' : ' (${actual}p)'}'
-        : '${quality}p';
+    final liveQuality = state.autoQualityHeight ?? state.heights.firstOrNull;
+    final parentPage = switch (page) {
+      'Sleep timer' => 'More',
+      'Advanced quality' => 'Quality',
+      _ => 'Settings',
+    };
+    final currentQuality = quality != null
+        ? '${quality}p'
+        : switch (service.qualityPreference) {
+            VideoQualityPreference.auto =>
+              'Auto${liveQuality == null ? '' : ' (${liveQuality}p)'}',
+            VideoQualityPreference.always1080 =>
+              '${AdaptiveQualityPolicy.quality1080}p',
+            VideoQualityPreference.always720 =>
+              '${AdaptiveQualityPolicy.quality720}p',
+            VideoQualityPreference.always480 =>
+              '${AdaptiveQualityPolicy.quality480}p',
+            VideoQualityPreference.always360 =>
+              '${AdaptiveQualityPolicy.quality360}p',
+            VideoQualityPreference.dataSaver => 'Data saver',
+          };
     return ListView(
       shrinkWrap: true,
+      padding: const EdgeInsets.all(AppSpacing.none),
       children: [
         if (page != 'Settings')
           AppSheetRow(
             icon: LucideIcons.chevronLeft,
             label: page,
-            onTap: () => _page(
-              page == 'Sleep timer' ? 'More' : 'Settings',
-            ),
+            onTap: () => _page(parentPage),
           ),
         if (page == 'Settings') ...[
           AppSheetRow(
@@ -144,13 +189,83 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
           ),
         ],
         if (page == 'Quality') ...[
-          _choice('Auto', quality == null, () => service.setQuality(null)),
-          for (final height in state.heights.toSet().where((h) => h <= 1080))
+          _choice(
+            'Auto${liveQuality == null ? '' : ' (${liveQuality}p)'}',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.auto,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.auto),
+            ),
+          ),
+          _choice(
+            '${AdaptiveQualityPolicy.quality1080}p',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.always1080,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.always1080),
+            ),
+          ),
+          _choice(
+            '${AdaptiveQualityPolicy.quality720}p',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.always720,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.always720),
+            ),
+          ),
+          _choice(
+            '${AdaptiveQualityPolicy.quality480}p',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.always480,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.always480),
+            ),
+          ),
+          _choice(
+            '${AdaptiveQualityPolicy.quality360}p',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.always360,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.always360),
+            ),
+          ),
+          _choice(
+            'Data saver',
+            quality == null &&
+                service.qualityPreference == VideoQualityPreference.dataSaver,
+            () => unawaited(
+              service.setQualityPreference(VideoQualityPreference.dataSaver),
+            ),
+          ),
+          AppSheetRow(
+            label: 'Advanced options',
+            showChevron: true,
+            onTap: () => _page('Advanced quality'),
+          ),
+        ],
+        if (page == 'Advanced quality') ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.sm,
+            ),
+            child: Text(
+              'For this video',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          for (final height in state.heights.toSet().where(
+            (h) => h <= AdaptiveQualityPolicy.maxVideoHeight,
+          ))
             _choice(
               '${height}p',
               quality == height,
               () => service.setQuality(height),
             ),
+          if (state.heights.isEmpty)
+            const AppSheetRow(label: 'No quality options available'),
         ],
         if (page == 'Playback speed')
           for (final speed in [.25, .5, .75, 1.0, 1.25, 1.5, 1.75, 2.0])
@@ -169,11 +284,17 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
             Builder(
               builder: (context) {
                 final track = state.captions[i];
-                final name = (track['name'] is Map ? (track['name'] as Map)['simpleText'] : null) ??
+                final name =
+                    (track['name'] is Map
+                        ? (track['name'] as Map)['simpleText']
+                        : null) ??
                     track['languageCode'] ??
                     'Captions';
-                final isAsr = track['kind'] == 'asr' || (track['vssId'] as String? ?? '').startsWith('a.');
-                final label = isAsr && !name.toString().contains('auto-generated')
+                final isAsr =
+                    track['kind'] == 'asr' ||
+                    (track['vssId'] as String? ?? '').startsWith('a.');
+                final label =
+                    isAsr && !name.toString().contains('auto-generated')
                     ? '$name (auto-generated)'
                     : '$name';
                 return _choice(

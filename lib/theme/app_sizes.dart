@@ -70,7 +70,10 @@ abstract final class AppSizes {
 
   // Nav / rail
   static const double navHeight = 64;
+  static const double navBarWidth = 320;
   static const double navIconSize = 24;
+  static const double navIconWeightInactive = 1.75;
+  static const double navIconWeightActive = 2.25;
   static const double railWidth = 80;
 
   // List rows

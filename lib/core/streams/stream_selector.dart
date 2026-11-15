@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'adaptive_quality_policy.dart';
+
 enum PlaybackMode { video, audio, short }
 
 class StreamFormat {
@@ -27,6 +29,27 @@ class SelectedStreams {
   SelectedStreams(this.videos, this.audio);
   final List<StreamFormat> videos;
   final StreamFormat? audio;
+}
+
+int resolutionOf(StreamFormat format, PlaybackMode mode) =>
+    mode == PlaybackMode.short &&
+        format.width > 0 &&
+        format.width < format.height
+    ? format.width
+    : format.height;
+
+int pickHeight(double mbps, int cap) {
+  final safeMbps = mbps * AdaptiveQualityPolicy.safetyFactor;
+  final target = safeMbps > AdaptiveQualityPolicy.threshold1080Mbps
+      ? AdaptiveQualityPolicy.quality1080
+      : safeMbps > AdaptiveQualityPolicy.threshold720Mbps
+      ? AdaptiveQualityPolicy.quality720
+      : safeMbps > AdaptiveQualityPolicy.threshold480Mbps
+      ? AdaptiveQualityPolicy.quality480
+      : safeMbps > AdaptiveQualityPolicy.threshold360Mbps
+      ? AdaptiveQualityPolicy.quality360
+      : AdaptiveQualityPolicy.quality240;
+  return target > cap ? cap : target;
 }
 
 // xtags holds repeated protobuf key/value records; reject non-original tracks.
@@ -89,7 +112,11 @@ String? _trackType(String? xtags) {
   return null;
 }
 
-SelectedStreams selectStreams(dynamic response, PlaybackMode mode) {
+SelectedStreams selectStreams(
+  dynamic response,
+  PlaybackMode mode, {
+  int cap = AdaptiveQualityPolicy.maxVideoHeight,
+}) {
   final raw = response is Map ? response['streamingData'] : null;
   final formats = raw is Map && raw['adaptiveFormats'] is List
       ? raw['adaptiveFormats'] as List
@@ -101,38 +128,24 @@ SelectedStreams selectStreams(dynamic response, PlaybackMode mode) {
     if (uri == null || !uri.hasScheme) continue;
     all.add(StreamFormat(Map<String, dynamic>.from(value), uri));
   }
-  int resolution(StreamFormat f) =>
-      mode == PlaybackMode.short && f.width > 0 && f.width < f.height
-      ? f.width
-      : f.height;
-  const cap = 1080;
   final avc = all
       .where(
         (f) =>
-            resolution(f) >= 360 &&
-            resolution(f) <= cap &&
+            resolutionOf(f, mode) >= AdaptiveQualityPolicy.quality240 &&
+            resolutionOf(f, mode) <= cap &&
             f.mimeType.contains('avc1'),
       )
       .toList();
-  final hasAvc = all.any((f) => f.height > 0 && f.mimeType.contains('avc1'));
-  final candidates = hasAvc
-      ? avc
-      : all
-            .where(
-              (f) =>
-                  resolution(f) >= 360 &&
-                  resolution(f) <= cap &&
-                  (f.mimeType.contains('vp9') || f.mimeType.contains('vp09')),
-            )
-            .toList();
   final byHeight = <int, StreamFormat>{};
-  for (final f in candidates) {
-    if (byHeight[f.height] == null || f.bitrate > byHeight[f.height]!.bitrate) {
-      byHeight[f.height] = f;
+  for (final format in avc) {
+    final height = resolutionOf(format, mode);
+    if (byHeight[height] == null ||
+        format.bitrate > byHeight[height]!.bitrate) {
+      byHeight[height] = format;
     }
   }
   final video = byHeight.values.toList()
-    ..sort((a, b) => b.height.compareTo(a.height));
+    ..sort((a, b) => resolutionOf(b, mode).compareTo(resolutionOf(a, mode)));
   final itags = mode == PlaybackMode.audio ? [251, 250, 249] : [140];
   final audio =
       all.where((f) {

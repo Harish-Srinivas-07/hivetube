@@ -77,6 +77,10 @@ class VideoSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (searchResult) {
+      final titleLineHeight =
+          AppTextStyles.body.fontSize! * AppTextStyles.body.height!;
+      final metaLineHeight =
+          AppTextStyles.meta.fontSize! * AppTextStyles.meta.height!;
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.lg),
         child: Column(
@@ -86,9 +90,23 @@ class VideoSkeleton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               child: AspectRatio(
                 aspectRatio: AppSpacing.thumbnailRatio,
-                child: SkeletonBox(
-                  height: double.infinity,
-                  borderRadius: AppRadius.md,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const SkeletonBox(
+                      height: double.infinity,
+                      borderRadius: AppRadius.md,
+                    ),
+                    Positioned(
+                      right: AppSpacing.xs,
+                      bottom: AppSpacing.xs,
+                      child: SkeletonBox(
+                        width: AppSizes.iconLg,
+                        height: AppSizes.iconXs,
+                        borderRadius: AppRadius.xs,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -109,22 +127,20 @@ class VideoSkeleton extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SkeletonBox(
-                          height: AppTextStyles.body.fontSize!,
+                          height: titleLineHeight,
                           borderRadius: AppRadius.xs,
                         ),
-                        SizedBox(height: AppSpacing.xs),
                         SkeletonBox(
-                          height: AppTextStyles.body.fontSize!,
-                          borderRadius: AppRadius.xs,
-                        ),
-                        SizedBox(height: AppSpacing.xxs),
-                        SkeletonBox(
-                          height: AppTextStyles.label.fontSize!,
+                          height: titleLineHeight,
                           borderRadius: AppRadius.xs,
                         ),
                         SizedBox(height: AppSpacing.xxs),
                         SkeletonBox(
-                          height: AppTextStyles.label.fontSize!,
+                          height: metaLineHeight,
+                          borderRadius: AppRadius.xs,
+                        ),
+                        SkeletonBox(
+                          height: metaLineHeight,
                           borderRadius: AppRadius.xs,
                         ),
                       ],

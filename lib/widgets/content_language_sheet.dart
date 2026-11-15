@@ -152,7 +152,6 @@ Future<void> showContentLanguageSheet(
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  const SizedBox(height: AppSpacing.sm),
                   Text(
                     'Region',
                     style: Theme.of(context).textTheme.titleMedium,
@@ -164,7 +163,6 @@ Future<void> showContentLanguageSheet(
                     trailing: const Icon(LucideIcons.chevronRight),
                     onTap: chooseRegion,
                   ),
-                  const SizedBox(height: AppSpacing.sm),
                   const SizedBox(height: AppSpacing.sm),
                   Text('Mix', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.sm),

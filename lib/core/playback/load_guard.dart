@@ -1,7 +1,15 @@
 class LoadGuard {
   int _generation = 0;
-  int next() => ++_generation;
+  int? _intentionalGeneration;
+  int next({bool intentional = false}) {
+    _intentionalGeneration = null;
+    final generation = ++_generation;
+    if (intentional) _intentionalGeneration = generation;
+    return generation;
+  }
+
   bool isCurrent(int generation) => generation == _generation;
+  bool isIntentional(int generation) => _intentionalGeneration == generation;
 }
 
 class RecoveryBudget {

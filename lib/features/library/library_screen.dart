@@ -20,6 +20,7 @@ import '../../core/yt/takeout_parser.dart';
 import '../../core/yt/models.dart';
 import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
+import '../../widgets/home_top_bar.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -35,6 +36,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     duration: AppMotion.shimmerLoop,
   )..repeat(reverse: true);
   late final Stream<int> _historyCount = _watchHistoryCount();
+  final ScrollController _scrollController = ScrollController();
 
   Stream<int> _watchHistoryCount() {
     final db = ref.read(dbProvider);
@@ -48,6 +50,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   @override
   void dispose() {
     _shimmer.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -507,413 +510,428 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         : ref.watch(playlistItemsStreamProvider(watchLaterPlaylist.id));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('You'),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.settings),
-            tooltip: 'Settings',
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(profileStreamProvider);
-          ref.invalidate(historyStreamProvider);
-          ref.invalidate(playlistsStreamProvider);
-          ref.invalidate(likedVideosStreamProvider);
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                key: const ValueKey('libraryHeader'),
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                ),
-                child: profileAsync.when(
-                  data: (profile) {
-                    final avatarPath = profile?.avatarPath;
-                    final hasAvatar =
-                        avatarPath != null && File(avatarPath).existsSync();
-                    return Row(
-                      children: [
-                        CircleAvatar(
-                          key: const ValueKey('libraryAvatar'),
-                          radius: AppSizes.avatarLg / 2,
-                          backgroundImage: hasAvatar
-                              ? FileImage(File(avatarPath))
-                              : null,
-                          child: hasAvatar
-                              ? null
-                              : const Icon(
-                                  LucideIcons.user,
-                                  size: AppSizes.iconLg,
-                                ),
-                        ),
-                        const SizedBox(width: AppSpacing.lg),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                key: const ValueKey('libraryName'),
-                                profile?.name ?? 'HiveUser',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTextStyles.pageTitle.copyWith(
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              StreamBuilder<int>(
-                                stream: _historyCount,
-                                builder: (context, snapshot) => Text(
-                                  '${snapshot.data ?? 0} videos watched · ${playlists.where((item) => item.remoteId != 'watch_later').length} playlists',
-                                  style: AppTextStyles.meta.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(profileStreamProvider);
+              ref.invalidate(historyStreamProvider);
+              ref.invalidate(playlistsStreamProvider);
+              ref.invalidate(likedVideosStreamProvider);
+            },
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSizes.appBarHeight),
+                  Padding(
+                    key: const ValueKey('libraryHeader'),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.md,
+                    ),
+                    child: profileAsync.when(
+                      data: (profile) {
+                        final avatarPath = profile?.avatarPath;
+                        final hasAvatar =
+                            avatarPath != null && File(avatarPath).existsSync();
+                        return Row(
+                          children: [
+                            CircleAvatar(
+                              key: const ValueKey('libraryAvatar'),
+                              radius: AppSizes.avatarLg / 2,
+                              backgroundImage: hasAvatar
+                                  ? FileImage(File(avatarPath))
+                                  : null,
+                              child: hasAvatar
+                                  ? null
+                                  : const Icon(
+                                      LucideIcons.user,
+                                      size: AppSizes.iconLg,
+                                    ),
+                            ),
+                            const SizedBox(width: AppSpacing.lg),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    key: const ValueKey('libraryName'),
+                                    profile?.name ?? 'HiveUser',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyles.pageTitle.copyWith(
+                                      color: theme.colorScheme.onSurface,
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  StreamBuilder<int>(
+                                    stream: _historyCount,
+                                    builder: (context, snapshot) => Text(
+                                      '${snapshot.data ?? 0} videos watched · ${playlists.where((item) => item.remoteId != 'watch_later').length} playlists',
+                                      style: AppTextStyles.meta.copyWith(
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                      loading: () => LibraryHeaderSkeleton(animation: _shimmer),
+                      error: (_, _) => EmptyState(
+                        icon: LucideIcons.user,
+                        title: 'Unable to load profile',
+                        actionLabel: 'Retry',
+                        onAction: () => ref.invalidate(profileStreamProvider),
+                        compact: true,
+                      ),
+                    ),
+                  ),
+                  profileAsync.when(
+                    data: (profile) => Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                        AppSpacing.lg,
+                        AppSpacing.none,
+                      ),
+                      child: SizedBox(
+                        height: AppSizes.buttonStandard,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            key: const ValueKey('libraryButtons'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AppButton.tonal(
+                                onPressed: () => _editProfile(profile),
+                                label: 'Edit profile',
+                                size: AppButtonSize.standard,
+                                horizontalPadding: AppSpacing.md,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              AppButton.tonal(
+                                onPressed: _showBackupSheet,
+                                label: 'Backup',
+                                size: AppButtonSize.standard,
+                                horizontalPadding: AppSpacing.md,
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    );
-                  },
-                  loading: () => LibraryHeaderSkeleton(animation: _shimmer),
-                  error: (_, _) => EmptyState(
-                    icon: LucideIcons.user,
-                    title: 'Unable to load profile',
-                    actionLabel: 'Retry',
-                    onAction: () => ref.invalidate(profileStreamProvider),
-                    compact: true,
-                  ),
-                ),
-              ),
-              profileAsync.when(
-                data: (profile) => Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.md,
-                    AppSpacing.lg,
-                    AppSpacing.none,
-                  ),
-                  child: SizedBox(
-                    height: AppSizes.buttonStandard,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        key: const ValueKey('libraryButtons'),
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AppButton.tonal(
-                            onPressed: () => _editProfile(profile),
-                            label: 'Edit profile',
-                            size: AppButtonSize.standard,
-                            horizontalPadding: AppSpacing.md,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          AppButton.tonal(
-                            onPressed: _showBackupSheet,
-                            label: 'Backup',
-                            size: AppButtonSize.standard,
-                            horizontalPadding: AppSpacing.md,
-                          ),
-                        ],
                       ),
                     ),
+                    loading: () => const SizedBox(height: AppSpacing.xl),
+                    error: (_, _) => const SizedBox(height: AppSpacing.xl),
                   ),
-                ),
-                loading: () => const SizedBox(height: AppSpacing.xl),
-                error: (_, _) => const SizedBox(height: AppSpacing.xl),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              if (!historyAsync.isLoading)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                  ),
-                  child: SizedBox(
-                    key: const ValueKey('historyHeader'),
-                    height: AppSizes.touchMin,
-                    child: SectionHeader(
-                      title: 'History',
-                      titleStyle: AppTextStyles.sectionTitle.copyWith(
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      padding: EdgeInsets.zero,
-                      trailing: TextButton(
-                        onPressed: () => context.push('/history'),
-                        child: const Text('View all'),
-                      ),
-                    ),
-                  ),
-                ),
-              historyAsync.when(
-                data: (items) {
-                  if (items.isEmpty) {
-                    return Padding(
+                  const SizedBox(height: AppSpacing.xl),
+                  if (!historyAsync.isLoading)
+                    Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg,
                       ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: EmptyState(
-                          icon: LucideIcons.history,
-                          title: 'Videos you watch will show here',
-                          compact: true,
+                      child: SizedBox(
+                        key: const ValueKey('historyHeader'),
+                        height: AppSizes.touchMin,
+                        child: SectionHeader(
+                          title: 'History',
+                          titleStyle: AppTextStyles.sectionTitle.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          padding: EdgeInsets.zero,
+                          trailing: TextButton(
+                            onPressed: () => context.push('/history'),
+                            child: const Text('View all'),
+                          ),
                         ),
                       ),
-                    );
-                  }
-                  return SizedBox(
-                    key: const ValueKey('historyShelf'),
-                    height: AppSizes.libraryHistoryCardWidth + AppSpacing.md,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg,
-                      ),
-                      itemCount: items.take(15).length,
-                      itemBuilder: (ctx, idx) {
-                        final item = items[idx];
-                        if (item.media == null ||
-                            item.media!.title.isEmpty ||
-                            item.media!.title == item.history.videoId) {
-                          unawaited(
-                            _backfillHistoryMetadata(item.history.videoId),
-                          );
-                        }
-                        final thumbUrl =
-                            item.media?.thumbUrl ??
-                            'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
-                        final pos = item.history.positionMs;
-                        final dur = item.history.durationMs;
-                        final progress = dur > 0
-                            ? (pos / dur).clamp(0.0, 1.0)
-                            : 0.0;
-
+                    ),
+                  historyAsync.when(
+                    data: (items) {
+                      if (items.isEmpty) {
                         return Padding(
-                          padding: const EdgeInsets.only(right: AppSpacing.md),
-                          child: SizedBox(
-                            key: idx == 0
-                                ? const ValueKey('historyFirstCard')
-                                : null,
-                            width: AppSizes.libraryHistoryCardWidth,
-                            child: VideoCard.shelf(
-                              key: ValueKey(item.history.videoId),
-                              video: VideoItem(
-                                id: item.history.videoId,
-                                title:
-                                    item.media?.title.isNotEmpty == true &&
-                                        item.media?.title !=
-                                            item.history.videoId
-                                    ? item.media!.title
-                                    : 'Untitled video',
-                                channelName: item.media?.channelName ?? '',
-                                thumbUrl: thumbUrl,
-                              ),
-                              progress: progress,
-                              onTap: () => context.push(
-                                '/watch/${item.history.videoId}',
-                              ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: EmptyState(
+                              icon: LucideIcons.history,
+                              title: 'Videos you watch will show here',
+                              compact: true,
                             ),
                           ),
                         );
-                      },
-                    ),
-                  );
-                },
-                loading: () => LibraryShelfSkeleton(animation: _shimmer),
-                error: (_, _) => EmptyState(
-                  icon: LucideIcons.history,
-                  title: 'Unable to load history',
-                  actionLabel: 'Retry',
-                  onAction: () => ref.invalidate(historyStreamProvider),
-                  compact: true,
-                ),
-              ),
-
-              const SizedBox(height: AppSpacing.xl),
-              if (!playlistsAsync.isLoading)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                  ),
-                  child: SizedBox(
-                    key: const ValueKey('playlistsHeader'),
-                    height: AppSizes.touchMin,
-                    child: SectionHeader(
-                      title: 'Playlists',
-                      titleStyle: AppTextStyles.sectionTitle.copyWith(
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      padding: EdgeInsets.zero,
-                      trailing: TextButton(
-                        onPressed: () => showAppSheet<void>(
-                          context,
-                          title: 'Playlists',
-                          fit: true,
-                          builder: (sheetContext, _) => Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ListTile(
-                                leading: const Icon(LucideIcons.plus),
-                                title: const Text('Create playlist'),
-                                onTap: () {
-                                  Navigator.pop(sheetContext);
-                                  _createPlaylistDialog();
-                                },
-                              ),
-                              for (final playlist in playlists.where(
-                                (item) => item.remoteId != 'watch_later',
-                              ))
-                                ListTile(
-                                  title: Text(playlist.name),
-                                  onTap: () {
-                                    Navigator.pop(sheetContext);
-                                    context.push('/playlist/${playlist.id}');
-                                  },
-                                ),
-                            ],
+                      }
+                      return SizedBox(
+                        key: const ValueKey('historyShelf'),
+                        height:
+                            AppSizes.libraryHistoryCardWidth + AppSpacing.md,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
                           ),
+                          itemCount: items.take(15).length,
+                          itemBuilder: (ctx, idx) {
+                            final item = items[idx];
+                            if (item.media == null ||
+                                item.media!.title.isEmpty ||
+                                item.media!.title == item.history.videoId) {
+                              unawaited(
+                                _backfillHistoryMetadata(item.history.videoId),
+                              );
+                            }
+                            final thumbUrl =
+                                item.media?.thumbUrl ??
+                                'https://i.ytimg.com/vi/${item.history.videoId}/hqdefault.jpg';
+                            final pos = item.history.positionMs;
+                            final dur = item.history.durationMs;
+                            final progress = dur > 0
+                                ? (pos / dur).clamp(0.0, 1.0)
+                                : 0.0;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(
+                                right: AppSpacing.md,
+                              ),
+                              child: SizedBox(
+                                key: idx == 0
+                                    ? const ValueKey('historyFirstCard')
+                                    : null,
+                                width: AppSizes.libraryHistoryCardWidth,
+                                child: VideoCard.shelf(
+                                  key: ValueKey(item.history.videoId),
+                                  video: VideoItem(
+                                    id: item.history.videoId,
+                                    title:
+                                        item.media?.title.isNotEmpty == true &&
+                                            item.media?.title !=
+                                                item.history.videoId
+                                        ? item.media!.title
+                                        : 'Untitled video',
+                                    channelName: item.media?.channelName ?? '',
+                                    thumbUrl: thumbUrl,
+                                  ),
+                                  progress: progress,
+                                  onTap: () => context.push(
+                                    '/watch/${item.history.videoId}',
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                        child: const Text('View all'),
-                      ),
+                      );
+                    },
+                    loading: () => LibraryShelfSkeleton(animation: _shimmer),
+                    error: (_, _) => EmptyState(
+                      icon: LucideIcons.history,
+                      title: 'Unable to load history',
+                      actionLabel: 'Retry',
+                      onAction: () => ref.invalidate(historyStreamProvider),
+                      compact: true,
                     ),
                   ),
-                ),
-              playlistsAsync.when(
-                data: (items) {
-                  final userPlaylists = items
-                      .where((playlist) => playlist.remoteId != 'watch_later')
-                      .toList();
-                  if (userPlaylists.isEmpty) {
-                    return _libraryTile(
-                      key: const ValueKey('playlistsFirstCard'),
-                      icon: LucideIcons.plus,
-                      title: 'Create playlist',
-                      onTap: _createPlaylistDialog,
-                    );
-                  }
-                  return SizedBox(
-                    key: const ValueKey('playlistsShelf'),
-                    height:
-                        AppSizes.horizontalThumbCardHeight +
-                        AppSizes.listRowHeight,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
+
+                  const SizedBox(height: AppSpacing.xl),
+                  if (!playlistsAsync.isLoading)
+                    Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg,
                       ),
-                      itemCount: userPlaylists.length,
-                      itemBuilder: (context, index) => _buildPlaylistTile(
-                        userPlaylists[index],
-                        key: index == 0
-                            ? const ValueKey('playlistsFirstCard')
-                            : null,
-                      ),
-                    ),
-                  );
-                },
-                loading: () => LibraryShelfSkeleton(animation: _shimmer),
-                error: (_, _) => EmptyState(
-                  icon: LucideIcons.listMusic,
-                  title: 'Unable to load playlists',
-                  actionLabel: 'Retry',
-                  onAction: () => ref.invalidate(playlistsStreamProvider),
-                  compact: true,
-                ),
-              ),
-
-              const SizedBox(height: AppSpacing.lg),
-              StreamBuilder<List<DownloadRow>>(
-                stream: ref
-                    .read(dbProvider)
-                    .select(ref.read(dbProvider).downloads)
-                    .watch(),
-                builder: (context, snapshot) =>
-                    snapshot.connectionState == ConnectionState.waiting
-                    ? LibraryRowSkeleton(animation: _shimmer)
-                    : _libraryTile(
-                        key: const ValueKey('rowDownloads'),
-                        icon: LucideIcons.download,
-                        title: 'Downloads',
-                        count: '${snapshot.data?.length ?? 0}',
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Downloads are not available yet'),
+                      child: SizedBox(
+                        key: const ValueKey('playlistsHeader'),
+                        height: AppSizes.touchMin,
+                        child: SectionHeader(
+                          title: 'Playlists',
+                          titleStyle: AppTextStyles.sectionTitle.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          padding: EdgeInsets.zero,
+                          trailing: TextButton(
+                            onPressed: () => showAppSheet<void>(
+                              context,
+                              title: 'Playlists',
+                              fit: true,
+                              builder: (sheetContext, _) => Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(LucideIcons.plus),
+                                    title: const Text('Create playlist'),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      _createPlaylistDialog();
+                                    },
+                                  ),
+                                  for (final playlist in playlists.where(
+                                    (item) => item.remoteId != 'watch_later',
+                                  ))
+                                    ListTile(
+                                      title: Text(playlist.name),
+                                      onTap: () {
+                                        Navigator.pop(sheetContext);
+                                        context.push(
+                                          '/playlist/${playlist.id}',
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                            child: const Text('View all'),
                           ),
                         ),
                       ),
-              ),
-              likedVideosAsync.when(
-                data: (liked) => _libraryTile(
-                  key: const ValueKey('rowLiked'),
-                  icon: LucideIcons.thumbsUp,
-                  title: 'Liked videos',
-                  count: '${liked.length}',
-                  onTap: () => context.push('/playlist/liked'),
-                ),
-                loading: () => LibraryRowSkeleton(animation: _shimmer),
-                error: (_, _) => _libraryTile(
-                  key: const ValueKey('rowLiked'),
-                  icon: LucideIcons.thumbsUp,
-                  title: 'Liked videos',
-                  onTap: () => context.push('/playlist/liked'),
-                ),
-              ),
-
-              if (watchLaterItems?.isLoading == true)
-                LibraryRowSkeleton(animation: _shimmer)
-              else
-                _libraryTile(
-                  key: const ValueKey('rowWatchLater'),
-                  icon: LucideIcons.clock,
-                  title: 'Watch later',
-                  count: '${watchLaterItems?.asData?.value.length ?? 0}',
-                  onTap: () => context.push('/playlist/watch_later'),
-                ),
-              if (historyAsync.isLoading)
-                LibraryRowSkeleton(animation: _shimmer)
-              else
-                _libraryTile(
-                  key: const ValueKey('rowStats'),
-                  icon: LucideIcons.chartColumn,
-                  title: 'Stats',
-                  count: '${historyAsync.asData?.value.length ?? 0}',
-                  onTap: () => showDialog<void>(
-                    context: context,
-                    builder: (ctx) => AppDialog(
-                      title: 'Stats',
-                      content: Text(
-                        '${historyAsync.asData?.value.length ?? 0} videos watched',
-                      ),
-                      actions: [
-                        AppButton.text(
-                          label: 'Close',
-                          onPressed: () => Navigator.pop(ctx),
+                    ),
+                  playlistsAsync.when(
+                    data: (items) {
+                      final userPlaylists = items
+                          .where(
+                            (playlist) => playlist.remoteId != 'watch_later',
+                          )
+                          .toList();
+                      if (userPlaylists.isEmpty) {
+                        return _libraryTile(
+                          key: const ValueKey('playlistsFirstCard'),
+                          icon: LucideIcons.plus,
+                          title: 'Create playlist',
+                          onTap: _createPlaylistDialog,
+                        );
+                      }
+                      return SizedBox(
+                        key: const ValueKey('playlistsShelf'),
+                        height:
+                            AppSizes.horizontalThumbCardHeight +
+                            AppSizes.listRowHeight,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
+                          ),
+                          itemCount: userPlaylists.length,
+                          itemBuilder: (context, index) => _buildPlaylistTile(
+                            userPlaylists[index],
+                            key: index == 0
+                                ? const ValueKey('playlistsFirstCard')
+                                : null,
+                          ),
                         ),
-                      ],
+                      );
+                    },
+                    loading: () => LibraryShelfSkeleton(animation: _shimmer),
+                    error: (_, _) => EmptyState(
+                      icon: LucideIcons.listMusic,
+                      title: 'Unable to load playlists',
+                      actionLabel: 'Retry',
+                      onAction: () => ref.invalidate(playlistsStreamProvider),
+                      compact: true,
                     ),
                   ),
-                ),
-              SizedBox(
-                height:
-                    MediaQuery.paddingOf(context).bottom +
-                    MiniPlayerInset.of(context) +
-                    AppSpacing.xl,
+
+                  const SizedBox(height: AppSpacing.lg),
+                  StreamBuilder<List<DownloadRow>>(
+                    stream: ref
+                        .read(dbProvider)
+                        .select(ref.read(dbProvider).downloads)
+                        .watch(),
+                    builder: (context, snapshot) =>
+                        snapshot.connectionState == ConnectionState.waiting
+                        ? LibraryRowSkeleton(animation: _shimmer)
+                        : _libraryTile(
+                            key: const ValueKey('rowDownloads'),
+                            icon: LucideIcons.download,
+                            title: 'Downloads',
+                            count: '${snapshot.data?.length ?? 0}',
+                            onTap: () =>
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Downloads are not available yet',
+                                    ),
+                                  ),
+                                ),
+                          ),
+                  ),
+                  likedVideosAsync.when(
+                    data: (liked) => _libraryTile(
+                      key: const ValueKey('rowLiked'),
+                      icon: LucideIcons.thumbsUp,
+                      title: 'Liked videos',
+                      count: '${liked.length}',
+                      onTap: () => context.push('/playlist/liked'),
+                    ),
+                    loading: () => LibraryRowSkeleton(animation: _shimmer),
+                    error: (_, _) => _libraryTile(
+                      key: const ValueKey('rowLiked'),
+                      icon: LucideIcons.thumbsUp,
+                      title: 'Liked videos',
+                      onTap: () => context.push('/playlist/liked'),
+                    ),
+                  ),
+
+                  if (watchLaterItems?.isLoading == true)
+                    LibraryRowSkeleton(animation: _shimmer)
+                  else
+                    _libraryTile(
+                      key: const ValueKey('rowWatchLater'),
+                      icon: LucideIcons.clock,
+                      title: 'Watch later',
+                      count: '${watchLaterItems?.asData?.value.length ?? 0}',
+                      onTap: () => context.push('/playlist/watch_later'),
+                    ),
+                  if (historyAsync.isLoading)
+                    LibraryRowSkeleton(animation: _shimmer)
+                  else
+                    _libraryTile(
+                      key: const ValueKey('rowStats'),
+                      icon: LucideIcons.chartColumn,
+                      title: 'Stats',
+                      count: '${historyAsync.asData?.value.length ?? 0}',
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (ctx) => AppDialog(
+                          title: 'Stats',
+                          content: Text(
+                            '${historyAsync.asData?.value.length ?? 0} videos watched',
+                          ),
+                          actions: [
+                            AppButton.text(
+                              label: 'Close',
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  SizedBox(
+                    key: const ValueKey('libraryBottomInset'),
+                    height:
+                        MediaQuery.paddingOf(context).bottom +
+                        AppSizes.bottomNav +
+                        MiniPlayerInset.of(context) +
+                        AppSpacing.xl,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+          Positioned(
+            top: AppSpacing.none,
+            left: AppSpacing.none,
+            right: AppSpacing.none,
+            child: HomeTopBar(scrollController: _scrollController),
+          ),
+        ],
       ),
     );
   }

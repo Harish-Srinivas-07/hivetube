@@ -636,9 +636,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             height:
                 AppSizes.horizontalThumbCardHeight +
                 AppSpacing.xs +
-                MediaQuery.textScalerOf(
-                  context,
-                ).scale(AppTextStyles.caption.fontSize! * 2),
+                MediaQuery.textScalerOf(context).scale(
+                  AppTextStyles.caption.fontSize! *
+                      AppTextStyles.caption.height! *
+                      2,
+                ),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -871,6 +873,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             controller: input,
                             focusNode: searchFocus,
                             autofocus: true,
+                            onTapOutside: (_) => searchFocus.unfocus(),
                             cursorColor: colorScheme.primary,
                             textAlignVertical: TextAlignVertical.center,
                             style: AppTextStyles.settingsTitle.copyWith(

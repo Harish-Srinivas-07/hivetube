@@ -83,7 +83,84 @@ python -c "import json,glob;[json.load(open(f,encoding='utf-8')) for f in glob.g
 - Search suggestions go through `lib/services/search_suggestions.dart` (250ms debounce, stale dropped).
 
 UI spec: docs/design.md (source of truth).
-Task templates: docs/master_prompt.md. Open only when the task names a template.
+Task templates and code patterns are included below.
 Multi-step job: docs/orchestrator.md. New feature: docs/features.md.
 The task is the line after 'Task:'. If there is none, ask one question.
 Final reply is ONE line in the template's format.
+
+## Grounded APIs
+
+Use the existing app APIs and models; check their definitions before introducing alternatives.
+
+- Providers: `homeProvider` (HomeController), `watchPanelProvider`, `watchPanelExpandProvider`, `playerUiProvider`, `playbackProvider`, `shortsSelectionProvider`, `tabRefreshProvider`, `contentPrefsProvider`, `ytApiProvider`, `historyRepoProvider`, `subscriptionRepoProvider`, `dbProvider`, `channelAvatarCacheProvider`.
+- Open a video with `openWatchPanel(ref, video.id);`. Open Shorts with `ref.read(shortsSelectionProvider.notifier).open(items, index); context.go('/shorts');`.
+- Routes: `/search`, `/channel/:id`, `/playlist/:id`, `/shorts`, `/history`.
+- Shared widgets include `VideoCard` (`feed`, `grid`, `compact`, `searchResult` modes), `ThumbnailWithDuration`, `ChannelAvatar`, `SectionHeader`, `AppChip`/`AppChipBar`, `AppButton` (`filled`/`tonal`/`text`), `AppIconButton`, `AppListTile`, `EmptyState`, `ErrorRetry`, `InlineBanner`, `FeedSkeleton`, `SliverBottomInset`, `PlaylistCard`, and `showAppSheet` with `AppSheetRow`.
+- Models include `VideoItem` (`id`, `title`, `channelId`, `channelName`, `channelAvatarUrl`, `thumbUrl`, `durationText`, `viewsText`, `publishedText`, `publishedAt`, `isShort`) and `ShortItem` (`id`, `thumbUrl`, `title`, `viewsText`, `channelName`).
+
+## Reusable code patterns
+
+- Bottom sheets must use `showAppSheet` and remain bottom-anchored. Reuse `AppSheetRow` for actions.
+- Keep per-item data such as avatars, progress, and like state in family providers so parent lists do not rebuild for each item.
+- Build feeds with keyed `SliverList.builder`, `addAutomaticKeepAlives: false`, and a `RepaintBoundary` around each keyed item where appropriate.
+- Trigger pagination from scroll extent and guard against repeated loads for the same extent.
+- Size cached images for the device pixel ratio, use a short fade, and use a themed placeholder.
+- The design lint accepts intentional exceptions only with its marker, for example `// allowed: shorts scrim`.
+- For widget tests with a fake notifier, follow the established pattern in `test/home_interaction_test.dart`.
+
+## Required list-screen states
+
+Every list screen should handle skeleton loading that matches the final layout, data, empty state (`EmptyState` with an icon, one line, and one button), fatal error (`ErrorRetry`), partial error (one `InlineBanner`), pull to refresh, a 24 px load-more footer spinner, and exactly one bottom inset. See `docs/design.md` section 6.
+
+## Task templates
+
+Use the matching template below when the task is identified by its task type. Fill in placeholders and retain its final one-line response format.
+
+### Bug fix
+
+1. Read `docs/design.md`; find the cause from code and state it in one line.
+2. Make the smallest fix and add one test that fails before and passes after.
+3. Run `dart analyze`, `dart run tool/design_lint.dart`, and non-golden tests.
+4. Final: `CAUSE: <cause> | FIX: <files> | analyze=<ok/errors> | lint=<0/n> | tests=<pass/fail> | blocker=<none/exact>`
+
+### New or restyled screen
+
+Build or restyle the named screen per the specified `docs/design.md` section. Use section 4 components and implement all section 6 states. Then run `dart analyze`, design lint, and tests.
+
+Final: `<SCREEN> | files=<list> | analyze=<ok/errors> | lint=<0/n> | tests=<pass/fail> | blocker=<none/exact>`
+
+### Performance
+
+Measure rebuilds first with a counter test, apply `docs/design.md` section 7, keep per-item data in family providers, and report before/after counts.
+
+Final: `PERF | rebuilds before=<n> after=<n> | files=<list> | analyze=<ok/errors> | tests=<pass/fail>`
+
+### Test repair
+
+Classify each failure as `STALE`, `BUG`, `ENV`, or `FLAKY`. Update stale assertions to the new spec; fix bugs; make environment-dependent tests deterministic with injected clocks or fake clients; stabilize flaky timers/awaits. Never delete or skip tests.
+
+Final: `TESTS | failing before=<n> | STALE=<n> BUG=<n> ENV=<n> FLAKY=<n> | unresolved=<none/names>`
+
+### Release
+
+Only when the task requests a release: inspect `git status` and skip secrets/build artifacts; require analyze and non-golden tests to pass; commit as `<type>(<scope>): <summary>`; bump `pubspec.yaml` version by minor +1, patch 0, build +1 (or patch bump when requested); update hardcoded old version strings; commit `chore: bump version to <new>`; verify clean status. Never push, tag, amend, rebase, or force.
+
+Final: `COMMIT | version <old> -> <new> | commit1=<hash> commit2=<hash> | skipped=<none/names> | status clean=<yes/no> | blocker=<none/exact>`
+
+### Status report
+
+For `STATUS ONLY`, edit nothing. Report analyze counts, test pass/fail and failing names, design lint counts, git status count and diff stat, duplicate `VideoCard`/`showAppSheet` definitions, language JSON parse errors, TODO/FIXME count, and `pubspec.yaml` version.
+
+Final: one line per reported item.
+
+### Live feed probe
+
+Verify Home live with `tool/probe.dart` using real network and signed-out state. Log counts for fetched, after filter, and shown, plus HTTP status and client. Never loosen filters to pass.
+
+Final: `PROOF: <N> videos | client=<name> | sources=<list> | first3=<id: title; ...>` or `FAIL: <stage> | <status/error>`
+
+## Task output and approval boundaries
+
+- Final replies are one line in the applicable template's format, with no recap.
+- When a decision requires the user (including schema changes, a new dependency, or deleting a feature), stop and ask in one line. Do not silently choose.
+- A new dependency is allowed only when required by the task; report `pubspec.yaml` changes in the final line.

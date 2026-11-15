@@ -79,6 +79,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   late String id;
   String? started;
   final Set<String> _metadataWritten = {};
+  final Set<String> _subscriptionChecksStarted = {};
+  final Set<String> _reactionChecksStarted = {};
   PlaybackService? _activeService;
   String? panel;
   String? _lastPanel;
@@ -98,6 +100,27 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   String? countdownFor;
   String? cancelledFor;
   int seconds = 5;
+  Brightness shellBrightness = Brightness.light;
+  bool _wasFullscreen = false;
+
+  static const _playerOverlayStyle = SystemUiOverlayStyle(
+    statusBarColor: AppColors.transparent,
+    systemNavigationBarColor: AppColors.transparent,
+    systemNavigationBarContrastEnforced: false,
+    systemStatusBarContrastEnforced: false,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarIconBrightness: Brightness.light,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    shellBrightness = Theme.of(context).brightness;
+    if (!widget.embedded) {
+      SystemChrome.setSystemUIOverlayStyle(_playerOverlayStyle);
+    }
+  }
 
   @override
   void didUpdateWidget(WatchScreen oldWidget) {
@@ -266,8 +289,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     }
     if (action == WatchBackAction.fullscreen) {
       ref.read(playerUiProvider.notifier).setFullscreen(false);
-      await SystemChrome.setPreferredOrientations(const []);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      await setPlayerFullscreenOrientation(false);
       return;
     }
     if (action == WatchBackAction.panel) {
@@ -291,6 +313,24 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     scroll.dispose();
     if (!widget.embedded) {
       unawaited(_activeService?.stop());
+      if (_wasFullscreen) {
+        unawaited(setPlayerFullscreenOrientation(false));
+      }
+      SystemChrome.setSystemUIOverlayStyle(
+        SystemUiOverlayStyle(
+          statusBarColor: AppColors.transparent,
+          systemNavigationBarColor: AppColors.transparent,
+          systemNavigationBarContrastEnforced: false,
+          systemStatusBarContrastEnforced: false,
+          statusBarIconBrightness: shellBrightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+          statusBarBrightness: shellBrightness,
+          systemNavigationBarIconBrightness: shellBrightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+        ),
+      );
     }
     super.dispose();
   }
@@ -303,6 +343,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       if (current != null) unawaited(_start(current));
     });
     final ui = ref.watch(playerUiProvider);
+    _wasFullscreen = ui.isFullscreen;
     final heavyContentReady =
         !widget.deferHeavyContent || ui.panelMode == PlayerPanelMode.expanded;
     final infoState = ref.watch(watchInfoProvider(id));
@@ -331,18 +372,22 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       if (info.durationSec > 0) {
         service?.setFallbackDuration(Duration(seconds: info.durationSec));
       }
-      ref.read(subscriptionRepoProvider).channelIds().then((ids) {
-        if (mounted &&
-            id == info.id &&
-            subscribed != ids.contains(info.channelId)) {
-          setState(() => subscribed = ids.contains(info.channelId));
-        }
-      });
-      ref.read(dbProvider).reactionsDao.getReaction(id).then((val) {
-        if (mounted && id == info.id && val != null && reaction != val) {
-          setState(() => reaction = val);
-        }
-      });
+      if (_subscriptionChecksStarted.add(info.id)) {
+        ref.read(subscriptionRepoProvider).channelIds().then((ids) {
+          if (mounted &&
+              id == info.id &&
+              subscribed != ids.contains(info.channelId)) {
+            setState(() => subscribed = ids.contains(info.channelId));
+          }
+        });
+      }
+      if (_reactionChecksStarted.add(info.id)) {
+        ref.read(dbProvider).reactionsDao.getReaction(info.id).then((value) {
+          if (mounted && id == info.id && value != null && reaction != value) {
+            setState(() => reaction = value);
+          }
+        });
+      }
     }
     final relatedCandidates = relatedFilter == 'All'
         ? [
@@ -358,9 +403,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       strictHome: false,
       source: 'watch_related',
       random: Random(id.hashCode ^ prefs.prefsVersion),
-    );
-    debugPrint(
-      '[WatchRelated] fetched=${relatedCandidates.length}, kept=${related.length}',
     );
     final queueEntries = ref.watch(sessionQueueProvider);
     final queue = queueEntries.map((entry) => entry.video).toList();
@@ -500,20 +542,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           final fullscreen = !ui.isFullscreen;
           ref.read(playerUiProvider.notifier).setFullscreen(fullscreen);
           unawaited(
-            SystemChrome.setPreferredOrientations(
-              fullscreen
-                  ? [
-                      DeviceOrientation.landscapeLeft,
-                      DeviceOrientation.landscapeRight,
-                    ]
-                  : const [],
-            ),
-          );
-          unawaited(
-            SystemChrome.setEnabledSystemUIMode(
-              fullscreen
-                  ? SystemUiMode.immersiveSticky
-                  : SystemUiMode.edgeToEdge,
+            setPlayerFullscreenOrientation(
+              fullscreen,
+              aspectRatio: fullscreen
+                  ? videoAspectRatioFromController(service)
+                  : null,
             ),
           );
         } else {
@@ -527,7 +560,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           if (!didPop) unawaited(_back());
         },
         child: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle.light,
+          value: _playerOverlayStyle,
           child: Scaffold(
             backgroundColor: ui.isFullscreen
                 ? AppColors.shortsBackground
@@ -970,6 +1003,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
+                                key: const ValueKey('commentsPreviewHeader'),
                                 children: [
                                   Text(
                                     'Comments',
@@ -997,8 +1031,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 ],
                               ),
                               if (preview != null) ...[
-                                const SizedBox(height: AppSpacing.xs),
+                                const SizedBox(height: AppSpacing.sm),
                                 Row(
+                                  key: const ValueKey('commentsPreviewItem'),
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     ChannelAvatar(
@@ -1231,26 +1266,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (activePanel == 'Comments')
-                      IconButton(
-                        tooltip: 'Comment guidelines',
-                        icon: const Icon(LucideIcons.info),
-                        onPressed: () => showDialog<void>(
-                          context: context,
-                          builder: (context) => AppDialog(
-                            title: 'Comments',
-                            content: const Text(
-                              'Remember to keep comments respectful by following the YouTube Community Guidelines.',
-                            ),
-                            actions: [
-                              AppButton.text(
-                                onPressed: () => Navigator.pop(context),
-                                label: 'Close',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     IconButton(
                       onPressed: () => setState(() => panel = null),
                       icon: const Icon(LucideIcons.x),
@@ -1526,6 +1541,7 @@ class _CommentsState extends ConsumerState<_Comments> {
     return Column(
       children: [
         Row(
+          key: const ValueKey('commentsSortRow'),
           children: [
             for (final value in ['Top', 'Newest'])
               Padding(
@@ -1551,15 +1567,10 @@ class _CommentsState extends ConsumerState<_Comments> {
               ),
           ],
         ),
-        const Padding(
-          padding: EdgeInsets.all(AppSpacing.md),
-          child: Text(
-            'Remember to keep comments respectful by following the YouTube Community Guidelines.',
-          ),
-        ),
         Expanded(
           child: ListView.builder(
             controller: controller,
+            padding: EdgeInsets.zero,
             itemCount: items.length + (loading ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == items.length) {
@@ -1569,8 +1580,15 @@ class _CommentsState extends ConsumerState<_Comments> {
               return Column(
                 children: [
                   ListTile(
-                    leading: ChannelAvatar(name: c.author, url: c.avatar),
+                    key: ValueKey('commentItem:${c.id}'),
+                    titleAlignment: ListTileTitleAlignment.top,
+                    leading: ChannelAvatar(
+                      key: ValueKey('commentAvatar:${c.id}'),
+                      name: c.author,
+                      url: c.avatar,
+                    ),
                     title: Text(
+                      key: ValueKey('commentTitle:${c.id}'),
                       '${c.pinned.isNotEmpty ? '${c.pinned}\n' : ''}${c.author} ${c.verified ? '✓' : ''} · ${c.age}',
                     ),
                     subtitle: Column(
@@ -1607,8 +1625,16 @@ class _CommentsState extends ConsumerState<_Comments> {
                       Padding(
                         padding: const EdgeInsets.only(left: AppSpacing.xxxl),
                         child: ListTile(
-                          leading: ChannelAvatar(name: r.author, url: r.avatar),
-                          title: Text('${r.author} · ${r.age}'),
+                          titleAlignment: ListTileTitleAlignment.top,
+                          leading: ChannelAvatar(
+                            key: ValueKey('commentAvatar:${r.id}'),
+                            name: r.author,
+                            url: r.avatar,
+                          ),
+                          title: Text(
+                            key: ValueKey('commentTitle:${r.id}'),
+                            '${r.author} · ${r.age}',
+                          ),
                           subtitle: Text(r.content),
                         ),
                       ),

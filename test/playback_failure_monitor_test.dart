@@ -38,4 +38,15 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     expect(recoveries, 0);
   });
+
+  testWidgets('intentional stream switches suppress transient player errors', (
+    tester,
+  ) async {
+    final monitor = PlaybackFailureMonitor();
+    var recoveries = 0;
+    monitor.beginIntentionalSwitch();
+    monitor.report(Duration.zero, () => recoveries++);
+    await tester.pump(const Duration(seconds: 4));
+    expect(recoveries, 0);
+  });
 }

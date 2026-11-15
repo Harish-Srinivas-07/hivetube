@@ -36,9 +36,9 @@ void main() {
       ],
     },
   };
-  test('avc wins, best bitrate per height, low resolutions dropped', () {
+  test('H.264 wins, best bitrate per tier, and AAC audio is selected', () {
     final result = selectStreams(data, PlaybackMode.video);
-    expect(result.videos.map((e) => e.itag), [1, 3]);
+    expect(result.videos.map((e) => e.itag), [1, 3, 4]);
     expect(result.audio?.itag, 140);
     expect(result.audio?.json['isDrc'], isNull);
     expect(
@@ -50,6 +50,7 @@ void main() {
     expect(selectStreams(data, PlaybackMode.short).videos.map((v) => v.itag), [
       1,
       3,
+      4,
     ]);
     expect(selectStreams(data, PlaybackMode.audio).audio?.itag, 250);
   });
@@ -68,12 +69,12 @@ void main() {
       2,
     ]);
   });
-  test('VP9 fallback only with no eligible avc', () {
+  test('VP9 is not selected when no H.264 video is available', () {
     final input = {
       'streamingData': {
         'adaptiveFormats': [format(5, 'video/webm; codecs="vp9"', height: 720)],
       },
     };
-    expect(selectStreams(input, PlaybackMode.video).videos.single.itag, 5);
+    expect(selectStreams(input, PlaybackMode.video).videos, isEmpty);
   });
 }

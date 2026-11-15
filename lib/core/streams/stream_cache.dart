@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'adaptive_quality_policy.dart';
+import 'bandwidth_estimator.dart';
 import 'player_client.dart';
 import 'stream_selector.dart';
 
@@ -17,9 +19,13 @@ class _Verdict {
 }
 
 class StreamCache {
-  StreamCache(this.player, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  StreamCache(
+    this.player, {
+    DateTime Function()? clock,
+    this.bandwidthEstimator,
+  }) : _clock = clock ?? DateTime.now;
   final PlayerClient player;
+  final BandwidthEstimator? bandwidthEstimator;
   final DateTime Function() _clock;
   final Map<String, _Entry> _cache = {};
   final Map<String, Future<_Entry>> _inFlight = {};
@@ -92,25 +98,23 @@ class StreamCache {
     await _get(id);
   }
 
+  Future<SelectedStreams> candidates(
+    String id,
+    PlaybackMode mode, {
+    int maxHeight = AdaptiveQualityPolicy.maxVideoHeight,
+  }) async {
+    final entry = await _get(id);
+    return _select(entry.data, mode, maxHeight);
+  }
+
   Future<SelectedStreams> resolve(
     String id,
     PlaybackMode mode, {
     int? quality,
+    int maxHeight = AdaptiveQualityPolicy.maxVideoHeight,
   }) async {
     final entry = await _get(id);
-    final allSelected = selectStreams(entry.data, mode);
-    final selected = mode == PlaybackMode.short
-        ? SelectedStreams(
-            allSelected.videos.where((format) {
-              final resolution =
-                  format.width > 0 && format.width < format.height
-                  ? format.width
-                  : format.height;
-              return resolution <= 720 && format.mimeType.contains('avc1');
-            }).toList(),
-            allSelected.audio,
-          )
-        : allSelected;
+    final selected = _select(entry.data, mode, maxHeight);
     if (selected.audio == null) {
       const error = StreamException(StreamError.noStreams);
       _verdicts[id] = _Verdict(error, _clock());
@@ -120,9 +124,14 @@ class StreamCache {
       throw const StreamException(StreamError.noVideo);
     }
     final video = quality == null
-        ? selected.videos.firstOrNull
-        : selected.videos.where((f) => f.height == quality).firstOrNull ??
-              selected.videos.firstOrNull;
+        ? selected.videos
+                  .where((format) => resolutionOf(format, mode) <= maxHeight)
+                  .firstOrNull ??
+              selected.videos.lastOrNull
+        : selected.videos
+                  .where((f) => resolutionOf(f, mode) <= quality)
+                  .firstOrNull ??
+              selected.videos.lastOrNull;
     final needed = [
       selected.audio!,
       if (mode != PlaybackMode.audio && video != null) video,
@@ -153,8 +162,24 @@ class StreamCache {
     return selected;
   }
 
+  SelectedStreams _select(
+    Map<String, dynamic> data,
+    PlaybackMode mode,
+    int maxHeight,
+  ) {
+    final selected = selectStreams(data, mode, cap: maxHeight);
+    if (mode == PlaybackMode.audio ||
+        selected.videos.isNotEmpty ||
+        maxHeight >= AdaptiveQualityPolicy.maxVideoHeight) {
+      return selected;
+    }
+    // Keep playback available if the source has no H.264 format under the cap.
+    return selectStreams(data, mode, cap: AdaptiveQualityPolicy.maxVideoHeight);
+  }
+
   Future<bool> probe(StreamFormat format) async {
     try {
+      final stopwatch = Stopwatch()..start();
       final start = format.length > 1024 * 1024 + 16384 ? 1024 * 1024 + 1 : 0;
       final end = format.length > 0
           ? (start + 1024 * 1024 - 1).clamp(start, format.length - 1)
@@ -175,6 +200,8 @@ class StreamCache {
         await for (final data in response) {
           length += data.length;
         }
+        stopwatch.stop();
+        bandwidthEstimator?.addSample(length, stopwatch.elapsed);
         return length >= 16384;
       })().timeout(const Duration(seconds: 6));
     } catch (_) {

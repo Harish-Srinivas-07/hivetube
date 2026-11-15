@@ -16,8 +16,7 @@ import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../features/watch/watch_screen.dart'
     show watchCommentsProvider, watchInfoProvider;
-import '../home/home_shorts.dart';
-import '../home/home_variety.dart';
+import 'shorts_feed_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_sizes.dart';
@@ -26,7 +25,18 @@ import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_settings_menu.dart';
 import '../../widgets/video_options_menu.dart';
+import '../../widgets/logger.dart';
 import 'package:share_plus/share_plus.dart';
+
+const _shortsSystemUiOverlayStyle = SystemUiOverlayStyle(
+  statusBarColor: AppColors.transparent,
+  systemNavigationBarColor: AppColors.transparent,
+  systemNavigationBarContrastEnforced: false,
+  systemStatusBarContrastEnforced: false,
+  statusBarIconBrightness: Brightness.light,
+  statusBarBrightness: Brightness.dark,
+  systemNavigationBarIconBrightness: Brightness.light,
+);
 
 class ShortsSelection {
   const ShortsSelection({this.items = const [], this.index = 0});
@@ -86,27 +96,37 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       visible = false,
       appActive = true,
       muted = false;
-  int generation = 0, currentIndex = 0;
+  int currentIndex = 0;
   int playbackGeneration = 0;
   Brightness shellBrightness = Brightness.light;
   PageController controller = PageController();
   late final ProviderSubscription<ShortsSelection> selectionSubscription;
+  late final ProviderSubscription<ShortsFeedState> feedSubscription;
   PlaybackService? active;
+  Stopwatch? _tabOpenTimer;
+  bool? _tabOpenCacheHit;
+  bool _tabOpenLogged = false, _tabOpenLogScheduled = false;
+  int _selectionRequestId = 0;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final feed = ref.read(shortsFeedProvider);
+    items = List.of(feed.items);
+    cursor = feed.cursor;
+    loading = feed.isLoading && feed.items.isEmpty;
+    feedSubscription = ref.listenManual(shortsFeedProvider, (_, next) {
+      _applyFeedState(next);
+    });
     final selection = ref.read(shortsSelectionProvider);
     selectionSubscription = ref.listenManual(shortsSelectionProvider, (
       _,
       next,
     ) {
-      if (next.items.isNotEmpty) _selected(next);
+      if (next.items.isNotEmpty) _queueSelection(next);
     });
     if (selection.items.isNotEmpty) {
-      _selected(selection);
-    } else {
-      _refresh();
+      _queueSelection(selection);
     }
   }
 
@@ -128,171 +148,184 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     if (next == visible) return;
     visible = next;
     if (visible) {
+      final feed = ref.read(shortsFeedProvider);
+      _tabOpenTimer = Stopwatch()..start();
+      _tabOpenCacheHit = feed.items.isNotEmpty;
+      _tabOpenLogged = false;
+      _tabOpenLogScheduled = false;
+      _applyFeedState(ref.read(shortsFeedProvider));
+      if (feed.items.isEmpty) {
+        setState(() {
+          loading = true;
+          failed = false;
+        });
+      }
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: AppColors.transparent,
-          systemNavigationBarColor: AppColors.transparent,
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-          systemNavigationBarIconBrightness: Brightness.light,
-        ),
-      );
-      unawaited(active?.setVisible(true));
+      SystemChrome.setSystemUIOverlayStyle(_shortsSystemUiOverlayStyle);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || !visible) return;
+        final service = ref.read(playbackProvider);
+        await service?.setVisible(true);
+        if (!mounted || !visible) return;
+        final feedController = ref.read(shortsFeedProvider.notifier);
+        final currentFeed = ref.read(shortsFeedProvider);
+        if (currentFeed.items.isNotEmpty) {
+          feedController.prepareCachedWindow(startIndex: currentIndex);
+          unawaited(feedController.refresh());
+        } else {
+          unawaited(feedController.loadInitial());
+        }
+        _playCurrent(ref.read(playbackProvider));
+      });
+    } else {
+      _restoreSystemUi();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || visible) return;
+        unawaited(active?.setVisible(false));
+        ref.read(shortsFeedProvider.notifier).releaseWarmWindow();
+      });
+    }
+  }
+
+  void _applyFeedState(ShortsFeedState feed) {
+    if (!mounted) return;
+    final shouldStartPlayback = items.isEmpty && feed.items.isNotEmpty;
+    final activeItemId = currentIndex < items.length
+        ? items[currentIndex].id
+        : activeId;
+    final nextItems = List<ShortItem>.of(feed.items);
+    final activeIndex = activeItemId == null
+        ? -1
+        : nextItems.indexWhere((item) => item.id == activeItemId);
+    setState(() {
+      items = nextItems;
+      cursor = feed.cursor;
+      loading = feed.isLoading && feed.items.isEmpty;
+      failed = false;
+      if (activeIndex >= 0) {
+        currentIndex = activeIndex;
+      } else if (items.isEmpty) {
+        currentIndex = 0;
+      } else {
+        currentIndex = currentIndex.clamp(0, items.length - 1);
+      }
+    });
+    _logTabOpenIfReady(feed);
+    if (visible && shouldStartPlayback && activeId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && visible) _playCurrent(ref.read(playbackProvider));
       });
-    } else {
-      unawaited(active?.setVisible(false));
-      _restoreSystemUi();
     }
+  }
+
+  void _logTabOpenIfReady(ShortsFeedState feed) {
+    final timer = _tabOpenTimer;
+    if (timer == null || _tabOpenLogged) return;
+    if (_tabOpenCacheHit != true && feed.items.isEmpty && !feed.hasLoaded) {
+      return;
+    }
+    if (_tabOpenLogScheduled) return;
+    _tabOpenLogScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentTimer = _tabOpenTimer;
+      if (!mounted || !visible || currentTimer == null || _tabOpenLogged) {
+        return;
+      }
+      final latest = ref.read(shortsFeedProvider);
+      if (_tabOpenCacheHit != true &&
+          latest.items.isEmpty &&
+          !latest.hasLoaded) {
+        _tabOpenLogScheduled = false;
+        return;
+      }
+      _tabOpenLogged = true;
+      Logger.log(
+        'ShortsTab',
+        'open cache=${_tabOpenCacheHit == true ? 'hit' : 'miss'} '
+            'ms=${currentTimer.elapsedMilliseconds}',
+      );
+      currentTimer.stop();
+      _tabOpenTimer = null;
+    });
   }
 
   void _restoreSystemUi() {
     SystemChrome.setSystemUIOverlayStyle(
-      shellBrightness == Brightness.dark
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      SystemUiOverlayStyle(
+        statusBarColor: AppColors.transparent,
+        systemNavigationBarColor: AppColors.transparent,
+        systemNavigationBarContrastEnforced: false,
+        systemStatusBarContrastEnforced: false,
+        statusBarIconBrightness: shellBrightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark,
+        statusBarBrightness: shellBrightness,
+        systemNavigationBarIconBrightness: shellBrightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark,
+      ),
     );
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   void _selected(ShortsSelection selection) {
-    generation++;
     playbackGeneration++;
-    active?.cancelShortPreloads(disposePlayer: true);
+    final selectedIndex = selection.index.clamp(
+      0,
+      selection.items.isEmpty ? 0 : selection.items.length - 1,
+    );
+    final selectedId = selection.items.isEmpty
+        ? null
+        : selection.items[selectedIndex].id;
+    final feed = ref.read(shortsFeedProvider);
+    final canKeepPrepared =
+        selectedId != null &&
+        feed.items.isNotEmpty &&
+        feed.items.first.id == selectedId;
+    if (!canKeepPrepared) {
+      active?.cancelShortPreloads(disposePlayer: true);
+      ref.read(shortsFeedProvider.notifier).releaseWarmWindow();
+    }
     unawaited(active?.pause());
+    ref
+        .read(shortsFeedProvider.notifier)
+        .adoptSelection(selection.items, startIndex: selectedIndex);
     setState(() {
       items = List.of(selection.items);
-      cursor = null;
+      cursor = ref.read(shortsFeedProvider).cursor;
       failed = false;
       loading = false;
-      currentIndex = selection.index.clamp(
-        0,
-        items.isEmpty ? 0 : items.length - 1,
-      );
+      currentIndex = selectedIndex;
       activeId = null;
       prefetchedId = null;
     });
     final old = controller;
     controller = PageController(initialPage: currentIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
-    _load();
+    if (!canKeepPrepared) {
+      unawaited(ref.read(shortsFeedProvider.notifier).refresh());
+    }
+  }
+
+  void _queueSelection(ShortsSelection selection) {
+    final requestId = ++_selectionRequestId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && requestId == _selectionRequestId) _selected(selection);
+    });
   }
 
   Future<void> _refresh() async {
-    generation++;
     playbackGeneration++;
-    active?.cancelShortPreloads(disposePlayer: true);
+    ref.read(shortsFeedProvider.notifier).releaseWarmWindow();
     unawaited(active?.pause());
     setState(() {
-      items = [];
-      currentIndex = 0;
-      activeId = null;
-      prefetchedId = null;
-      cursor = null;
       failed = false;
-      loading = false;
+      loading = items.isEmpty;
     });
-    await _load();
+    await ref.read(shortsFeedProvider.notifier).refresh();
   }
 
-  Future<void> _load() async {
-    if (loading) return;
-    setState(() {
-      loading = true;
-      failed = false;
-    });
-    final current = generation;
-    try {
-      final api = await ref.read(ytApiProvider.future);
-      final prefs = ref.read(contentPrefsProvider);
-      final page = await api.reel.fetch(continuation: cursor, count: 24);
-      final regional = <ShortItem>[];
-      if (cursor == null) {
-        final history = await ref.read(historyRepoProvider).recent();
-        final queries = shortsQueries(
-          chip: 'All',
-          channels: const [],
-          random: Random(DateTime.now().microsecondsSinceEpoch ^ current),
-          localRatio: prefs.localRatio,
-          shownLanguages: prefs.contentLanguages,
-          hasHistory: history.isNotEmpty,
-        );
-        final pages = await Future.wait(
-          queries.map((query) async {
-            try {
-              return await api.search.shortsPage(query);
-            } catch (_) {
-              return const ShortPage([], null);
-            }
-          }),
-        );
-        regional.addAll(pages.expand((result) => result.items).take(36));
-      }
-      final candidates = <String, ShortItem>{};
-      for (final item in [...regional, ...page.items]) {
-        candidates.putIfAbsent(item.id, () => item);
-      }
-      final enriched = await Future.wait(
-        candidates.values.take(60).map((item) async {
-          try {
-            final metadata = await api.reel.metadata(item.id);
-            if (metadata == null) return item;
-            return ShortItem(
-              id: item.id,
-              thumbUrl: item.thumbUrl,
-              title: item.title ?? metadata.title,
-              channelName: metadata.channelName,
-              channelId: metadata.channelId,
-              channelAvatarUrl: metadata.channelAvatarUrl,
-              viewsText: item.viewsText ?? metadata.viewsText,
-            );
-          } catch (_) {
-            return item;
-          }
-        }),
-      );
-      final seen = SeenVideos.decode(
-        await ref.read(dbProvider).getValue('home_seen_videos_v1'),
-        DateTime.now(),
-      );
-      final rankedIds = rankHomeItems(
-        [
-          for (final item in enriched)
-            VideoItem(
-              id: item.id,
-              title: item.title ?? '',
-              channelId: item.channelId ?? '',
-              channelName: item.channelName ?? '',
-              channelAvatarUrl: item.channelAvatarUrl ?? '',
-              thumbUrl: item.thumbUrl,
-              isShort: true,
-            ),
-        ],
-        preferred: prefs.contentLanguages,
-        hidden: prefs.hiddenLanguages,
-        seen: seen.ids,
-        random: Random(prefs.prefsVersion ^ current),
-      ).map((item) => item.id).toList();
-      final byId = {for (final item in enriched) item.id: item};
-      final filteredItems = rankedIds.map((id) => byId[id]!).toList();
-      if (!mounted || current != generation) return;
-      final existingIds = items.map((e) => e.id).toSet();
-      setState(() {
-        items.addAll(filteredItems.where((e) => existingIds.add(e.id)));
-        cursor = page.continuation;
-        failed = page.failed;
-      });
-      if (visible) {
-        _playCurrent(ref.read(playbackProvider));
-      }
-    } catch (_) {
-      if (mounted && current == generation) setState(() => failed = true);
-    } finally {
-      if (mounted && current == generation) setState(() => loading = false);
-    }
-  }
+  Future<void> _load() => ref.read(shortsFeedProvider.notifier).loadMore();
 
   void _prefetchNext(PlaybackService service, int pageGeneration) {
     if (!mounted ||
@@ -322,6 +355,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   void _cancelShortPreloads() {
     playbackGeneration++;
     active?.cancelShortPreloads(disposePlayer: true);
+    ref.read(shortsFeedProvider.notifier).releaseWarmWindow();
   }
 
   void _updateActiveShortMetadata(ShortItem item) {
@@ -422,9 +456,15 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     WidgetsBinding.instance.removeObserver(this);
     if (visible) _restoreSystemUi();
     selectionSubscription.close();
+    feedSubscription.close();
     playbackGeneration++;
-    active?.cancelShortPreloads(disposePlayer: true);
-    unawaited(active?.setVisible(false));
+    final service = active;
+    final feedController = ref.read(shortsFeedProvider.notifier);
+    Future<void>(() {
+      service?.cancelShortPreloads(disposePlayer: true);
+      feedController.releaseWarmWindow();
+      unawaited(service?.setVisible(false));
+    });
     controller.dispose();
     super.dispose();
   }
@@ -432,12 +472,20 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   @override
   Widget build(BuildContext context) {
     ref.listen(tabRefreshProvider, (_, request) {
-      if (request?.index == 1) unawaited(_refresh());
+      if (request?.index == 1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_refresh());
+        });
+      }
     });
     ref.listen(contentPrefsProvider, (previous, next) {
       if (previous != null && previous.prefsVersion != next.prefsVersion) {
-        ref.read(shortsSelectionProvider.notifier).clear();
-        _refresh();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(shortsSelectionProvider.notifier).clear();
+          ref.read(shortsFeedProvider.notifier).clear();
+          unawaited(_refresh());
+        });
       }
     });
     final service = ref.watch(playbackProvider);
@@ -446,126 +494,132 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     });
     final wide =
         MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
-    return ColoredBox(
-      color: AppColors.shortsBackground,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = wide
-              ? (constraints.maxHeight * AppSpacing.shortRatio).clamp(
-                  0.0,
-                  constraints.maxWidth,
-                )
-              : constraints.maxWidth;
-          return Center(
-            child: SizedBox(
-              width: width,
-              height: constraints.maxHeight,
-              child: Focus(
-                autofocus: true,
-                onKeyEvent: (_, event) {
-                  if (event is KeyDownEvent &&
-                      event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                    _movePage(-1);
-                    return KeyEventResult.handled;
-                  }
-                  if (event is KeyDownEvent &&
-                      event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                    _movePage(1);
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: Listener(
-                  onPointerSignal: (event) {
-                    if (wide &&
-                        event is PointerScrollEvent &&
-                        event.scrollDelta.dy.abs() >=
-                            AppSpacing.shortsWheelThreshold) {
-                      _movePage(event.scrollDelta.dy > 0 ? 1 : -1);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _shortsSystemUiOverlayStyle,
+      child: ColoredBox(
+        color: AppColors.shortsBackground,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = wide
+                ? (constraints.maxHeight * AppSpacing.shortRatio).clamp(
+                    0.0,
+                    constraints.maxWidth,
+                  )
+                : constraints.maxWidth;
+            return Center(
+              child: SizedBox(
+                width: width,
+                height: constraints.maxHeight,
+                child: Focus(
+                  autofocus: true,
+                  onKeyEvent: (_, event) {
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                      _movePage(-1);
+                      return KeyEventResult.handled;
                     }
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                      _movePage(1);
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
                   },
-                  child: items.isEmpty
-                      ? Center(
-                          child: loading
-                              ? const SizedBox.square(
-                                  dimension: AppSizes.iconLg,
-                                  child: CircularProgressIndicator(),
-                                )
-                              : failed
-                              ? AppErrorState(
-                                  message: "Couldn't load Shorts",
-                                  onRetry: _refresh,
-                                )
-                              : const AppEmptyState(
-                                  icon: LucideIcons.play,
-                                  title: 'No Shorts',
-                                ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _refresh,
-                          child: PageView.builder(
-                            key: const ValueKey('shortsPageView'),
-                            controller: controller,
-                            scrollDirection: Axis.vertical,
-                            pageSnapping: true,
-                            physics: const ClampingScrollPhysics(
-                              parent: AlwaysScrollableScrollPhysics(),
-                            ),
-                            itemCount:
-                                items.length + (failed || loading ? 1 : 0),
-                            onPageChanged: (index) {
-                              setState(() => currentIndex = index);
-                              if (index < items.length) {
-                                _updateActiveShortMetadata(items[index]);
-                                _playCurrent(service);
-                              } else {
-                                _cancelShortPreloads();
-                                unawaited(service?.setVisible(false));
-                              }
-                              if (index >= items.length - 3 && cursor != null) {
-                                _load();
-                              }
-                            },
-                            itemBuilder: (context, index) {
-                              if (index == items.length) {
-                                return Center(
-                                  child: failed
-                                      ? AppErrorState(
-                                          message: 'Unable to load Shorts',
-                                          onRetry: _load,
-                                        )
-                                      : const SizedBox.square(
-                                          dimension: AppSizes.iconLg,
-                                          child: CircularProgressIndicator(),
-                                        ),
+                  child: Listener(
+                    onPointerSignal: (event) {
+                      if (wide &&
+                          event is PointerScrollEvent &&
+                          event.scrollDelta.dy.abs() >=
+                              AppSpacing.shortsWheelThreshold) {
+                        _movePage(event.scrollDelta.dy > 0 ? 1 : -1);
+                      }
+                    },
+                    child: items.isEmpty
+                        ? Center(
+                            child: loading
+                                ? const SizedBox.square(
+                                    dimension: AppSizes.iconLg,
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : failed
+                                ? AppErrorState(
+                                    message: "Couldn't load Shorts",
+                                    onRetry: _refresh,
+                                  )
+                                : const AppEmptyState(
+                                    icon: LucideIcons.play,
+                                    title: 'No Shorts',
+                                  ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _refresh,
+                            child: PageView.builder(
+                              key: const ValueKey('shortsPageView'),
+                              controller: controller,
+                              scrollDirection: Axis.vertical,
+                              pageSnapping: true,
+                              physics: const ClampingScrollPhysics(
+                                parent: AlwaysScrollableScrollPhysics(),
+                              ),
+                              itemCount:
+                                  items.length + (failed || loading ? 1 : 0),
+                              onPageChanged: (index) {
+                                setState(() => currentIndex = index);
+                                if (index < items.length) {
+                                  _updateActiveShortMetadata(items[index]);
+                                  _playCurrent(service);
+                                } else {
+                                  _cancelShortPreloads();
+                                  unawaited(service?.setVisible(false));
+                                }
+                                if (index >= items.length - 3 &&
+                                    cursor != null) {
+                                  _load();
+                                }
+                              },
+                              itemBuilder: (context, index) {
+                                if (index == items.length) {
+                                  return Center(
+                                    child: failed
+                                        ? AppErrorState(
+                                            message: 'Unable to load Shorts',
+                                            onRetry: _load,
+                                          )
+                                        : const SizedBox.square(
+                                            dimension: AppSizes.iconLg,
+                                            child: CircularProgressIndicator(),
+                                          ),
+                                  );
+                                }
+                                final item = items[index];
+                                final metadata = ref
+                                    .watch(shortMetadataProvider(item.id))
+                                    .value;
+                                return _ShortPage(
+                                  key: ValueKey(item.id),
+                                  item: item,
+                                  metadata: metadata,
+                                  service: index == currentIndex
+                                      ? service
+                                      : null,
+                                  muted: muted,
+                                  reaction: ref.read(
+                                    _shortReactionProvider(item.id),
+                                  ),
+                                  onMute: () {
+                                    setState(() => muted = !muted);
+                                    unawaited(service?.setMuted(muted));
+                                  },
                                 );
-                              }
-                              final item = items[index];
-                              final metadata = ref
-                                  .watch(shortMetadataProvider(item.id))
-                                  .value;
-                              return _ShortPage(
-                                key: ValueKey(item.id),
-                                item: item,
-                                metadata: metadata,
-                                service: index == currentIndex ? service : null,
-                                muted: muted,
-                                reaction: ref.read(
-                                  _shortReactionProvider(item.id),
-                                ),
-                                onMute: () {
-                                  setState(() => muted = !muted);
-                                  unawaited(service?.setMuted(muted));
-                                },
-                              );
-                            },
+                              },
+                            ),
                           ),
-                        ),
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -592,9 +646,12 @@ class _ShortPage extends ConsumerStatefulWidget {
 }
 
 class _ShortPageState extends ConsumerState<_ShortPage> {
+  late final TapGestureRecognizer _shortDetailsRecognizer =
+      TapGestureRecognizer()..onTap = () => unawaited(_openShortDetails());
   bool firstFrame = false;
   bool _scrubbing = false;
   bool _wasPlayingBeforeScrub = false;
+  bool _sharing = false;
   double _scrubFraction = 0.0;
   PlaybackService? _watchedService;
   VideoController? _waitingController;
@@ -648,6 +705,32 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   void _toggleReaction(int value) {
     widget.reaction.toggle(value);
     setState(() {});
+  }
+
+  void _togglePlayback(PlaybackService service) {
+    final current = service.state;
+    final willPause =
+        current.playing ||
+        current.status == PlayerStatus.ready ||
+        current.status == PlayerStatus.loading ||
+        current.status == PlayerStatus.buffering;
+    unawaited(service.togglePlay());
+    _feedback(willPause ? LucideIcons.pause : LucideIcons.play);
+  }
+
+  Future<void> _shareShort() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await SharePlus.instance.share(
+        ShareParams(
+          uri: Uri.https('www.youtube.com', '/shorts/${widget.item.id}'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   void _waitForFrame(PlaybackService? service, VideoController? controller) {
@@ -726,44 +809,6 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
     }
   }
 
-  Future<void> _onSubscribePressed({
-    required String channelId,
-    required String channelName,
-    required String avatarUrl,
-    required bool isSubscribed,
-  }) async {
-    if (!isSubscribed) {
-      await _toggleSubscription(
-        channelId: channelId,
-        channelName: channelName,
-        avatarUrl: avatarUrl,
-        isSubscribed: false,
-      );
-      return;
-    }
-    final key = 'subscription_notifications_$channelId';
-    final current = await ref.read(dbProvider).getValue(key) ?? 'Personalized';
-    if (!mounted) return;
-    final selected = await showAppSheet<String>(
-      context,
-      fit: true,
-      title: 'Notifications',
-      builder: (sheetContext, _) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final option in const ['All', 'Personalized', 'None'])
-            AppSheetRow(
-              icon: option == 'None' ? LucideIcons.bellOff : LucideIcons.bell,
-              label: option,
-              selected: current == option,
-              onTap: () => Navigator.pop(sheetContext, option),
-            ),
-        ],
-      ),
-    );
-    if (selected != null) await ref.read(dbProvider).setValue(key, selected);
-  }
-
   Future<void> _openComments() async {
     try {
       final info = await ref.read(watchInfoProvider(widget.item.id).future);
@@ -835,8 +880,77 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
     }
   }
 
+  Future<void> _openShortDetails() async {
+    try {
+      final info = await ref.read(watchInfoProvider(widget.item.id).future);
+      if (!mounted) return;
+      await showAppSheet<void>(
+        context,
+        title: 'Details',
+        showClose: false,
+        fit: true,
+        builder: (sheetContext, _) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                info.title,
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                [
+                  info.views,
+                  info.date,
+                ].where((value) => value.isNotEmpty).join(' · '),
+                style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (info.channelName.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(info.channelName, style: AppTextStyles.bodyStrong),
+              ],
+              if (info.description.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  info.description,
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) AppSnackbar.show(context, 'Could not load video details');
+    }
+  }
+
+  void _openMoreOptions() {
+    final session = _settingsSession;
+    if (session != null) {
+      unawaited(
+        showPlayerSettingsMenu(context, session: session, floating: true),
+      );
+    } else {
+      unawaited(
+        showVideoOptionsMenu(
+          context,
+          videoId: widget.item.id,
+          onVideo: true,
+          floatingInset: true,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
+    _shortDetailsRecognizer.dispose();
     feedbackTimer?.cancel();
     _watchedService?.removeListener(_serviceChanged);
     _settingsSession?.dispose();
@@ -861,9 +975,7 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
     final safe = MediaQuery.paddingOf(context);
     final bottom =
         safe.bottom +
-        (wide
-            ? AppSpacing.lg
-            : AppSpacing.navHeight + AppSpacing.lg + AppSpacing.lg);
+        (wide ? AppSpacing.lg : AppSpacing.navHeight + AppSpacing.lg);
     final duration = state?.duration.inMilliseconds ?? 0;
     final played = duration > 0
         ? (state!.position.inMilliseconds / duration).clamp(0.0, 1.0)
@@ -880,48 +992,48 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        CachedNetworkImage(
-          imageUrl: widget.item.thumbUrl,
-          fit: BoxFit.cover,
-          errorWidget: (_, _, _) => const Center(
-            child: Icon(
-              LucideIcons.imageOff,
-              color: AppColors.shortsForeground,
-            ),
+        const ColoredBox(color: AppColors.shortsBackground),
+        Center(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = min(
+                constraints.maxWidth,
+                constraints.maxHeight * AppSpacing.shortRatio,
+              );
+              return SizedBox(
+                width: width,
+                height: width / AppSpacing.shortRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: widget.item.thumbUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => const Center(
+                        child: Icon(
+                          LucideIcons.imageOff,
+                          color: AppColors.shortsForeground,
+                        ),
+                      ),
+                    ),
+                    if (service != null)
+                      Opacity(
+                        opacity: frameReady ? 1 : 0,
+                        child: Video(
+                          controller: service.controller,
+                          controls: NoVideoControls,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
-        if (service != null)
-          Center(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = min(
-                  constraints.maxWidth,
-                  constraints.maxHeight * AppSpacing.shortRatio,
-                );
-                return SizedBox(
-                  width: width,
-                  height: width / AppSpacing.shortRatio,
-                  child: Opacity(
-                    opacity: frameReady ? 1 : 0,
-                    child: Video(
-                      controller: service.controller,
-                      controls: NoVideoControls,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
         GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onTap: service == null
-              ? null
-              : () {
-                  final playing = service.state.status == PlayerStatus.playing;
-                  unawaited(playing ? service.pause() : service.resume());
-                  _feedback(playing ? LucideIcons.pause : LucideIcons.play);
-                },
+          onTap: service == null ? null : () => _togglePlayback(service),
           onLongPressStart: service == null
               ? null
               : (_) {
@@ -955,6 +1067,13 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
             ),
           ),
         ),
+        if (feedback == null && state?.status == PlayerStatus.paused)
+          Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: const Center(
+              child: _ShortPlaybackIndicator(icon: LucideIcons.pause),
+            ),
+          ),
         if (feedback != null)
           Opacity(
             opacity: _scrubbing ? 0.35 : 1,
@@ -970,15 +1089,13 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                     child: child,
                   ),
                 ),
-                child: Icon(
-                  feedback,
-                  size: feedback == LucideIcons.heart
-                      ? AppSpacing.shortsHeartIcon
-                      : AppSpacing.shortsFeedbackIcon,
-                  color: feedback == LucideIcons.heart
-                      ? AppColors.shortsSelected
-                      : AppColors.shortsForeground,
-                ),
+                child: feedback == LucideIcons.heart
+                    ? Icon(
+                        feedback,
+                        size: AppSpacing.shortsHeartIcon,
+                        color: AppColors.shortsSelected,
+                      )
+                    : _ShortPlaybackIndicator(icon: feedback!),
               ),
             ),
           ),
@@ -988,126 +1105,65 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
           right: 0,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: context.canPop() ? 'Close' : 'Back',
-                  onPressed: () =>
-                      context.canPop() ? context.pop() : context.go('/'),
-                  color: AppColors.shortsForeground,
-                  icon: Icon(
-                    context.canPop() ? LucideIcons.x : LucideIcons.arrowLeft,
-                  ),
-                  constraints: const BoxConstraints.tightFor(
-                    width: AppSizes.touchMin,
-                    height: AppSizes.touchMin,
-                  ),
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppColors.shortsTopControlsTint,
+                    AppColors.transparent,
+                  ],
                 ),
-                const Spacer(),
-                IconButton(
-                  key: const ValueKey('shortsMute'),
-                  tooltip: widget.muted ? 'Unmute' : 'Mute',
-                  onPressed: widget.onMute,
-                  color: AppColors.shortsForeground,
-                  icon: Icon(
-                    widget.muted ? LucideIcons.volumeX : LucideIcons.volume2,
-                  ),
-                  constraints: const BoxConstraints.tightFor(
-                    width: AppSizes.touchMin,
-                    height: AppSizes.touchMin,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Search',
-                  onPressed: () => context.push('/search'),
-                  color: AppColors.shortsForeground,
-                  icon: const Icon(LucideIcons.search),
-                  constraints: const BoxConstraints.tightFor(
-                    width: AppSizes.touchMin,
-                    height: AppSizes.touchMin,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'More',
-                  onPressed: () => unawaited(
-                    showVideoOptionsMenu(
-                      context,
-                      videoId: widget.item.id,
-                      onVideo: true,
-                    ),
-                  ),
-                  color: AppColors.shortsForeground,
-                  icon: const Icon(LucideIcons.ellipsis),
-                  constraints: const BoxConstraints.tightFor(
-                    width: AppSizes.touchMin,
-                    height: AppSizes.touchMin,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          right: AppSpacing.sm,
-          bottom: bottom + AppSpacing.xxxl,
-          child: Opacity(
-            opacity: _scrubbing ? 0.35 : 1,
-            child: SingleChildScrollView(
-              child: Column(
-                key: const ValueKey('shortsActionRail'),
+              ),
+              child: Row(
                 children: [
-                  _ShortAction(
-                    icon: widget.reaction.value == 1
-                        ? Icons.thumb_up
-                        : LucideIcons.thumbsUp,
-                    label: 'Like',
-                    onTap: () => _toggleReaction(1),
-                  ),
-                  _ShortAction(
-                    icon: widget.reaction.value == -1
-                        ? Icons.thumb_down
-                        : LucideIcons.thumbsDown,
-                    label: 'Dislike',
-                    onTap: () => _toggleReaction(-1),
-                  ),
-                  _ShortAction(
-                    icon: LucideIcons.messageCircle,
-                    label: 'Comments',
-                    onTap: () => unawaited(_openComments()),
-                  ),
-                  _ShortAction(
-                    icon: LucideIcons.share2,
-                    label: 'Share',
-                    onTap: () => unawaited(
-                      SharePlus.instance.share(
-                        ShareParams(
-                          uri: Uri.https(
-                            'www.youtube.com',
-                            '/shorts/${widget.item.id}',
-                          ),
-                        ),
-                      ),
+                  IconButton(
+                    tooltip: context.canPop() ? 'Close' : 'Back',
+                    onPressed: () =>
+                        context.canPop() ? context.pop() : context.go('/home'),
+                    color: AppColors.shortsForeground,
+                    icon: Icon(
+                      context.canPop() ? LucideIcons.x : LucideIcons.arrowLeft,
+                    ),
+                    constraints: const BoxConstraints.tightFor(
+                      width: AppSizes.touchMin,
+                      height: AppSizes.touchMin,
                     ),
                   ),
-                  _ShortAction(
-                    icon: LucideIcons.ellipsis,
-                    label: 'More',
-                    onTap: () {
-                      final session = _settingsSession;
-                      if (session != null) {
-                        unawaited(
-                          showPlayerSettingsMenu(context, session: session),
-                        );
-                      } else {
-                        unawaited(
-                          showVideoOptionsMenu(
-                            context,
-                            videoId: widget.item.id,
-                            onVideo: true,
-                          ),
-                        );
-                      }
-                    },
+                  const Spacer(),
+                  IconButton(
+                    key: const ValueKey('shortsMute'),
+                    tooltip: widget.muted ? 'Unmute' : 'Mute',
+                    onPressed: widget.onMute,
+                    color: AppColors.shortsForeground,
+                    icon: Icon(
+                      widget.muted ? LucideIcons.volumeX : LucideIcons.volume2,
+                    ),
+                    constraints: const BoxConstraints.tightFor(
+                      width: AppSizes.touchMin,
+                      height: AppSizes.touchMin,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Search',
+                    onPressed: () => context.push('/search'),
+                    color: AppColors.shortsForeground,
+                    icon: const Icon(LucideIcons.search),
+                    constraints: const BoxConstraints.tightFor(
+                      width: AppSizes.touchMin,
+                      height: AppSizes.touchMin,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'More',
+                    onPressed: _openMoreOptions,
+                    color: AppColors.shortsForeground,
+                    icon: const Icon(LucideIcons.ellipsis),
+                    constraints: const BoxConstraints.tightFor(
+                      width: AppSizes.touchMin,
+                      height: AppSizes.touchMin,
+                    ),
                   ),
                 ],
               ),
@@ -1115,9 +1171,89 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
           ),
         ),
         Positioned(
+          right: AppSpacing.none,
+          bottom: bottom + AppSpacing.xxl,
+          child: Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: Container(
+              width: AppSpacing.shortsRailWidth + AppSpacing.lg,
+              decoration: const BoxDecoration(
+                // allowed: shorts scrim
+                gradient: LinearGradient(
+                  begin: Alignment.centerRight,
+                  end: Alignment.centerLeft,
+                  colors: [
+                    AppColors.shortsTopControlsTint,
+                    AppColors.transparent,
+                  ],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
+                child: SingleChildScrollView(
+                  child: Column(
+                    key: const ValueKey('shortsActionRail'),
+                    children: [
+                      _ShortAction(
+                        icon: widget.reaction.value == 1
+                            ? Icons.thumb_up
+                            : LucideIcons.thumbsUp,
+                        label: 'Like',
+                        onTap: () => _toggleReaction(1),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _ShortAction(
+                        icon: widget.reaction.value == -1
+                            ? Icons.thumb_down
+                            : LucideIcons.thumbsDown,
+                        label: 'Dislike',
+                        onTap: () => _toggleReaction(-1),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _ShortAction(
+                        icon: LucideIcons.messageCircle,
+                        label: 'Comments',
+                        onTap: () => unawaited(_openComments()),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _ShortAction(
+                        icon: LucideIcons.share2,
+                        label: 'Share',
+                        isLoading: _sharing,
+                        onTap: () => unawaited(_shareShort()),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: AppSpacing.none,
+          right: AppSpacing.none,
+          bottom: AppSpacing.none,
+          height: AppSpacing.shortsScrimHeight + bottom + AppSpacing.md,
+          child: Opacity(
+            opacity: _scrubbing ? 0.35 : 1,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    AppColors.shortsTopControlsTint,
+                    AppColors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
           left: AppSpacing.lg,
           right: AppSpacing.shortsRailWidth + AppSpacing.lg,
-          bottom: bottom + AppSpacing.xxl,
+          bottom: bottom + AppSpacing.md,
           child: Opacity(
             opacity: _scrubbing ? 0.35 : 1,
             child: Column(
@@ -1127,19 +1263,30 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                 if (name != null && name.isNotEmpty)
                   Row(
                     children: [
-                      ChannelAvatar(
-                        name: name,
-                        url: avatar ?? '',
-                        size: AppSizes.avatarSm + AppSpacing.sm,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
                       Expanded(
-                        child: Text(
-                          '@${name.replaceFirst(RegExp(r'^@'), '')}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.bodyStrong.copyWith(
-                            color: AppColors.shortsForeground,
+                        child: InkWell(
+                          onTap: channelId == null || channelId.isEmpty
+                              ? null
+                              : () => context.push('/channel/$channelId'),
+                          child: Row(
+                            children: [
+                              ChannelAvatar(
+                                name: name,
+                                url: avatar ?? '',
+                                size: AppSizes.avatarSm + AppSpacing.sm,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  '@${name.replaceFirst(RegExp(r'^@'), '')}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodyStrong.copyWith(
+                                    color: AppColors.shortsForeground,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -1162,13 +1309,9 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                                 ? AppButtonVariant.tonal
                                 : AppButtonVariant.filled,
                             size: AppButtonSize.compact,
-                            icon: isSubscribed ? LucideIcons.bell : null,
-                            trailingIcon: isSubscribed
-                                ? LucideIcons.chevronDown
-                                : null,
                             isLoading: _subscriptionLoading,
                             onPressed: () => unawaited(
-                              _onSubscribePressed(
+                              _toggleSubscription(
                                 channelId: channelId,
                                 channelName: name,
                                 avatarUrl: avatar ?? '',
@@ -1183,8 +1326,20 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                 if (title != null && title.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.sm),
-                    child: Text(
-                      title,
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: title),
+                          TextSpan(
+                            text: ' …more',
+                            style: textTheme.labelMedium?.copyWith(
+                              color: AppColors.shortsForeground,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            recognizer: _shortDetailsRecognizer,
+                          ),
+                        ],
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.bodyMedium?.copyWith(
@@ -1280,9 +1435,11 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                             color: AppColors.shortsProgressBuffer,
                             backgroundColor: AppColors.shortsProgressTrack,
                           ),
-                          FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: currentPlayed,
+                          Positioned(
+                            left: AppSpacing.none,
+                            top: AppSpacing.none,
+                            bottom: AppSpacing.none,
+                            width: constraints.maxWidth * currentPlayed,
                             child: Container(
                               height: barHeight,
                               color: AppColors.shortsProgressPlayed,
@@ -1299,8 +1456,12 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
         ),
         if (state?.status == PlayerStatus.loading ||
             state?.status == PlayerStatus.buffering)
-          const Center(
-            child: CircularProgressIndicator(color: AppColors.shortsForeground),
+          const IgnorePointer(
+            child: Center(
+              child: CircularProgressIndicator(
+                color: AppColors.shortsForeground,
+              ),
+            ),
           ),
         if (state?.status == PlayerStatus.error)
           Center(
@@ -1314,15 +1475,35 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   }
 }
 
+class _ShortPlaybackIndicator extends StatelessWidget {
+  const _ShortPlaybackIndicator({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: AppSpacing.shortsFeedbackIcon,
+    height: AppSpacing.shortsFeedbackIcon,
+    alignment: Alignment.center,
+    decoration: const BoxDecoration(
+      shape: BoxShape.circle,
+      color: AppColors.playerControlGlass,
+    ),
+    child: Icon(icon, size: AppSizes.iconLg, color: AppColors.shortsForeground),
+  );
+}
+
 class _ShortAction extends StatefulWidget {
   const _ShortAction({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.isLoading = false,
   });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isLoading;
 
   @override
   State<_ShortAction> createState() => _ShortActionState();
@@ -1349,30 +1530,54 @@ class _ShortActionState extends State<_ShortAction>
         IconButton(
           tooltip: widget.label,
           onPressed: () {
+            if (widget.isLoading) return;
             _controller.forward(from: 0);
             widget.onTap();
           },
           iconSize: AppSpacing.shortsRailIcon,
           color: AppColors.shortsForeground,
-          icon: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) => Transform.scale(
-              scale:
-                  1 +
-                  AppSpacing.shortsFeedbackScale *
-                      (1 - (_controller.value * 2 - 1).abs()),
-              child: child,
-            ),
-            child: Icon(widget.icon),
-          ),
+          icon: widget.isLoading
+              ? SizedBox.square(
+                  dimension: AppSpacing.shortsRailIcon,
+                  child: CircularProgressIndicator(
+                    color: AppColors.shortsForeground,
+                    strokeWidth: AppSpacing.borderWidth,
+                  ),
+                )
+              : AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) => Transform.scale(
+                    scale:
+                        1 +
+                        AppSpacing.shortsFeedbackScale *
+                            (1 - (_controller.value * 2 - 1).abs()),
+                    child: child,
+                  ),
+                  child: Icon(
+                    widget.icon,
+                    shadows: const [
+                      Shadow(
+                        color: AppColors.shortsActionShadow,
+                        blurRadius: AppSpacing.xs,
+                        offset: Offset(AppSpacing.none, AppSpacing.xxs),
+                      ),
+                    ],
+                  ),
+                ),
         ),
         Text(
           widget.label,
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: AppColors.shortsForeground),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: AppColors.shortsForeground,
+            shadows: const [
+              Shadow(
+                color: AppColors.shortsActionShadow,
+                blurRadius: AppSpacing.xs,
+                offset: Offset(AppSpacing.none, AppSpacing.xxs),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: AppSpacing.xl - AppSpacing.xs),
       ],
     ),
   );

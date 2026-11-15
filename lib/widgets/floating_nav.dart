@@ -1,9 +1,12 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
+import '../theme/app_sizes.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
 import 'glass_surface.dart';
 
 class FloatingNavItem {
@@ -43,408 +46,223 @@ class FloatingNav extends StatefulWidget {
 }
 
 class _FloatingNavState extends State<FloatingNav> {
-  double _indicatorLeft = 0;
-  double _indicatorWidth = 0;
-  bool _isDragging = false;
-  double _dragX = 0;
-  double _dragOffset = 0;
-  int _hoverIndex = 0;
+  int? _dragIndex;
 
-  bool _showText = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _hoverIndex = widget.currentIndex;
+  int _indexAt(double x, double width) {
+    if (widget.items.isEmpty) return 0;
+    final cellWidth = width / widget.items.length;
+    return (x / cellWidth).floor().clamp(0, widget.items.length - 1);
   }
 
-  @override
-  void didUpdateWidget(FloatingNav oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentIndex != widget.currentIndex && !_isDragging) {
-      _hoverIndex = widget.currentIndex;
-    }
+  void _select(int index) {
+    HapticFeedback.selectionClick();
+    widget.onSelected(index);
   }
 
-  bool _isTabExpanded(int i, double maxWidth) {
-    if (_isDragging) return false;
-    if (i != widget.currentIndex || !_showText) return false;
-    final collapsedTotal =
-        widget.items.length * _getTabWidth(0, false, maxWidth) +
-        (widget.items.length - 1) * 8.0;
-    final expandedExtra =
-        _getTabWidth(i, true, maxWidth) - _getTabWidth(i, false, maxWidth);
-    return (collapsedTotal + expandedExtra) <= maxWidth;
+  void _startDrag(DragStartDetails details, double width) {
+    setState(() => _dragIndex = _indexAt(details.localPosition.dx, width));
   }
 
-  double _getTabWidth(int index, bool expanded, double maxWidth) {
-    final item = widget.items[index];
-    double width = 24.0; // padding horizontal (12 * 2)
-    width += item.iconSize ?? 22.0; // must match the rendered Icon's size
-
-    if (expanded) {
-      width += 8.0; // spacing (AppSpacing.sm)
-
-      // textScaler is not optional: main.dart clamps to 2.0x, and measuring the
-      // label at 1.0x makes _isTabExpanded expand a tab that cannot fit.
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: item.label,
-          style: Theme.of(context).textTheme.labelLarge!.copyWith(
-            // allowed: floating nav
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: MediaQuery.textScalerOf(context),
-      )..layout();
-
-      width +=
-          textPainter.width +
-          2.0; // buffer — TextPainter underestimates real RenderParagraph by ~1px depending on font hinting
-    }
-
-    return width;
+  void _updateDrag(DragUpdateDetails details, double width) {
+    final index = _indexAt(details.localPosition.dx, width);
+    if (index != _dragIndex) HapticFeedback.selectionClick();
+    setState(() => _dragIndex = index);
   }
 
-  List<double> _calculateItemLefts(double maxWidth) {
-    final lefts = <double>[];
-    double currentLeft =
-        4.0; // Start offset due to Padding(horizontal: 4) on items
-    for (int i = 0; i < widget.items.length; i++) {
-      lefts.add(currentLeft);
-      final itemWidth = _getTabWidth(i, _isTabExpanded(i, maxWidth), maxWidth);
-      currentLeft += itemWidth + 8.0; // item width + gap of 8.0
-    }
-    return lefts;
-  }
-
-  int _getNearestIndex(double x, double maxWidth) {
-    final lefts = _calculateItemLefts(maxWidth);
-    int nearest = 0;
-    double minDistance = double.infinity;
-    for (int i = 0; i < widget.items.length; i++) {
-      final itemWidth = _getTabWidth(i, _isTabExpanded(i, maxWidth), maxWidth);
-      final itemCenter = lefts[i] + (itemWidth / 2);
-      final dist = (x - itemCenter).abs();
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearest = i;
-      }
-    }
-    return nearest;
-  }
-
-  void _handleDragStart(DragStartDetails details, double maxWidth) {
-    setState(() {
-      _showText = false;
-      _isDragging = true;
-      _hoverIndex = widget.currentIndex;
-    });
-
-    final lefts = _calculateItemLefts(maxWidth);
-    final currentWidth = _getTabWidth(widget.currentIndex, false, maxWidth);
-    final currentCenter = lefts[widget.currentIndex] + (currentWidth / 2);
-
-    setState(() {
-      _dragX = details.localPosition.dx;
-      _dragOffset = details.localPosition.dx - currentCenter;
-      _indicatorLeft = lefts[widget.currentIndex];
-      _indicatorWidth = currentWidth;
-    });
-  }
-
-  void _handleDragUpdate(DragUpdateDetails details, double maxWidth) {
-    setState(() {
-      _dragX = details.localPosition.dx;
-      final adjustedX = _dragX - _dragOffset;
-
-      final lefts = _calculateItemLefts(maxWidth);
-      final targetWidth = _getTabWidth(
-        0,
-        false,
-        maxWidth,
-      ); // Collapsed width is uniform (46.0)
-
-      final minCenter = lefts.first + (_getTabWidth(0, false, maxWidth) / 2);
-      final maxCenter =
-          lefts.last +
-          (_getTabWidth(widget.items.length - 1, false, maxWidth) / 2);
-      final clampedX = adjustedX.clamp(minCenter, maxCenter);
-
-      _hoverIndex = _getNearestIndex(clampedX, maxWidth);
-      _indicatorLeft = clampedX - (targetWidth / 2);
-      _indicatorWidth = targetWidth;
-    });
-  }
-
-  void _handleDragEnd(DragEndDetails details, double maxWidth) {
-    final lefts = _calculateItemLefts(maxWidth);
-    if (lefts.isEmpty) {
-      setState(() {
-        _isDragging = false;
-        _showText = true;
-      });
-      return;
-    }
-    final adjustedX = _dragX - _dragOffset;
-    final minCenter = lefts.first + (_getTabWidth(0, false, maxWidth) / 2);
-    final maxCenter =
-        lefts.last +
-        (_getTabWidth(widget.items.length - 1, false, maxWidth) / 2);
-    final clampedX = adjustedX.clamp(minCenter, maxCenter);
-
-    final nearestIndex = _getNearestIndex(clampedX, maxWidth);
-    (widget.onDragSelected ?? widget.onSelected)(nearestIndex);
-
-    setState(() {
-      _isDragging = false;
-      _hoverIndex = nearestIndex;
-      _showText = true;
-    });
+  void _endDrag() {
+    final index = _dragIndex;
+    setState(() => _dragIndex = null);
+    if (index != null) (widget.onDragSelected ?? widget.onSelected)(index);
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    const indicatorColor = AppColors.primary;
-    const indicatorText = AppColors.onPrimary;
-    final idleColor = widget.inverted
-        ? AppColors.shortsProgressBuffer
-        : colors.textSecondary;
-    return AnimatedSize(
-      duration: AppMotion.slow,
-      curve: AppMotion.enter,
-      child: Container(
-        key: const ValueKey('floatingNavSurface'),
-        decoration: BoxDecoration(
-          color: widget.inverted
-              ? AppColors.shortsNavGlassFill
-              : colors.surface.withValues(alpha: 0.72),
-          borderRadius: AppRadius.pillBorder,
-          border: Border.all(
-            color: widget.inverted
-                ? AppColors.shortsNavGlassBorder
-                : colors.glassBorder,
-            width: 1.0,
-          ),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final colors = dark ? AppColors.dark : AppColors.light;
+    final activeColor = widget.inverted || !dark
+        ? AppColors.primary
+        : AppColors.white;
+    final inactiveBase = widget.inverted ? AppColors.white : colors.textPrimary;
+    final glassFill = widget.inverted
+        ? AppColors.navGlassFillDark
+        : dark
+        ? AppColors.navGlassFillDark
+        : AppColors.navGlassFillLight;
+    final borderColor = AppColors.navGlassBorder;
+    final selectedFill = widget.inverted || dark
+        ? AppColors.navSelectionFillDark
+        : AppColors.navSelectionFillLight;
+
+    return Container(
+      width: AppSizes.navBarWidth,
+      key: const ValueKey('floatingNavSurface'),
+      decoration: const BoxDecoration(
+        borderRadius: AppRadius.pillBorder,
+        boxShadow: [
           // allowed: floating nav
-          boxShadow: const [
-            // allowed: floating nav
-            BoxShadow(
-              color: AppColors.playerControlBorder,
-              blurRadius: 16,
-              offset: Offset(0, 4),
+          BoxShadow(
+            color: AppColors.navGlassShadow,
+            blurRadius: AppSpacing.xl,
+            offset: Offset(AppSpacing.none, AppSpacing.xs),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: AppSizes.navHeight,
+              // allowed: floating nav
+              child: GlassSurface(
+                borderRadius: AppRadius.pillBorder,
+                fill: glassFill,
+                borderColor: borderColor,
+                blurSigma: AppSpacing.navGlassBlur,
+                borderWidth: AppSpacing.glassBorderWidth,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final selectedIndex = _dragIndex ?? widget.currentIndex;
+                    final cellWidth = width / widget.items.length;
+                    final selectedWidth = cellWidth;
+                    final selectedLeft = selectedIndex * cellWidth;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragStart: (details) =>
+                          _startDrag(details, width),
+                      onHorizontalDragUpdate: (details) =>
+                          _updateDrag(details, width),
+                      onHorizontalDragEnd: (_) => _endDrag(),
+                      child: Stack(
+                        children: [
+                          AnimatedPositioned(
+                            key: const ValueKey('floatingNavIndicator'),
+                            duration: AppMotion.navSelection,
+                            curve: AppMotion.enter,
+                            left: selectedLeft + AppSpacing.xs,
+                            top: AppSpacing.xs,
+                            bottom: AppSpacing.xs,
+                            width: selectedWidth - AppSpacing.sm,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: selectedFill,
+                                borderRadius: AppRadius.pillBorder,
+                              ),
+                            ),
+                          ),
+                          Positioned.fill(
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < widget.items.length; i++)
+                                  Expanded(
+                                    child: _TabButton(
+                                      item: widget.items[i],
+                                      selected: selectedIndex == i,
+                                      activeColor: activeColor,
+                                      inactiveColor: inactiveBase.withValues(
+                                        alpha: AppColors.navInactiveOpacity,
+                                      ),
+                                      onTap: () => _select(i),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
-          ],
-        ),
-        // allowed: floating nav
-        child: GlassSurface(
-          borderRadius: AppRadius.pillBorder,
-          fill: AppColors.transparent,
-          borderColor: AppColors.transparent,
-          child: ClipRect(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final maxWidth = constraints.maxWidth;
-                final activeIdx = _isDragging
-                    ? _hoverIndex
-                    : widget.currentIndex;
-                final lefts = _calculateItemLefts(maxWidth);
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-                final double targetLeft = lefts[activeIdx];
-                final double targetWidth = _getTabWidth(
-                  activeIdx,
-                  _isTabExpanded(activeIdx, maxWidth),
-                  maxWidth,
-                );
+class _TabButton extends StatelessWidget {
+  const _TabButton({
+    required this.item,
+    required this.selected,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.onTap,
+  });
 
-                final double left = _isDragging ? _indicatorLeft : targetLeft;
-                final double width = _isDragging
-                    ? _indicatorWidth
-                    : targetWidth;
+  final FloatingNavItem item;
+  final bool selected;
+  final Color activeColor;
+  final Color inactiveColor;
+  final VoidCallback onTap;
 
-                final lastItemWidth = _getTabWidth(
-                  widget.items.length - 1,
-                  _isTabExpanded(widget.items.length - 1, maxWidth),
-                  maxWidth,
-                );
-                final totalRowWidth = math.min(
-                  lefts.last + lastItemWidth + 4.0,
-                  maxWidth,
-                );
-
-                return GestureDetector(
-                  onHorizontalDragStart: (details) =>
-                      _handleDragStart(details, maxWidth),
-                  onHorizontalDragUpdate: (details) =>
-                      _handleDragUpdate(details, maxWidth),
-                  onHorizontalDragEnd: (details) =>
-                      _handleDragEnd(details, maxWidth),
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 8,
-                    ),
-                    child: Center(
-                      widthFactor: 1.0,
-                      child: SizedBox(
-                        width: totalRowWidth,
-                        child: Stack(
-                          children: [
-                            AnimatedPositioned(
-                              duration: _isDragging
-                                  ? Duration.zero
-                                  : AppMotion.slow,
-                              curve: AppMotion.enter,
-                              left: left,
-                              width: width,
-                              top: 0,
-                              bottom: 0,
-                              child: Container(
-                                key: const ValueKey('floatingNavIndicator'),
-                                decoration: const BoxDecoration(
-                                  color: indicatorColor,
-                                  borderRadius: AppRadius.pillBorder,
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? activeColor : inactiveColor;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: item.label,
+      child: Tooltip(
+        message: item.label,
+        triggerMode: TooltipTriggerMode.manual,
+        child: SizedBox.expand(
+          child: Material(
+            color: AppColors.transparent,
+            child: InkWell(
+              borderRadius: AppRadius.pillBorder,
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(
+                          selected ? item.activeIcon : item.icon,
+                          size: item.iconSize ?? AppSizes.navIconSize,
+                          weight: selected
+                              ? AppSizes.navIconWeightActive
+                              : AppSizes.navIconWeightInactive,
+                          color: color,
+                        ),
+                        if (item.showBadge)
+                          Positioned(
+                            right: -AppSpacing.xxs,
+                            top: -AppSpacing.xxs,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: AppColors.badge,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors.onBadge,
+                                  width: AppSpacing.glassBorderWidth,
                                 ),
                               ),
-                            ),
-                            // Nav Items Row wrapped in FittedBox to prevent overflow
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: List.generate(widget.items.length, (
-                                  i,
-                                ) {
-                                  final item = widget.items[i];
-                                  final isUnderIndicator = activeIdx == i;
-                                  final isSelected = widget.currentIndex == i;
-                                  final showLabel = _isTabExpanded(i, maxWidth);
-
-                                  final Color contentColor = isUnderIndicator
-                                      ? indicatorText
-                                      : idleColor;
-
-                                  final iconData = isUnderIndicator
-                                      ? item.activeIcon
-                                      : (isSelected
-                                            ? item.activeIcon
-                                            : item.icon);
-
-                                  return Tooltip(
-                                    message: item.label,
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: GestureDetector(
-                                        onTap: () => widget.onSelected(i),
-                                        behavior: HitTestBehavior.opaque,
-                                        child: ClipRect(
-                                          child: AnimatedContainer(
-                                            duration: AppMotion.base,
-                                            curve: Curves.easeInOut,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: AppSpacing.md,
-                                              vertical: AppSpacing.sm,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              color: AppColors.transparent,
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Stack(
-                                                  clipBehavior: Clip.none,
-                                                  children: [
-                                                    Icon(
-                                                      iconData,
-                                                      size: item.iconSize ?? 22,
-                                                      color: contentColor,
-                                                    ),
-                                                    if (item.showBadge)
-                                                      Positioned(
-                                                        right: -2,
-                                                        top: -2,
-                                                        child: Container(
-                                                          width: 8,
-                                                          height: 8,
-                                                          decoration: BoxDecoration(
-                                                            color:
-                                                                AppColors.badge,
-                                                            shape:
-                                                                BoxShape.circle,
-                                                            border: Border.all(
-                                                              color: AppColors
-                                                                  .onBadge,
-                                                              width: 1.5,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                                AnimatedCrossFade(
-                                                  duration: AppMotion.fast,
-                                                  reverseDuration:
-                                                      AppMotion.fast,
-                                                  firstCurve: Curves.easeIn,
-                                                  secondCurve: Curves.easeOut,
-                                                  sizeCurve: Curves.easeInOut,
-                                                  crossFadeState: showLabel
-                                                      ? CrossFadeState
-                                                            .showSecond
-                                                      : CrossFadeState
-                                                            .showFirst,
-                                                  firstChild:
-                                                      const SizedBox.shrink(),
-                                                  secondChild: Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          left: AppSpacing.sm,
-                                                        ),
-                                                    child: Text(
-                                                      item.label,
-                                                      maxLines: 1,
-                                                      softWrap: false,
-                                                      overflow:
-                                                          TextOverflow.clip,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .labelLarge!
-                                                          .copyWith(
-                                                            // allowed: floating nav
-                                                            fontSize: 13,
-                                                            color: contentColor,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
+                              child: SizedBox.square(
+                                dimension: AppSpacing.badgeDotSize,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                      ],
+                    ),
+                    SizedBox(height: AppSpacing.xxs),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        item.label,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: AppTextStyles.navLabel.copyWith(color: color),
                       ),
                     ),
-                  ),
-                );
-              },
+                  ],
+                ),
+              ),
             ),
           ),
         ),

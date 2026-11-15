@@ -2,8 +2,10 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:hivetube/app/router.dart';
 import 'package:hivetube/core/db/app_db.dart';
+import 'package:hivetube/core/playback/preview_coordinator.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/home/home_cache.dart';
@@ -28,11 +30,22 @@ class _History implements HistoryRepo {
 }
 
 void main() {
-  for (final width in [400.0, 1200.0]) {
-    testWidgets('Home video card layout and real history at $width', (
+  for (final size in [
+    const Size(400, 800),
+    const Size(1200, 800),
+    const Size(640, 360),
+    const Size(1000, 430),
+  ]) {
+    testWidgets('Home video card layout and real history at $size', (
       tester,
     ) async {
-      tester.view.physicalSize = Size(width, 800);
+      final visibilityController = VisibilityDetectorController.instance;
+      final oldUpdateInterval = visibilityController.updateInterval;
+      visibilityController.updateInterval = Duration.zero;
+      addTearDown(
+        () => visibilityController.updateInterval = oldUpdateInterval,
+      );
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -62,6 +75,7 @@ void main() {
         ProviderScope(
           overrides: [
             dbProvider.overrideWithValue(db),
+            previewPlaybackAllowedProvider.overrideWithValue(false),
             initialHomeCacheProvider.overrideWithValue(cache),
             historyRepoProvider.overrideWithValue(history),
           ],
@@ -83,12 +97,13 @@ void main() {
       final clip = tester.widget<ClipRRect>(
         find.descendant(of: thumb, matching: find.byType(ClipRRect)).first,
       );
-      if (width < 600) {
-        expect(tester.getSize(thumb).width, width);
+      if (size.width < 600) {
+        expect(tester.getSize(thumb).width, size.width);
         expect(clip.borderRadius, BorderRadius.zero);
       } else {
         expect(clip.borderRadius, AppRadius.mdBorder);
       }
+      expect(tester.takeException(), isNull);
     });
   }
   testWidgets('Home load error shows a retry without layout exceptions', (

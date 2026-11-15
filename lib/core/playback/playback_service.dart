@@ -4,16 +4,21 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../providers.dart';
+import '../settings/app_settings.dart';
 import 'load_guard.dart';
 import 'playback_failure_monitor.dart';
 import 'seek_controller.dart';
 import 'audio_handler.dart';
 import '../db/app_db.dart';
 import '../streams/player_client.dart';
+import '../streams/adaptive_quality_controller.dart';
+import '../streams/adaptive_quality_policy.dart';
+import '../streams/bandwidth_estimator.dart';
 import '../streams/relay_server.dart';
 import '../streams/stream_cache.dart';
 import '../streams/stream_selector.dart';
@@ -54,6 +59,7 @@ class _PreparedShort {
     required this.controller,
     required this.streams,
     required this.audioUri,
+    required this.qualityHeight,
   });
 
   final String videoId;
@@ -61,6 +67,7 @@ class _PreparedShort {
   final VideoController controller;
   final SelectedStreams streams;
   final Uri audioUri;
+  final int qualityHeight;
 }
 
 class PlaybackSnapshot {
@@ -77,6 +84,7 @@ class PlaybackSnapshot {
   double rate = 1, volume = 100;
   int? videoWidth, videoHeight;
   int? quality;
+  int? autoQualityHeight;
   bool muted = false, loop = false;
   bool recovering = false;
   StreamError? error;
@@ -90,11 +98,18 @@ class PlaybackSnapshot {
 }
 
 class PlaybackService extends ChangeNotifier {
-  PlaybackService(this.cache, this.relay, this.history) {
+  PlaybackService(
+    this.cache,
+    this.relay,
+    this.history, {
+    this.bandwidthEstimator,
+    this.onQualityPreferenceChanged,
+  }) {
     _seekController = _createSeekController();
     _configurePlayer(player, shortBuffer: false);
     _observeActivePlayer(player);
     _listen();
+    _startAdaptiveTimer();
     _audioFocus.setMethodCallHandler(_onAudioFocus);
   }
 
@@ -174,6 +189,9 @@ class PlaybackService extends ChangeNotifier {
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
+  final BandwidthEstimator? bandwidthEstimator;
+  final Future<void> Function(VideoQualityPreference)?
+  onQualityPreferenceChanged;
   Player _player = Player();
   late VideoController _controller = VideoController(_player);
   Player get player => _player;
@@ -195,9 +213,170 @@ class PlaybackService extends ChangeNotifier {
   bool _visible = true, _resumeAfterVisibility = false;
   bool _resumeAfterFocus = false;
   bool _mpvSeeking = false;
+  VideoQualityPreference _qualityPreference = VideoQualityPreference.auto;
+  bool _wifiNetwork = false, _mobileNetwork = false;
+  final AdaptiveQualityController _adaptiveQuality =
+      AdaptiveQualityController();
+  Timer? _adaptiveTimer;
   Uri? _currentAudioUri;
   String? _activeFrameVideoId;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
+
+  VideoQualityPreference get qualityPreference => _qualityPreference;
+
+  int get _qualityCap => AdaptiveQualityPolicy.capForPreference(
+    _qualityPreference,
+    wifi: _wifiNetwork,
+    mobile: _mobileNetwork,
+  );
+
+  bool get _automaticQualityEnabled =>
+      state.quality == null &&
+      (_qualityPreference == VideoQualityPreference.auto ||
+          _qualityPreference == VideoQualityPreference.dataSaver);
+
+  bool get _shouldResumeCurrent =>
+      !_userPaused &&
+      (state.playing ||
+          player.state.playing ||
+          state.status == PlayerStatus.ready ||
+          state.status == PlayerStatus.loading ||
+          state.status == PlayerStatus.buffering ||
+          state.status == PlayerStatus.playing);
+
+  bool get _preferenceUsesAdaptiveQuality =>
+      _qualityPreference == VideoQualityPreference.auto ||
+      _qualityPreference == VideoQualityPreference.dataSaver;
+
+  void updateQualityPolicy({
+    required VideoQualityPreference preference,
+    required bool wifiNetwork,
+    required bool mobileNetwork,
+  }) {
+    final oldCap = _qualityCap;
+    final oldPreference = _qualityPreference;
+    final changed =
+        _qualityPreference != preference ||
+        _wifiNetwork != wifiNetwork ||
+        _mobileNetwork != mobileNetwork;
+    if (!changed) return;
+    cancelShortPreloads(disposePlayer: true);
+    _qualityPreference = preference;
+    _wifiNetwork = wifiNetwork;
+    _mobileNetwork = mobileNetwork;
+    if (request != null &&
+        state.quality == null &&
+        (oldCap != _qualityCap || oldPreference != _qualityPreference)) {
+      _reloadForQualityPolicy();
+    } else {
+      _notify();
+    }
+  }
+
+  Future<void> setQualityPreference(VideoQualityPreference preference) async {
+    if (_qualityPreference == preference && state.quality == null) return;
+    cancelShortPreloads(disposePlayer: true);
+    _qualityPreference = preference;
+    state.quality = null;
+    state.autoQualityHeight = null;
+    _adaptiveQuality.reset(null, DateTime.now());
+    _notify();
+    await onQualityPreferenceChanged?.call(preference);
+    _reloadForQualityPolicy();
+  }
+
+  void _reloadForQualityPolicy() {
+    final current = request;
+    if (current == null) return;
+    state.autoQualityHeight = null;
+    _adaptiveQuality.reset(null, DateTime.now());
+    unawaited(
+      _load(
+        PlayRequest(
+          videoId: current.videoId,
+          mode: current.mode,
+          startAt: state.position,
+          play: _shouldResumeCurrent,
+        ),
+        qualitySwitch: true,
+      ),
+    );
+  }
+
+  Future<int> _initialQualityFor(String id, PlaybackMode mode) async {
+    final cap = _qualityCap;
+    final fixed = AdaptiveQualityPolicy.fixedHeight(_qualityPreference);
+    if (fixed != null) return fixed;
+    if (!_preferenceUsesAdaptiveQuality) return cap;
+    try {
+      final candidates = await cache.candidates(id, mode, maxHeight: cap);
+      final probeFormat =
+          candidates.videos
+              .where((format) => resolutionOf(format, mode) <= cap)
+              .firstOrNull ??
+          candidates.videos.lastOrNull;
+      if (probeFormat == null) return cap;
+      final estimate = await bandwidthEstimator?.probe(probeFormat);
+      return estimate == null ? cap : pickHeight(estimate, cap);
+    } catch (_) {
+      return cap;
+    }
+  }
+
+  void _startAdaptiveTimer() {
+    _adaptiveTimer = Timer.periodic(
+      AdaptiveQualityPolicy.adaptationCheckInterval,
+      (_) => _evaluateAdaptiveQuality(),
+    );
+  }
+
+  void _evaluateAdaptiveQuality() {
+    if (_disposed ||
+        _switching ||
+        request == null ||
+        !_automaticQualityEnabled ||
+        state.status != PlayerStatus.playing) {
+      return;
+    }
+    final current = state.autoQualityHeight;
+    if (current == null) return;
+    final next = _adaptiveQuality.stepUpIfSupported(
+      now: DateTime.now(),
+      estimateMbps: bandwidthEstimator?.ewmaMbps,
+      currentHeight: current,
+      cap: _qualityCap,
+    );
+    if (next != null) _switchAutomaticQuality(next);
+  }
+
+  void _recordAdaptiveStall() {
+    if (!_automaticQualityEnabled) return;
+    final current = state.autoQualityHeight ?? state.heights.firstOrNull;
+    if (current == null) return;
+    final lower = _adaptiveQuality.recordStall(
+      now: DateTime.now(),
+      currentHeight: current,
+      cap: _qualityCap,
+    );
+    if (lower != null) _switchAutomaticQuality(lower);
+  }
+
+  void _switchAutomaticQuality(int height) {
+    final current = request;
+    if (current == null || _switching || !_automaticQualityEnabled) return;
+    unawaited(
+      _load(
+        PlayRequest(
+          videoId: current.videoId,
+          mode: current.mode,
+          startAt: state.position,
+          play: _shouldResumeCurrent,
+        ),
+        qualitySwitch: true,
+        adaptiveHeight: height,
+      ),
+    );
+  }
 
   Future<void> _onAudioFocus(MethodCall call) async {
     if (call.method == 'focusLoss') {
@@ -349,7 +528,9 @@ class PlaybackService extends ChangeNotifier {
       activePlayer.stream.buffering.listen((v) {
         if (!identical(player, activePlayer)) return;
         if (!_switching && state.status != PlayerStatus.error && v) {
+          final wasPlaying = state.playing || activePlayer.state.playing;
           state.status = PlayerStatus.buffering;
+          if (wasPlaying) _recordAdaptiveStall();
           _notify();
         } else if (!_switching &&
             state.status == PlayerStatus.buffering &&
@@ -395,8 +576,14 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> play(PlayRequest value) async {
+    _qualityTimer?.cancel();
     if (value.mode != PlaybackMode.short) {
       cancelShortPreloads(disposePlayer: true);
+    }
+    if (request?.videoId != value.videoId) {
+      state.quality = null;
+      state.autoQualityHeight = null;
+      _adaptiveQuality.reset(null, DateTime.now());
     }
     await _saveProgress();
     _failureMonitor.cancel();
@@ -451,7 +638,8 @@ class PlaybackService extends ChangeNotifier {
       await cache.resolve(
         id,
         mode,
-        quality: mode == PlaybackMode.short ? 720 : null,
+        quality: AdaptiveQualityPolicy.fixedHeight(_qualityPreference),
+        maxHeight: _qualityCap,
       );
     } catch (_) {}
   }
@@ -468,7 +656,13 @@ class PlaybackService extends ChangeNotifier {
     if (_disposed || generation != _shortPreloadGeneration) return;
     if (_preparedShort?.videoId == id) return;
     try {
-      final streams = await cache.resolve(id, PlaybackMode.short, quality: 720);
+      final target = await _initialQualityFor(id, PlaybackMode.short);
+      final streams = await cache.resolve(
+        id,
+        PlaybackMode.short,
+        quality: target,
+        maxHeight: _qualityCap,
+      );
       if (_disposed || generation != _shortPreloadGeneration) return;
       final videoFormat = streams.videos.firstOrNull;
       final audioFormat = streams.audio;
@@ -503,6 +697,7 @@ class PlaybackService extends ChangeNotifier {
         controller: controller,
         streams: streams,
         audioUri: audioUri,
+        qualityHeight: resolutionOf(videoFormat, PlaybackMode.short),
       );
     } catch (_) {
       if (generation == _shortPreloadGeneration) _preparedShort = null;
@@ -553,6 +748,11 @@ class PlaybackService extends ChangeNotifier {
       request = PlayRequest(videoId: id, mode: PlaybackMode.short);
       state.videoId = id;
       state.mode = PlaybackMode.short;
+      state.quality = null;
+      state.autoQualityHeight = _preferenceUsesAdaptiveQuality
+          ? prepared.qualityHeight
+          : null;
+      _adaptiveQuality.reset(state.autoQualityHeight, DateTime.now());
       _userPaused = false;
       _resumeAfterVisibility = false;
       _budget.reset();
@@ -609,9 +809,16 @@ class PlaybackService extends ChangeNotifier {
     PlayRequest value, {
     bool newRequest = false,
     bool recovery = false,
+    bool qualitySwitch = false,
+    int? adaptiveHeight,
   }) async {
     _configurePlayer(player, shortBuffer: value.mode == PlaybackMode.short);
-    final generation = _loadGuard.next();
+    final generation = _loadGuard.next(intentional: qualitySwitch);
+    if (qualitySwitch) {
+      _seekController.beginIntentionalSwitch();
+      _failureMonitor.beginIntentionalSwitch();
+      unawaited(_saveProgress());
+    }
     _switching = true;
     if (!newRequest && state.position > Duration.zero) {
       Uint8List? frame;
@@ -626,8 +833,10 @@ class PlaybackService extends ChangeNotifier {
     request = value;
     state.videoId = value.videoId;
     state.mode = value.mode;
-    state.status = recovery ? PlayerStatus.buffering : PlayerStatus.loading;
-    state.recovering = recovery;
+    state.status = recovery || qualitySwitch
+        ? PlayerStatus.buffering
+        : PlayerStatus.loading;
+    state.recovering = recovery && !qualitySwitch;
     state.error = null;
     if (newRequest) {
       if (value.mode == PlaybackMode.short) _activeFrameVideoId = null;
@@ -650,14 +859,56 @@ class PlaybackService extends ChangeNotifier {
     if (!_loadGuard.isCurrent(generation)) return;
     try {
       _debugLog('_load: resolving streams for ${value.videoId}...');
+      var requestedQuality =
+          state.quality ?? adaptiveHeight ?? state.autoQualityHeight;
+      if (value.mode != PlaybackMode.audio &&
+          state.quality == null &&
+          requestedQuality == null) {
+        requestedQuality = await _initialQualityFor(value.videoId, value.mode);
+      }
+      final maxHeight = state.quality == null
+          ? _qualityCap
+          : AdaptiveQualityPolicy.maxVideoHeight;
       final selected = await cache.resolve(
         value.videoId,
         value.mode,
-        quality: state.quality,
+        quality: requestedQuality,
+        maxHeight: maxHeight,
       );
       _debugLog('_load: resolved streams for ${value.videoId}.');
       if (!_loadGuard.isCurrent(generation)) return;
-      state.heights = selected.videos.map((e) => e.height).toList();
+      final availableStreams = value.mode == PlaybackMode.audio
+          ? null
+          : await cache.candidates(
+              value.videoId,
+              value.mode,
+              maxHeight: AdaptiveQualityPolicy.maxVideoHeight,
+            );
+      if (!_loadGuard.isCurrent(generation)) return;
+      state.heights = (availableStreams?.videos ?? const <StreamFormat>[])
+          .map((format) => resolutionOf(format, value.mode))
+          .toList();
+      final videoFormat = value.mode == PlaybackMode.audio
+          ? null
+          : selected.videos
+                    .where(
+                      (format) =>
+                          resolutionOf(format, value.mode) <=
+                          (requestedQuality ?? _qualityCap),
+                    )
+                    .firstOrNull ??
+                selected.videos.lastOrNull;
+      if (state.quality == null && _preferenceUsesAdaptiveQuality) {
+        state.autoQualityHeight = videoFormat == null
+            ? null
+            : resolutionOf(videoFormat, value.mode);
+        _adaptiveQuality.updateCurrentHeight(state.autoQualityHeight);
+        if (newRequest || !qualitySwitch && !recovery) {
+          _adaptiveQuality.reset(state.autoQualityHeight, DateTime.now());
+        }
+      } else {
+        state.autoQualityHeight = null;
+      }
       state.captions = cache.captionTracks(value.videoId);
       if (_captionLanguage != null) {
         final matches =
@@ -689,10 +940,7 @@ class PlaybackService extends ChangeNotifier {
       }
       final format = value.mode == PlaybackMode.audio
           ? selected.audio!
-          : selected.videos
-                    .where((e) => e.height == state.quality)
-                    .firstOrNull ??
-                selected.videos.first;
+          : videoFormat!;
       _debugLog('_load: registering video on relay...');
       final video = await relay.register(format);
       _debugLog('_load: registered video: $video');
@@ -721,8 +969,15 @@ class PlaybackService extends ChangeNotifier {
           );
         }
         _debugLog('_load: calling player.open($video)...');
-        final shouldPlay = value.play && _visible && !_userPaused;
-        await player.open(Media(video.toString()), play: shouldPlay);
+        final shouldPlay =
+            (value.play ||
+                qualitySwitch && (state.playing || player.state.playing)) &&
+            _visible &&
+            !_userPaused;
+        await player.open(
+          Media(video.toString(), start: value.startAt),
+          play: shouldPlay,
+        );
         _debugLog('_load: player.open finished.');
         if (!_loadGuard.isCurrent(generation)) return;
         if (audio != null) {
@@ -730,8 +985,6 @@ class PlaybackService extends ChangeNotifier {
           await player.setAudioTrack(AudioTrack.uri(audio.toString()));
           _debugLog('_load: player.setAudioTrack finished.');
         }
-        if (!_loadGuard.isCurrent(generation)) return;
-        if (value.startAt > Duration.zero) await player.seek(value.startAt);
         if (!_loadGuard.isCurrent(generation)) return;
         _switching = false;
         state.recovering = false;
@@ -772,6 +1025,16 @@ class PlaybackService extends ChangeNotifier {
       debugPrint('Playback load failed: $e');
       if (!_loadGuard.isCurrent(generation)) return;
       _switching = false;
+      if (_loadGuard.isIntentional(generation)) {
+        state.recovering = false;
+        state.playing = player.state.playing && !_userPaused;
+        state.status = state.playing
+            ? PlayerStatus.playing
+            : PlayerStatus.paused;
+        state.error = null;
+        _notify();
+        return;
+      }
       final code = e is StreamException ? e.code : StreamError.extractionFailed;
       final permanent = [
         StreamError.ageRestricted,
@@ -1039,16 +1302,25 @@ class PlaybackService extends ChangeNotifier {
 
   void setQuality(int? value) {
     _qualityTimer?.cancel();
+    if (value == null) {
+      unawaited(setQualityPreference(VideoQualityPreference.auto));
+      return;
+    }
+    state.quality = value;
+    state.autoQualityHeight = null;
+    _notify();
     _qualityTimer = Timer(const Duration(milliseconds: 300), () {
       if (request == null) return;
-      state.quality = value;
+      final current = request!;
       unawaited(
         _load(
           PlayRequest(
-            videoId: request!.videoId,
-            mode: request!.mode,
+            videoId: current.videoId,
+            mode: current.mode,
             startAt: state.position,
+            play: _shouldResumeCurrent,
           ),
+          qualitySwitch: true,
         ),
       );
     });
@@ -1088,6 +1360,7 @@ class PlaybackService extends ChangeNotifier {
     _seekController.dispose();
     _failureMonitor.cancel();
     _qualityTimer?.cancel();
+    _adaptiveTimer?.cancel();
     for (final s in _subscriptions) {
       unawaited(s.cancel());
     }
@@ -1130,6 +1403,8 @@ class PlaybackController extends Notifier<PlaybackService?> {
     ref.listen(innertubeProvider, (_, _) => _ensureService());
     ref.listen(networkFamilyProvider, (_, _) => _ensureService());
     ref.listen(visitorDataProvider, (_, _) => _ensureService());
+    ref.listen(appSettingsProvider, (_, _) => _refreshQualityPolicy());
+    ref.listen(connectivityProvider, (_, _) => _refreshQualityPolicy());
     ref.onDispose(() {
       final service = _service;
       if (service != null) {
@@ -1164,6 +1439,21 @@ class PlaybackController extends Notifier<PlaybackService?> {
     if (service != null) state = service;
   }
 
+  void _refreshQualityPolicy() {
+    final service = _service;
+    if (service == null) return;
+    final preference = ref.read(appSettingsProvider).videoQualityPreference;
+    final connectivity =
+        ref.read(connectivityProvider).value ?? const <ConnectivityResult>[];
+    final wifi = connectivity.contains(ConnectivityResult.wifi);
+    final mobile = !wifi && connectivity.contains(ConnectivityResult.mobile);
+    service.updateQualityPolicy(
+      preference: preference,
+      wifiNetwork: wifi,
+      mobileNetwork: mobile,
+    );
+  }
+
   PlaybackService? _createService() {
     if (_service != null) return _service;
     final http = ref.read(innertubeProvider).value;
@@ -1184,11 +1474,30 @@ class PlaybackController extends Notifier<PlaybackService?> {
       hl: http.hl,
       gl: http.gl,
     );
-    final cache = StreamCache(client);
+    final estimator = ref.read(bandwidthEstimatorProvider);
+    final preference = ref.read(appSettingsProvider).videoQualityPreference;
+    final connectivity =
+        ref.read(connectivityProvider).value ?? const <ConnectivityResult>[];
+    final wifi = connectivity.contains(ConnectivityResult.wifi);
+    final mobile = !wifi && connectivity.contains(ConnectivityResult.mobile);
+    final cache = StreamCache(client, bandwidthEstimator: estimator);
     final service = PlaybackService(
       cache,
-      RelayServer(network, http.clients['VISIONOS']['ua']),
+      RelayServer(
+        network,
+        http.clients['VISIONOS']['ua'],
+        bandwidthEstimator: estimator,
+      ),
       ref.read(historyRepoProvider),
+      bandwidthEstimator: estimator,
+      onQualityPreferenceChanged: (value) => ref
+          .read(appSettingsProvider.notifier)
+          .setVideoQualityPreference(value),
+    );
+    service.updateQualityPolicy(
+      preference: preference,
+      wifiNetwork: wifi,
+      mobileNetwork: mobile,
     );
     final handler = ref.read(audioHandlerProvider);
     _handler = handler;

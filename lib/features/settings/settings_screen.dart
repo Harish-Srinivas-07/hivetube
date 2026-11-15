@@ -323,6 +323,27 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(contentPrefsProvider.notifier).setAutoplay(value),
             ),
+            switchTile(
+              icon: LucideIcons.clapperboard,
+              title: 'Video previews',
+              subtitle: settings.previewsEnabled ? 'On' : 'Off',
+              value: settings.previewsEnabled,
+              onChanged: (value) => ref
+                  .read(contentPrefsProvider.notifier)
+                  .setPreviewsEnabled(value),
+            ),
+            if (settings.previewsEnabled)
+              switchTile(
+                icon: LucideIcons.wifi,
+                title: 'Wi-Fi only',
+                subtitle: settings.previewsWifiOnly
+                    ? 'Previews only on Wi-Fi'
+                    : 'Previews can use mobile data',
+                value: settings.previewsWifiOnly,
+                onChanged: (value) => ref
+                    .read(contentPrefsProvider.notifier)
+                    .setPreviewsWifiOnly(value),
+              ),
             section('Privacy & data'),
             FutureBuilder<String?>(
               future: ref.watch(dbProvider).getValue('history_enabled'),

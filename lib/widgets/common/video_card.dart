@@ -13,6 +13,7 @@ import '../../theme/app_text_styles.dart';
 import '../../features/home/home_controller.dart';
 import '../video_options_menu.dart';
 import 'channel_avatar.dart';
+import 'preview_card_visibility.dart';
 import 'thumbnail_with_duration.dart';
 
 String _feedThumbnail(String url) {
@@ -151,9 +152,11 @@ class VideoCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    switch (_effectiveMode) {
+    final effectiveMode = _effectiveMode;
+    late final Widget content;
+    switch (effectiveMode) {
       case VideoCardMode.shelf:
-        return RepaintBoundary(
+        content = RepaintBoundary(
           child: InkWell(
             onTap: onTap,
             child: Column(
@@ -184,8 +187,9 @@ class VideoCard extends ConsumerWidget {
             ),
           ),
         );
+        break;
       case VideoCardMode.compact:
-        return _CompactCard(
+        content = _CompactCard(
           video: video,
           onTap: onTap,
           progress: progress,
@@ -193,8 +197,9 @@ class VideoCard extends ConsumerWidget {
           thumbnailBadge: thumbnailBadge,
           enabled: enabled,
         );
+        break;
       case VideoCardMode.grid:
-        return _FeedCard(
+        content = _FeedCard(
           video: video,
           onTap: onTap,
           progress: progress,
@@ -203,10 +208,12 @@ class VideoCard extends ConsumerWidget {
           roundedThumbnail: true,
           ref: ref,
         );
+        break;
       case VideoCardMode.searchResult:
-        return _SearchResultCard(video: video, onTap: onTap, ref: ref);
+        content = _SearchResultCard(video: video, onTap: onTap, ref: ref);
+        break;
       case VideoCardMode.feed:
-        return _FeedCard(
+        content = _FeedCard(
           video: video,
           onTap: onTap,
           progress: progress,
@@ -215,7 +222,13 @@ class VideoCard extends ConsumerWidget {
           roundedThumbnail: false,
           ref: ref,
         );
+        break;
     }
+    return PreviewCardVisibility(
+      videoId: video.id,
+      enabled: effectiveMode != VideoCardMode.compact || enabled,
+      child: content,
+    );
   }
 }
 

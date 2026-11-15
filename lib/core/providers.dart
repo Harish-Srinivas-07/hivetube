@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'streams/net_family.dart';
+import 'streams/bandwidth_estimator.dart';
 import 'settings/app_settings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -54,6 +56,38 @@ final dbProvider = Provider<AppDb>((ref) {
   ref.onDispose(db.close);
   return db;
 });
+final connectivityProvider = StreamProvider<List<ConnectivityResult>>((ref) {
+  final connectivity = Connectivity();
+  return (() async* {
+    try {
+      yield await connectivity.checkConnectivity();
+    } catch (_) {
+      yield const <ConnectivityResult>[];
+      return;
+    }
+    try {
+      await for (final result in connectivity.onConnectivityChanged) {
+        yield result;
+      }
+    } catch (_) {
+      // Keep playback and previews usable when the platform plugin is absent.
+    }
+  })();
+});
+
+final bandwidthEstimatorProvider = Provider<BandwidthEstimator>((ref) {
+  final network = ref.watch(networkFamilyProvider).value;
+  final dio = Dio();
+  if (network != null) {
+    dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () => network.client,
+    );
+  }
+  final estimator = BandwidthEstimator(dio);
+  ref.onDispose(estimator.dispose);
+  return estimator;
+});
+
 final channelLanguageCacheProvider = Provider<ChannelLanguageCache>((ref) {
   final db = ref.watch(dbProvider);
   final cache = ChannelLanguageCache(db);

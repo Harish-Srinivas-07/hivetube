@@ -29,78 +29,14 @@ class ManageSubscriptionsScreen extends ConsumerStatefulWidget {
 class _ManageSubscriptionsScreenState
     extends ConsumerState<ManageSubscriptionsScreen> {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   String _query = '';
-  final Map<String, String> _notificationModes = {};
-  final Set<String> _loadingModes = {};
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
-  }
-
-  String _notificationKey(String channelId) =>
-      'subscription_notifications_$channelId';
-
-  void _loadNotificationModes(List<SubscriptionRow> subscriptions) {
-    for (final subscription in subscriptions) {
-      if (_notificationModes.containsKey(subscription.channelId) ||
-          !_loadingModes.add(subscription.channelId)) {
-        continue;
-      }
-      unawaited(() async {
-        final value = await ref
-            .read(dbProvider)
-            .getValue(_notificationKey(subscription.channelId));
-        if (mounted) {
-          setState(() {
-            _notificationModes[subscription.channelId] =
-                value ?? 'Personalized';
-            _loadingModes.remove(subscription.channelId);
-          });
-        }
-      }());
-    }
-  }
-
-  Future<void> _openNotificationSheet(SubscriptionRow subscription) async {
-    final channelId = subscription.channelId;
-    final current = _notificationModes[channelId] ?? 'Personalized';
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Text('Notifications', style: AppTextStyles.sectionTitle),
-            ),
-            for (final option in const ['All', 'Personalized', 'None'])
-              ListTile(
-                leading: Icon(
-                  option == 'None' ? LucideIcons.bellOff : LucideIcons.bell,
-                ),
-                title: Text(option, style: AppTextStyles.body),
-                trailing: option == current
-                    ? Icon(
-                        LucideIcons.check,
-                        color: Theme.of(sheetContext).colorScheme.primary,
-                      )
-                    : null,
-                onTap: () => Navigator.of(sheetContext).pop(option),
-              ),
-            const SizedBox(height: AppSpacing.md),
-          ],
-        ),
-      ),
-    );
-    if (selected == null) return;
-    await ref.read(dbProvider).setValue(_notificationKey(channelId), selected);
-    if (mounted) {
-      setState(() => _notificationModes[channelId] = selected);
-    }
   }
 
   Future<void> _confirmUnsubscribe(SubscriptionRow subscription) async {
@@ -146,35 +82,22 @@ class _ManageSubscriptionsScreenState
           .read(dbProvider)
           .subscriptionsDao
           .unsubscribe(subscription.channelId);
-      if (mounted) {
-        setState(() => _notificationModes.remove(subscription.channelId));
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final subscriptionsAsync = ref.watch(subscriptionsStreamProvider);
-    final subscriptions = subscriptionsAsync.asData?.value;
-    if (subscriptions != null) _loadNotificationModes(subscriptions);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage subscriptions'),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: 'More options',
-            onSelected: (value) {
-              if (value == 'takeout') {
-                unawaited(importSubscriptionsFromTakeout(context, ref));
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'takeout',
-                child: Text('Import from Google Takeout'),
-              ),
-            ],
+          IconButton(
+            tooltip: 'Import subscriptions from Google Takeout',
+            onPressed: () =>
+                unawaited(importSubscriptionsFromTakeout(context, ref)),
+            icon: const Icon(LucideIcons.fileUp),
           ),
         ],
       ),
@@ -191,6 +114,10 @@ class _ManageSubscriptionsScreenState
               height: AppSpacing.searchHeight,
               child: TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
+                onTapOutside: (_) => _searchFocusNode.unfocus(),
+                cursorColor: Theme.of(context).colorScheme.primary,
+                textAlignVertical: TextAlignVertical.center,
                 style: AppTextStyles.settingsTitle,
                 onChanged: (value) =>
                     setState(() => _query = value.trim().toLowerCase()),
@@ -200,30 +127,61 @@ class _ManageSubscriptionsScreenState
                     context,
                   ).colorScheme.surfaceContainerHighest,
                   hintText: 'Search subscriptions',
+                  hintStyle: AppTextStyles.settingsTitle.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   prefixIcon: const Icon(
                     LucideIcons.search,
                     size: AppSizes.iconSm,
                   ),
                   prefixIconConstraints: const BoxConstraints(
                     minWidth: AppSizes.touchMin,
+                    minHeight: AppSpacing.searchHeight,
                   ),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
                           tooltip: 'Clear search',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: AppSizes.touchMin - AppSpacing.sm,
+                            height: AppSpacing.searchHeight,
+                          ),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _query = '');
                           },
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(Icons.close, size: AppSizes.iconSm),
                         ),
+                  suffixIconConstraints: const BoxConstraints.tightFor(
+                    width: AppSizes.touchMin - AppSpacing.sm,
+                    height: AppSpacing.searchHeight,
+                  ),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.none,
                   ),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
+                  border: const OutlineInputBorder(
+                    borderRadius: AppRadius.pillBorder,
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: const OutlineInputBorder(
+                    borderRadius: AppRadius.pillBorder,
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: const OutlineInputBorder(
+                    borderRadius: AppRadius.pillBorder,
+                    borderSide: BorderSide.none,
+                  ),
+                  errorBorder: const OutlineInputBorder(
+                    borderRadius: AppRadius.pillBorder,
+                    borderSide: BorderSide.none,
+                  ),
+                  disabledBorder: const OutlineInputBorder(
+                    borderRadius: AppRadius.pillBorder,
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
@@ -263,11 +221,6 @@ class _ManageSubscriptionsScreenState
                   itemCount: filtered.length,
                   itemBuilder: (context, index) => _ManageSubscriptionRow(
                     subscription: filtered[index],
-                    notificationMode:
-                        _notificationModes[filtered[index].channelId] ??
-                        'Personalized',
-                    onNotifications: () =>
-                        _openNotificationSheet(filtered[index]),
                     onUnsubscribe: () => _confirmUnsubscribe(filtered[index]),
                   ),
                 );
@@ -288,14 +241,10 @@ class _ManageSubscriptionsScreenState
 class _ManageSubscriptionRow extends StatelessWidget {
   const _ManageSubscriptionRow({
     required this.subscription,
-    required this.notificationMode,
-    required this.onNotifications,
     required this.onUnsubscribe,
   });
 
   final SubscriptionRow subscription;
-  final String notificationMode;
-  final VoidCallback onNotifications;
   final VoidCallback onUnsubscribe;
 
   @override
@@ -344,22 +293,13 @@ class _ManageSubscriptionRow extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Notifications: $notificationMode',
+              tooltip: 'Unsubscribe',
               constraints: const BoxConstraints.tightFor(
                 width: AppSizes.buttonIconTouch,
                 height: AppSizes.buttonIconTouch,
               ),
-              onPressed: onNotifications,
-              icon: const Icon(LucideIcons.bell, size: AppSizes.iconSm),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Channel options',
-              onSelected: (value) {
-                if (value == 'unsubscribe') onUnsubscribe();
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'unsubscribe', child: Text('Unsubscribe')),
-              ],
+              onPressed: onUnsubscribe,
+              icon: const Icon(LucideIcons.unlink, size: AppSizes.iconSm),
             ),
           ],
         ),

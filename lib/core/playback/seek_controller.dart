@@ -22,11 +22,10 @@ class SeekController {
     this.timeoutDuration = const Duration(seconds: 8),
     this.pollInterval = const Duration(milliseconds: 50),
     this.settleTimeout = const Duration(milliseconds: 4000),
-  })  : _onSeekToPlayer = onSeekToPlayer ?? ((d) => player!.seek(d)),
-        _getPlayerPosition =
-            getPlayerPosition ?? (() => player!.state.position),
-        _isPlayerBuffering =
-            isPlayerBuffering ?? (() => player!.state.buffering);
+  }) : _onSeekToPlayer = onSeekToPlayer ?? ((d) => player!.seek(d)),
+       _getPlayerPosition = getPlayerPosition ?? (() => player!.state.position),
+       _isPlayerBuffering =
+           isPlayerBuffering ?? (() => player!.state.buffering);
 
   final Player? player;
   final Future<void> Function(Duration target) _onSeekToPlayer;
@@ -142,6 +141,16 @@ class SeekController {
     _timeoutTimer?.cancel();
     _state = SeekState.idle;
     _target = null;
+  }
+
+  void beginIntentionalSwitch() {
+    _generation++;
+    _debounceTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _wasPlayingBeforeSeek = false;
+    _state = SeekState.idle;
+    _target = null;
+    onSeekStateChanged(_state, null);
   }
 
   void dispose() {

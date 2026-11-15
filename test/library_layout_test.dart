@@ -6,6 +6,8 @@ import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/features/library/library_screen.dart';
 import 'package:hivetube/theme/app_theme.dart';
+import 'package:hivetube/theme/app_sizes.dart';
+import 'package:hivetube/theme/app_spacing.dart';
 
 const _rectKeys = [
   'libraryAvatar',
@@ -139,6 +141,10 @@ void main() {
       expect(tester.getRect(find.text('Liked videos')).left, 64);
       expect(tester.getRect(find.text('Watch later')).left, 64);
       expect(tester.getRect(find.text('Stats')).left, 64);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('libraryBottomInset'))).height,
+        AppSizes.bottomNav + AppSpacing.xl,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));
       final exception = tester.takeException();

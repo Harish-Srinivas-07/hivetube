@@ -12,16 +12,20 @@ import '../features/channel/channel_screen.dart';
 import '../features/playlist/playlist_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/subscriptions/manage_subscriptions_screen.dart';
+import '../core/playback/preview_coordinator.dart';
+import '../core/orientation/orientation_policy.dart';
 import 'app_shell.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/home',
+  observers: [previewNavigatorObserver, appRouteObserver],
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           AppShell(navigationShell: navigationShell),
       branches: [
         StatefulShellBranch(
+          observers: [homeRouteObserver],
           routes: [
             GoRoute(
               path: '/home',
@@ -55,7 +59,11 @@ final appRouter = GoRouter(
         ),
       ],
     ),
-    GoRoute(path: '/watch/:id', builder: (context, state) => _WatchDeepLink(id: state.pathParameters['id']!)),
+    GoRoute(
+      path: '/watch/:id',
+      builder: (context, state) =>
+          _WatchDeepLink(id: state.pathParameters['id']!),
+    ),
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
@@ -92,6 +100,7 @@ class _WatchDeepLink extends ConsumerStatefulWidget {
   @override
   ConsumerState<_WatchDeepLink> createState() => _WatchDeepLinkState();
 }
+
 class _WatchDeepLinkState extends ConsumerState<_WatchDeepLink> {
   @override
   void initState() {
@@ -102,6 +111,8 @@ class _WatchDeepLinkState extends ConsumerState<_WatchDeepLink> {
       context.go('/home');
     });
   }
+
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: CircularProgressIndicator()));
 }

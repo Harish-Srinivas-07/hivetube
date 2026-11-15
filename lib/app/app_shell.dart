@@ -1,20 +1,35 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/playback/playback_service.dart';
 import '../core/playback/player_ui_state.dart';
 import '../features/watch/watch_panel.dart';
 import '../features/watch/mini_player_inset.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_sizes.dart';
 import '../theme/app_spacing.dart';
-import '../widgets/home_top_bar.dart';
+import '../theme/app_text_styles.dart';
 import '../widgets/floating_nav.dart';
 import '../core/providers.dart';
+import '../core/orientation/orientation_policy.dart';
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
   final StatefulNavigationShell navigationShell;
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> with RouteAware {
+  ModalRoute<dynamic>? _route;
+
+  StatefulNavigationShell get navigationShell => widget.navigationShell;
+
   static const _destinations = [
     (label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home),
     (
@@ -35,11 +50,50 @@ class AppShell extends ConsumerWidget {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route == null || identical(route, _route)) return;
+    if (_route != null) appRouteObserver.unsubscribe(this);
+    _route = route;
+    appRouteObserver.subscribe(this, route);
+  }
+
+  void _setHomeOrientationForCurrentBranch() {
+    unawaited(
+      setHomeScreenOrientationEnabled(navigationShell.currentIndex == 0),
+    );
+  }
+
+  @override
+  void didPush() => _setHomeOrientationForCurrentBranch();
+
+  @override
+  void didPopNext() => _setHomeOrientationForCurrentBranch();
+
+  @override
+  void didPushNext() => unawaited(setHomeScreenOrientationEnabled(false));
+
+  @override
+  void didPop() => unawaited(setHomeScreenOrientationEnabled(false));
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    unawaited(setHomeScreenOrientationEnabled(false));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final hasUnreadSubs = ref.watch(hasUnreadUploadsProvider).value ?? false;
-    final wide =
-        MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
+    final screenSize = MediaQuery.sizeOf(context);
+    final wide = screenSize.shortestSide >= AppSpacing.navigationBreakpoint;
     final shorts = navigationShell.currentIndex == 1;
+    final homeLandscape =
+        navigationShell.currentIndex == 0 &&
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     // Entering Shorts: stop playback and close the mini panel
     if (shorts && ref.read(watchPanelProvider) != null) {
@@ -55,6 +109,7 @@ class AppShell extends ConsumerWidget {
         ref.read(tabRefreshProvider.notifier).request(index);
         return;
       }
+      unawaited(setHomeScreenOrientationEnabled(index == 0));
       if (index == 1 && navigationShell.currentIndex != 1) {
         // Navigating TO Shorts: stop mini player
         ref.read(watchPanelProvider.notifier).close();
@@ -87,142 +142,188 @@ class AppShell extends ConsumerWidget {
         AppSpacing.thumbnailRatio;
     final miniInset = hasMini ? miniHeight + AppSpacing.sm * 2 : 0.0;
 
-    return Stack(
-      children: [
-        // ── Main scaffold ────────────────────────────────────────────────────
-        Scaffold(
-          backgroundColor: shorts
-              ? AppColors.shortsBackground
-              : Theme.of(context).colorScheme.surface,
-          extendBody: true,
-          body: shorts
-              ? Row(
-                  children: [
-                    if (wide)
-                      SafeArea(
-                        child: NavigationRail(
-                          selectedIndex: navigationShell.currentIndex,
-                          onDestinationSelected: select,
-                          labelType: NavigationRailLabelType.all,
-                          destinations: [
-                            for (final item in _destinations)
-                              NavigationRailDestination(
-                                icon: Icon(item.activeIcon),
-                                label: Text(item.label),
-                              ),
-                          ],
-                        ),
-                      ),
-                    Expanded(
-                      child: MiniPlayerInset(
-                        bottom: 0.0,
-                        child: navigationShell,
-                      ),
-                    ),
-                  ],
-                )
-              : SafeArea(
-                  bottom: false,
-                  child: Column(
+    final darkTheme = Theme.of(context).brightness == Brightness.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: AppColors.transparent,
+        systemNavigationBarColor: AppColors.transparent,
+        systemNavigationBarContrastEnforced: false,
+        systemStatusBarContrastEnforced: false,
+        statusBarIconBrightness: darkTheme ? Brightness.light : Brightness.dark,
+        statusBarBrightness: darkTheme ? Brightness.dark : Brightness.light,
+        systemNavigationBarIconBrightness: darkTheme
+            ? Brightness.light
+            : Brightness.dark,
+      ),
+      child: Stack(
+        children: [
+          // ── Main scaffold ────────────────────────────────────────────────────
+          Scaffold(
+            backgroundColor: shorts
+                ? AppColors.shortsBackground
+                : Theme.of(context).colorScheme.surface,
+            extendBody: true,
+            body: shorts
+                ? Row(
                     children: [
-                      const HomeTopBar(),
+                      if (wide)
+                        SafeArea(
+                          child: NavigationRail(
+                            selectedIndex: navigationShell.currentIndex,
+                            minWidth: homeLandscape ? AppSizes.railWidth : null,
+                            onDestinationSelected: select,
+                            labelType: NavigationRailLabelType.all,
+                            destinations: [
+                              for (final item in _destinations)
+                                NavigationRailDestination(
+                                  icon: Icon(item.activeIcon),
+                                  label: homeLandscape
+                                      ? Text(
+                                          item.label == 'Subscriptions'
+                                              ? 'Subs'
+                                              : item.label,
+                                          style: AppTextStyles.caption,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          softWrap: false,
+                                        )
+                                      : Text(item.label),
+                                ),
+                            ],
+                          ),
+                        ),
                       Expanded(
-                        child: Row(
-                          children: [
-                            // Wide layout: rail slides away when panel expands
-                            if (wide)
-                              AnimatedContainer(
-                                duration: AppMotion.slow,
-                                curve: AppMotion.emphasized,
-                                width: !panelExpanded ? 72 : 0,
-                                child: !panelExpanded
-                                    ? NavigationRail(
-                                        selectedIndex:
-                                            navigationShell.currentIndex,
-                                        onDestinationSelected: select,
-                                        labelType: NavigationRailLabelType.all,
-                                        destinations: [
-                                          for (final item in _destinations)
-                                            NavigationRailDestination(
-                                              icon:
-                                                  item.label ==
-                                                          'Subscriptions' &&
-                                                      hasUnreadSubs
-                                                  ? Badge(
-                                                      smallSize: 8,
-                                                      child: Icon(
-                                                        item.activeIcon,
-                                                      ),
-                                                    )
-                                                  : Icon(item.activeIcon),
-                                              label: Text(item.label),
-                                            ),
-                                        ],
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                            Expanded(
-                              child: MiniPlayerInset(
-                                bottom: miniInset,
-                                child: navigationShell,
-                              ),
-                            ),
-                          ],
+                        child: MiniPlayerInset(
+                          bottom: 0.0,
+                          child: navigationShell,
                         ),
                       ),
                     ],
-                  ),
-                ),
-        ),
-
-        // ── Floating bottom nav pill (phone) ─────────────────────────────────
-        if (!wide)
-          Positioned(
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
-            child: ValueListenableBuilder<double>(
-              valueListenable: ref.watch(watchPanelProgressProvider),
-              builder: (context, progress, _) {
-                final navVisible = progress < .5;
-                return AnimatedSlide(
-                  offset: navVisible ? Offset.zero : const Offset(0, 2),
-                  duration: AppMotion.slow,
-                  curve: AppMotion.emphasized,
-                  child: AnimatedOpacity(
-                    opacity: navVisible ? 1 : 0,
-                    duration: AppMotion.base,
-                    child: Center(
-                      child: FloatingNav(
-                        key: const ValueKey('bottomNavPill'),
-                        items: [
-                          for (final item in _destinations)
-                            FloatingNavItem(
-                              item.label,
-                              item.icon,
-                              activeIcon: item.activeIcon,
-                              showBadge:
-                                  item.label == 'Subscriptions' &&
-                                  hasUnreadSubs,
-                            ),
-                        ],
-                        currentIndex: navigationShell.currentIndex,
-                        onSelected: (index) => select(index),
-                        onDragSelected: (index) => select(index),
-                        inverted: shorts,
-                      ),
+                  )
+                : SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              // Wide layout: rail slides away when panel expands
+                              if (wide)
+                                AnimatedContainer(
+                                  duration: AppMotion.slow,
+                                  curve: AppMotion.emphasized,
+                                  width: !panelExpanded ? 72 : 0,
+                                  child: !panelExpanded
+                                      ? NavigationRail(
+                                          selectedIndex:
+                                              navigationShell.currentIndex,
+                                          minWidth: homeLandscape
+                                              ? AppSizes.railWidth
+                                              : null,
+                                          onDestinationSelected: select,
+                                          labelType:
+                                              NavigationRailLabelType.all,
+                                          destinations: [
+                                            for (final item in _destinations)
+                                              NavigationRailDestination(
+                                                icon:
+                                                    item.label ==
+                                                            'Subscriptions' &&
+                                                        hasUnreadSubs
+                                                    ? Badge(
+                                                        smallSize: 8,
+                                                        child: Icon(
+                                                          item.activeIcon,
+                                                        ),
+                                                      )
+                                                    : Icon(item.activeIcon),
+                                                label: homeLandscape
+                                                    ? Text(
+                                                        item.label ==
+                                                                'Subscriptions'
+                                                            ? 'Subs'
+                                                            : item.label,
+                                                        style: AppTextStyles
+                                                            .caption,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        softWrap: false,
+                                                      )
+                                                    : Text(item.label),
+                                              ),
+                                          ],
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                              Expanded(
+                                child: MiniPlayerInset(
+                                  bottom: miniInset,
+                                  child: navigationShell,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
           ),
 
-        // ── Watch panel overlay (above everything) ───────────────────────────
-        const Positioned.fill(
-          child: Material(type: MaterialType.transparency, child: WatchPanel()),
-        ),
-      ],
+          // ── Floating bottom nav pill (phone) ─────────────────────────────────
+          if (!wide)
+            Positioned(
+              left:
+                  (MediaQuery.sizeOf(context).width - AppSizes.navBarWidth) / 2,
+              width: AppSizes.navBarWidth,
+              bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.sm,
+              child: ValueListenableBuilder<double>(
+                valueListenable: ref.watch(watchPanelProgressProvider),
+                builder: (context, progress, _) {
+                  final navVisible = shorts || progress < .5;
+                  final floatingNav = FloatingNav(
+                    key: const ValueKey('bottomNavPill'),
+                    items: [
+                      FloatingNavItem('Home', LucideIcons.house),
+                      FloatingNavItem('Shorts', LucideIcons.clapperboard),
+                      FloatingNavItem(
+                        'Subs',
+                        LucideIcons.layoutGrid,
+                        showBadge: hasUnreadSubs,
+                      ),
+                      FloatingNavItem('Library', LucideIcons.libraryBig),
+                    ],
+                    currentIndex: navigationShell.currentIndex,
+                    onSelected: (index) => select(index),
+                    onDragSelected: (index) => select(index),
+                    inverted: shorts,
+                  );
+                  return AnimatedSlide(
+                    offset: navVisible ? Offset.zero : const Offset(0, 2),
+                    duration: AppMotion.slow,
+                    curve: AppMotion.emphasized,
+                    child: IgnorePointer(
+                      ignoring: !navVisible,
+                      child: AnimatedOpacity(
+                        opacity: navVisible ? 1 : 0,
+                        duration: AppMotion.base,
+                        child: floatingNav,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          // ── Watch panel overlay (above everything) ───────────────────────────
+          const Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: WatchPanel(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

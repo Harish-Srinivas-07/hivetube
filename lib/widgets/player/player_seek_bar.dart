@@ -20,8 +20,6 @@ class PlayerSeekBar extends StatefulWidget {
     this.overlayVisible = true,
     this.onScrubCancel,
     this.chapters = const [],
-    this.seeking = false,
-    this.buffering = false,
   });
 
   final List<WatchChapter> chapters;
@@ -29,33 +27,14 @@ class PlayerSeekBar extends StatefulWidget {
   final ValueChanged<Duration> onScrubStart, onScrubUpdate, onScrubEnd;
   final bool overlayVisible;
   final VoidCallback? onScrubCancel;
-  final bool seeking;
-  final bool buffering;
 
   @override
   State<PlayerSeekBar> createState() => _PlayerSeekBarState();
 }
 
-class _PlayerSeekBarState extends State<PlayerSeekBar>
-    with SingleTickerProviderStateMixin {
+class _PlayerSeekBarState extends State<PlayerSeekBar> {
   bool active = false;
   Duration current = Duration.zero;
-  late final AnimationController _pulseController;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: AppMotion.pulse,
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
 
   Duration _position(double dx, double width) {
     final inset = AppSizes.seekThumb / 2;
@@ -154,21 +133,16 @@ class _PlayerSeekBarState extends State<PlayerSeekBar>
             fit: StackFit.expand,
             children: [
               RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, _) => TweenAnimationBuilder<double>(
-                    tween: Tween(end: active ? 1 : 0),
-                    duration: AppMotion.fast,
-                    builder: (context, animation, _) => CustomPaint(
-                      painter: _SeekPainter(
-                        fraction(position),
-                        fraction(widget.buffered),
-                        animation,
-                        widget.overlayVisible,
-                        widget.chapters.map((c) => fraction(c.start)).toList(),
-                        seeking: widget.seeking || widget.buffering,
-                        pulseValue: _pulseController.value,
-                      ),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: active ? 1 : 0),
+                  duration: AppMotion.fast,
+                  builder: (context, animation, _) => CustomPaint(
+                    painter: _SeekPainter(
+                      fraction(position),
+                      fraction(widget.buffered),
+                      animation,
+                      widget.overlayVisible,
+                      widget.chapters.map((c) => fraction(c.start)).toList(),
                     ),
                   ),
                 ),
@@ -215,17 +189,13 @@ class _SeekPainter extends CustomPainter {
     this.buffered,
     this.active,
     this.overlayVisible,
-    this.chapters, {
-    this.seeking = false,
-    this.pulseValue = 0.0,
-  });
+    this.chapters,
+  );
 
   final List<double> chapters;
   final double position, buffered;
   final double active;
   final bool overlayVisible;
-  final bool seeking;
-  final double pulseValue;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -259,7 +229,7 @@ class _SeekPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
-    if (overlayVisible || active > 0 || seeking) {
+    if (overlayVisible || active > 0) {
       final thumbRadius = AppSizes.seekThumb / 2;
       final center = Offset(
         (inset + trackWidth * position).clamp(
@@ -268,22 +238,6 @@ class _SeekPainter extends CustomPainter {
         ),
         y,
       );
-
-      if (seeking) {
-        // Draw subtle spinner ring around thumb while seeking/buffering
-        final sweep = 2 * pi * 0.7;
-        final startAngle = 2 * pi * pulseValue;
-        canvas.drawArc(
-          Rect.fromCircle(center: center, radius: thumbRadius + 3),
-          startAngle,
-          sweep,
-          false,
-          Paint()
-            ..color = AppColors.primary
-            ..strokeWidth = 2
-            ..style = PaintingStyle.stroke,
-        );
-      }
 
       canvas.drawCircle(
         center,
@@ -299,7 +253,5 @@ class _SeekPainter extends CustomPainter {
       oldDelegate.buffered != buffered ||
       oldDelegate.active != active ||
       oldDelegate.overlayVisible != overlayVisible ||
-      oldDelegate.seeking != seeking ||
-      (seeking && oldDelegate.pulseValue != pulseValue) ||
       oldDelegate.chapters.toString() != chapters.toString();
 }

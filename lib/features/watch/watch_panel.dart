@@ -237,11 +237,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   Future<void> _exitFullscreen() async {
     ref.read(playerUiProvider.notifier).setFullscreen(false);
-    await SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.portraitUp,
-    ]);
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    await SystemChrome.setPreferredOrientations(const []);
+    await setPlayerFullscreenOrientation(false);
   }
 
   Future<void> _start(String id, PlaybackService? service) async {
