@@ -93,6 +93,7 @@ class PlaybackSnapshot {
   int? selectedCaption;
   bool captionError = false;
   Uint8List? frozenFrame;
+  String? frameReadyId;
 
   Duration get displayPosition => seekTarget ?? position;
 }
@@ -202,6 +203,7 @@ class PlaybackService extends ChangeNotifier {
   Future<void> _shortPreloadTail = Future.value();
   int _shortPreloadGeneration = 0;
   final Set<Player> _observedPlayers = {};
+  final Set<VideoController> _frameWaitedControllers = {};
   final PlaybackSnapshot state = PlaybackSnapshot();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   PlayRequest? request;
@@ -438,6 +440,8 @@ class PlaybackService extends ChangeNotifier {
         if (_switching || !identical(player, activePlayer)) return;
         if (request?.mode == PlaybackMode.short && value > Duration.zero) {
           _activeFrameVideoId = request?.videoId;
+          state.frameReadyId = request?.videoId;
+          _frameWaitedControllers.add(_controller);
         }
         final gap = (value - state.position).abs();
         if (gap > const Duration(seconds: 2)) {
@@ -577,6 +581,11 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> play(PlayRequest value) async {
     _qualityTimer?.cancel();
+    final generation = _loadGuard.next();
+    state.frameReadyId = null;
+    _activeFrameVideoId = null;
+    state.frozenFrame = null;
+    _notify();
     if (value.mode != PlaybackMode.short) {
       cancelShortPreloads(disposePlayer: true);
     }
@@ -586,12 +595,13 @@ class PlaybackService extends ChangeNotifier {
       _adaptiveQuality.reset(null, DateTime.now());
     }
     await _saveProgress();
+    if (!_loadGuard.isCurrent(generation)) return;
     _failureMonitor.cancel();
     _userPaused = false;
     _visible = true;
     _resumeAfterVisibility = false;
     _budget.reset();
-    await _load(value, newRequest: true);
+    await _load(value, newRequest: true, requestGeneration: generation);
   }
 
   int beginShortPreloadCycle() {
@@ -687,6 +697,7 @@ class PlaybackService extends ChangeNotifier {
       await controller.waitUntilFirstFrameRendered.timeout(
         const Duration(seconds: 15),
       );
+      _frameWaitedControllers.add(controller);
       if (_disposed || generation != _shortPreloadGeneration) {
         if (identical(_nextPlayer, standby)) _preparedShort = null;
         return;
@@ -725,6 +736,7 @@ class PlaybackService extends ChangeNotifier {
         _visible &&
         !_disposed) {
       _shortPreloadGeneration++;
+      _loadGuard.next();
       _preparedShort = null;
       _failureMonitor.cancel();
       unawaited(_saveProgress());
@@ -747,6 +759,7 @@ class PlaybackService extends ChangeNotifier {
       _listen();
       request = PlayRequest(videoId: id, mode: PlaybackMode.short);
       state.videoId = id;
+      state.frameReadyId = id;
       state.mode = PlaybackMode.short;
       state.quality = null;
       state.autoQualityHeight = _preferenceUsesAdaptiveQuality
@@ -777,6 +790,7 @@ class PlaybackService extends ChangeNotifier {
       state.recovering = false;
       state.status = PlayerStatus.ready;
       _activeFrameVideoId = id;
+      _frameWaitedControllers.add(controller);
       await player.setVolume(state.muted ? 0 : state.volume);
       await player.seek(Duration.zero);
       if (!_visible || _disposed) {
@@ -811,9 +825,11 @@ class PlaybackService extends ChangeNotifier {
     bool recovery = false,
     bool qualitySwitch = false,
     int? adaptiveHeight,
+    int? requestGeneration,
   }) async {
     _configurePlayer(player, shortBuffer: value.mode == PlaybackMode.short);
-    final generation = _loadGuard.next(intentional: qualitySwitch);
+    final generation =
+        requestGeneration ?? _loadGuard.next(intentional: qualitySwitch);
     if (qualitySwitch) {
       _seekController.beginIntentionalSwitch();
       _failureMonitor.beginIntentionalSwitch();
@@ -839,7 +855,8 @@ class PlaybackService extends ChangeNotifier {
     state.recovering = recovery && !qualitySwitch;
     state.error = null;
     if (newRequest) {
-      if (value.mode == PlaybackMode.short) _activeFrameVideoId = null;
+      _activeFrameVideoId = null;
+      state.frameReadyId = null;
       state.frozenFrame = null;
       state.subtitleText = '';
       state.position = value.startAt;
@@ -986,6 +1003,21 @@ class PlaybackService extends ChangeNotifier {
           _debugLog('_load: player.setAudioTrack finished.');
         }
         if (!_loadGuard.isCurrent(generation)) return;
+        if (newRequest && value.mode != PlaybackMode.audio) {
+          final isFrameReady = await _waitForRequestFrame(
+            videoId: value.videoId,
+            startAt: value.startAt,
+            generation: generation,
+          );
+          if (!_loadGuard.isCurrent(generation)) return;
+          if (isFrameReady) {
+            state.frameReadyId = value.videoId;
+            if (value.mode == PlaybackMode.short) {
+              _activeFrameVideoId = value.videoId;
+            }
+          }
+        }
+        if (!_loadGuard.isCurrent(generation)) return;
         _switching = false;
         state.recovering = false;
         state.status = PlayerStatus.ready;
@@ -1055,6 +1087,49 @@ class PlaybackService extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  Future<bool> _waitForRequestFrame({
+    required String videoId,
+    required Duration startAt,
+    required int generation,
+  }) async {
+    final targetPlayer = player;
+    final targetController = controller;
+    if (!_loadGuard.isCurrent(generation)) return false;
+
+    if (_frameWaitedControllers.add(targetController)) {
+      try {
+        await targetController.waitUntilFirstFrameRendered.timeout(
+          const Duration(seconds: 8),
+        );
+        if (_loadGuard.isCurrent(generation) &&
+            identical(player, targetPlayer) &&
+            request?.videoId == videoId) {
+          return true;
+        }
+      } on TimeoutException {
+        // Position advancement below is the per-request fallback signal.
+      } catch (_) {
+        // Position advancement below is the per-request fallback signal.
+      }
+    }
+
+    if (targetPlayer.state.position > startAt) {
+      return _loadGuard.isCurrent(generation) &&
+          identical(player, targetPlayer) &&
+          request?.videoId == videoId;
+    }
+    try {
+      await targetPlayer.stream.position
+          .firstWhere((position) => position > startAt)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      return false;
+    }
+    return _loadGuard.isCurrent(generation) &&
+        identical(player, targetPlayer) &&
+        request?.videoId == videoId;
   }
 
   Future<void> _recover() async {
@@ -1335,6 +1410,8 @@ class PlaybackService extends ChangeNotifier {
     if (!_loadGuard.isCurrent(generation)) return;
     request = null;
     state.videoId = null;
+    state.frameReadyId = null;
+    _activeFrameVideoId = null;
     state.mode = null;
     state.subtitleText = '';
     state.playing = false;

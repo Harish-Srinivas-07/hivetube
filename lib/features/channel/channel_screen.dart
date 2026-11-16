@@ -19,6 +19,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
+import '../../widgets/video_options_menu.dart';
 
 class ChannelScreen extends ConsumerStatefulWidget {
   const ChannelScreen({super.key, required this.channelId});
@@ -38,7 +39,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
   bool loadingMore = false;
   String _notificationMode = 'Personalized';
   String _resolvedChannelId = '';
-  List<String> _tabs = const ['Home', 'Videos', 'Shorts', 'About'];
+  List<String> _tabs = const ['Home', 'Videos', 'Shorts', 'Playlists', 'Posts'];
   TabController? _tabController;
   int _selectedTabIndex = 0;
   final Map<String, List<dynamic>> _itemsByTab = {};
@@ -124,7 +125,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       }
       final page = await api.browse.channelPage(id);
       final subs = await ref.read(subscriptionRepoProvider).channelIds();
-      final tabs = <String>['Home', 'Videos', 'Shorts', 'About'];
+      final tabs = <String>['Home', 'Videos', 'Shorts', 'Playlists', 'Posts'];
       if (!mounted) return;
       setState(() {
         _resolvedChannelId = id;
@@ -158,6 +159,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
   String? _paramsForTab(String tab) => switch (tab) {
     'Videos' => _sortByTab['Videos'] ?? YtBrowse.tabParamsVideos,
     'Shorts' => YtBrowse.tabParamsShorts,
+    'Playlists' => YtBrowse.tabParamsPlaylists,
     _ => null,
   };
 
@@ -328,32 +330,31 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       ),
     );
     if (action == 'unsubscribe') await _toggleSubscription(false);
+    if (action == 'about') await _showChannelDescription();
+  }
+
+  Future<void> _showChannelDescription() async {
+    final channel = data;
+    if (channel == null || channel.description.isEmpty) return;
+    await showAppSheet<void>(
+      context,
+      title: channel.name,
+      builder: (_, _) => Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Text(
+          channel.description,
+          style: AppTextStyles.body.copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
   }
 
   void _selectTab(String name) {
     final index = _tabs.indexOf(name);
     if (index >= 0) _tabController?.animateTo(index, duration: AppMotion.base);
   }
-
-  String _channelMeta(ChannelPageData channel) => [
-    if (channel.handle.isNotEmpty) channel.handle,
-    if (channel.subscribersText.isNotEmpty) channel.subscribersText,
-    if (channel.videosCountText.isNotEmpty) channel.videosCountText,
-  ].join(' · ');
-
-  double _bannerHeight(BuildContext context) =>
-      MediaQuery.sizeOf(context).width / (AppSpacing.xl / AppSpacing.xs);
-
-  double _profileHeaderHeight(ChannelPageData channel) =>
-      AppSpacing.lg +
-      AppSizes.avatarLg +
-      (channel.description.isNotEmpty
-          ? AppSpacing.md +
-                AppTextStyles.meta.height! * AppTextStyles.meta.fontSize! * 2
-          : 0) +
-      AppSpacing.md +
-      AppSizes.buttonLarge +
-      AppSpacing.md;
 
   void _openShorts(List<ShortItem> items, int index) {
     ref.read(shortsSelectionProvider.notifier).open(items, index);
@@ -374,11 +375,6 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     if (channel == null) return const _ChannelLoadingScreen();
 
     final colors = Theme.of(context).colorScheme;
-    final hasBanner = channel.bannerUrl.isNotEmpty;
-    final bannerHeight = hasBanner ? _bannerHeight(context) : 0.0;
-    final headerTop = hasBanner ? bannerHeight : AppSizes.topBar;
-    final expandedHeight = headerTop + _profileHeaderHeight(channel);
-
     return Scaffold(
       body: SafeArea(
         top: true,
@@ -387,128 +383,47 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             SliverAppBar(
               pinned: true,
-              expandedHeight: expandedHeight,
               toolbarHeight: AppSizes.topBar,
-              backgroundColor: innerBoxIsScrolled || !hasBanner
-                  ? colors.surface
-                  : AppColors.transparent,
+              backgroundColor: colors.surface,
               surfaceTintColor: AppColors.transparent,
               elevation: 0,
               scrolledUnderElevation: 0,
               leading: IconButton(
                 tooltip: 'Back',
                 onPressed: () => context.pop(),
-                icon: Icon(
-                  LucideIcons.arrowLeft,
-                  color: innerBoxIsScrolled || !hasBanner
-                      ? colors.onSurface
-                      : AppColors.white,
-                ),
+                icon: Icon(LucideIcons.arrowLeft, color: colors.onSurface),
               ),
-              title: AnimatedSwitcher(
+              title: AnimatedOpacity(
                 duration: AppMotion.base,
-                child: innerBoxIsScrolled
-                    ? Text(
-                        channel.name,
-                        key: const ValueKey('channelToolbarTitle'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodyStrong.copyWith(
-                          color: colors.onSurface,
-                        ),
-                      )
-                    : const SizedBox.shrink(
-                        key: ValueKey('channelToolbarEmpty'),
-                      ),
+                opacity: innerBoxIsScrolled ? 1 : 0,
+                child: Text(
+                  channel.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyStrong.copyWith(
+                    color: colors.onSurface,
+                  ),
+                ),
               ),
               actions: [
                 IconButton(
                   tooltip: 'Search',
                   onPressed: () => context.push('/search'),
-                  icon: Icon(
-                    LucideIcons.search,
-                    color: innerBoxIsScrolled || !hasBanner
-                        ? colors.onSurface
-                        : AppColors.white,
-                  ),
+                  icon: Icon(LucideIcons.search, color: colors.onSurface),
                 ),
                 IconButton(
                   tooltip: 'More',
                   onPressed: _showMenu,
-                  icon: Icon(
-                    LucideIcons.ellipsis,
-                    color: innerBoxIsScrolled || !hasBanner
-                        ? colors.onSurface
-                        : AppColors.white,
-                  ),
+                  icon: Icon(LucideIcons.ellipsis, color: colors.onSurface),
                 ),
               ],
-              flexibleSpace: FlexibleSpaceBar(
-                collapseMode: CollapseMode.pin,
-                background: ClipRect(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      SingleChildScrollView(
-                        physics: const NeverScrollableScrollPhysics(),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (hasBanner)
-                              SizedBox(
-                                height: bannerHeight,
-                                child: CachedNetworkImage(
-                                  imageUrl: channel.bannerUrl,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, _) => ColoredBox(
-                                    color: colors.surfaceContainerHighest,
-                                  ),
-                                  errorWidget: (_, _, _) => ColoredBox(
-                                    color: colors.surfaceContainerHighest,
-                                  ),
-                                ),
-                              )
-                            else
-                              const SizedBox(height: AppSizes.topBar),
-                            _profileHeader(context, channel),
-                          ],
-                        ),
-                      ),
-                      if (hasBanner)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: AppSizes.topBar,
-                          child: ColoredBox(color: AppColors.scrim),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(
-                  AppSizes.settingsRowHeight,
-                ),
-                child: Container(
-                  color: colors.surface,
-                  alignment: Alignment.centerLeft,
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    padding: const EdgeInsets.only(left: AppSpacing.md),
-                    labelPadding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                    ),
-                    labelStyle: AppTextStyles.videoTitle,
-                    unselectedLabelStyle: AppTextStyles.videoTitle,
-                    labelColor: colors.onSurface,
-                    unselectedLabelColor: colors.onSurfaceVariant,
-                    indicatorColor: colors.onSurface,
-                    indicatorWeight: AppSpacing.xs / 2,
-                    tabs: [for (final tab in _tabs) Tab(text: tab)],
-                  ),
-                ),
+            ),
+            SliverToBoxAdapter(child: _profileHeader(context, channel)),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _ChannelTabBarDelegate(
+                controller: _tabController!,
+                tabs: _tabs,
               ),
             ),
           ],
@@ -527,73 +442,148 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
 
   Widget _profileHeader(BuildContext context, ChannelPageData channel) {
     final colors = Theme.of(context).colorScheme;
-    final meta = _channelMeta(channel);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.md,
-      ),
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              ChannelAvatar(
-                name: channel.name,
-                url: channel.avatarUrl,
-                size: AppSizes.avatarLg,
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      channel.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.pageTitle.copyWith(
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    if (meta.isNotEmpty)
-                      Text(
-                        meta,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.meta.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (channel.description.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            InkWell(
-              onTap: () => _selectTab('About'),
-              child: Text(
-                channel.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.meta.copyWith(
-                  color: colors.onSurfaceVariant,
+          if (channel.bannerUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: ClipRRect(
+                borderRadius: AppRadius.mdBorder,
+                child: AspectRatio(
+                  aspectRatio: AppSpacing.thumbnailRatio,
+                  child: CachedNetworkImage(
+                    imageUrl: channel.bannerUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) =>
+                        ColoredBox(color: colors.surfaceContainerHighest),
+                    errorWidget: (_, _, _) =>
+                        ColoredBox(color: colors.surfaceContainerHighest),
+                  ),
                 ),
               ),
             ),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            width: double.infinity,
-            child: AppSubscribedButton(
-              isSubscribed: isSubscribed,
-              size: AppButtonSize.large,
-              onPressed: _onSubscribePressed,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    ChannelAvatar(
+                      name: channel.name,
+                      url: channel.avatarUrl,
+                      size: AppSizes.avatarLg,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            channel.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.pageTitle.copyWith(
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          if (channel.handle.isNotEmpty)
+                            Text(
+                              channel.handle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.meta.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          Text(
+                            [
+                              channel.subscribersText,
+                              channel.videosCountText,
+                            ].where((value) => value.isNotEmpty).join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.meta.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (channel.description.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  InkWell(
+                    onTap: _showChannelDescription,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            channel.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.meta.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' more',
+                          style: AppTextStyles.meta.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppSubscribedButton(
+                        isSubscribed: isSubscribed,
+                        size: AppButtonSize.large,
+                        onPressed: _onSubscribePressed,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(
+                        LucideIcons.badgeCheck,
+                        size: AppSizes.iconSm,
+                      ),
+                      label: const Text('Join'),
+                      style: OutlinedButton.styleFrom(
+                        shape: const StadiumBorder(),
+                        minimumSize: const Size.fromHeight(
+                          AppSizes.buttonLarge,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    IconButton.filledTonal(
+                      tooltip: 'Community',
+                      onPressed: _tabs.contains('Posts')
+                          ? () => _selectTab('Posts')
+                          : null,
+                      icon: const Icon(LucideIcons.usersRound),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -643,12 +633,6 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       );
     }
 
-    if (tab == 'About') {
-      slivers.addAll(_aboutSlivers(context, channel));
-      slivers.add(_bottomInset(context));
-      return slivers;
-    }
-
     if (_loadingTabs.contains(tab) && !_loadedTabs.contains(tab)) {
       slivers.add(const SliverToBoxAdapter(child: _ChannelTabSkeleton()));
       slivers.add(_bottomInset(context));
@@ -658,10 +642,18 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     if (tab == 'Home') {
       if (videos.isNotEmpty) {
         slivers.add(
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(child: _featuredVideo(context, videos.first)),
+        );
+        slivers.add(
+          SliverToBoxAdapter(
             child: SectionHeader(
-              title: 'Latest videos',
-              padding: EdgeInsets.fromLTRB(
+              title: 'Videos',
+              trailing: TextButton.icon(
+                onPressed: () => _selectTab('Videos'),
+                icon: const Icon(LucideIcons.chevronRight),
+                label: const Text(''),
+              ),
+              padding: const EdgeInsets.fromLTRB(
                 AppSpacing.md,
                 AppSpacing.lg,
                 AppSpacing.xs,
@@ -671,30 +663,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
           ),
         );
         slivers.add(
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height:
-                  AppSizes.trendingCardW / AppSpacing.thumbnailRatio +
-                  AppSpacing.xxxl * 2,
-              child: ListView.separated(
-                padding: const EdgeInsets.only(
-                  left: AppSpacing.md,
-                  right: AppSpacing.md,
-                ),
-                scrollDirection: Axis.horizontal,
-                itemCount: videos.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(width: AppSpacing.md),
-                itemBuilder: (context, index) => SizedBox(
-                  width: AppSizes.trendingCardW,
-                  child: VideoCard.grid(
-                    key: ValueKey(videos[index].id),
-                    video: videos[index],
-                    onTap: () => openWatchPanel(ref, videos[index].id),
-                  ),
-                ),
-              ),
-            ),
+          SliverList.builder(
+            itemCount: videos.length > 1 ? videos.length - 1 : 0,
+            itemBuilder: (context, index) =>
+                _channelVideoRow(context, videos[index + 1]),
           ),
         );
       }
@@ -744,9 +716,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
             itemBuilder: (context, index) => Padding(
               key: ValueKey(videos[index].id),
               padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-              child: VideoCard.feed(
+              child: VideoCard.compact(
                 video: videos[index],
                 onTap: () => openWatchPanel(ref, videos[index].id),
+                trailing: _videoOptionsButton(context, videos[index]),
               ),
             ),
           ),
@@ -780,6 +753,26 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
           ),
         );
       }
+    } else if (tab == 'Posts' && !_loadingTabs.contains(tab)) {
+      slivers.add(
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: LucideIcons.messageCircle,
+            title: 'No posts available',
+          ),
+        ),
+      );
+    } else if (tab == 'Playlists' && !_loadingTabs.contains(tab)) {
+      slivers.add(
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: LucideIcons.listVideo,
+            title: 'No playlists available',
+          ),
+        ),
+      );
     }
 
     if (loadingMore && _selectedTab == tab) {
@@ -800,6 +793,103 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     slivers.add(_bottomInset(context));
     return slivers;
   }
+
+  Widget _featuredVideo(BuildContext context, VideoItem video) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
+      child: Material(
+        color: colors.surfaceContainerHighest,
+        borderRadius: AppRadius.mdBorder,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => openWatchPanel(ref, video.id),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ThumbnailWithDuration(
+                url: video.thumbUrl,
+                duration: video.durationText,
+              ),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ChannelAvatar(
+                      name: channelName(video),
+                      url: video.channelAvatarUrl,
+                      size: AppSizes.avatarSm,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            video.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.videoTitle.copyWith(
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            [
+                              video.channelName,
+                              video.viewsText,
+                              video.publishedText,
+                            ].where((value) => value.isNotEmpty).join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.meta.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _videoOptionsButton(context, video),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String channelName(VideoItem video) =>
+      video.channelName.isEmpty ? (data?.name ?? '') : video.channelName;
+
+  Widget _channelVideoRow(BuildContext context, VideoItem video) => Padding(
+    key: ValueKey(video.id),
+    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+    child: VideoCard.compact(
+      video: video,
+      onTap: () => openWatchPanel(ref, video.id),
+      trailing: _videoOptionsButton(context, video),
+    ),
+  );
+
+  Widget _videoOptionsButton(BuildContext context, VideoItem video) =>
+      IconButton(
+        tooltip: 'More options',
+        onPressed: () => showVideoOptionsMenu(
+          context,
+          videoId: video.id,
+          ref: ref,
+          video: video,
+        ),
+        icon: const Icon(LucideIcons.ellipsisVertical),
+      );
 
   Widget _shortsShelfSliver(List<ShortItem> shorts) => SliverToBoxAdapter(
     child: Column(
@@ -834,66 +924,9 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     ),
   );
 
-  List<Widget> _aboutSlivers(BuildContext context, ChannelPageData channel) {
-    final values = <({String label, String value})>[
-      if (channel.description.isNotEmpty)
-        (label: 'Description', value: channel.description),
-      if (channel.handle.isNotEmpty) (label: 'Handle', value: channel.handle),
-      if (channel.subscribersText.isNotEmpty)
-        (label: 'Subscribers', value: channel.subscribersText),
-      if (channel.videosCountText.isNotEmpty)
-        (label: 'Videos', value: channel.videosCountText),
-      (label: 'Channel ID', value: channel.id),
-    ];
-    return [
-      SliverPadding(
-        padding: const EdgeInsets.only(top: AppSpacing.md),
-        sliver: SliverList.builder(
-          itemCount: values.length,
-          itemBuilder: (context, index) =>
-              _AboutRow(label: values[index].label, value: values[index].value),
-        ),
-      ),
-    ];
-  }
-
   Widget _bottomInset(BuildContext context) => SliverBottomInset(
     extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
   );
-}
-
-class _AboutRow extends StatelessWidget {
-  const _AboutRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.settingsTitle.copyWith(
-              color: colors.onSurface,
-            ),
-          ),
-          Text(
-            value,
-            style: AppTextStyles.settingsSub.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ShortTile extends StatelessWidget {
@@ -946,6 +979,48 @@ class _ShortTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChannelTabBarDelegate extends SliverPersistentHeaderDelegate {
+  const _ChannelTabBarDelegate({required this.controller, required this.tabs});
+
+  final TabController controller;
+  final List<String> tabs;
+
+  @override
+  double get minExtent => AppSizes.settingsRowHeight;
+
+  @override
+  double get maxExtent => AppSizes.settingsRowHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      child: TabBar(
+        controller: controller,
+        isScrollable: true,
+        padding: const EdgeInsets.only(left: AppSpacing.md),
+        labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        labelStyle: AppTextStyles.videoTitle,
+        unselectedLabelStyle: AppTextStyles.videoTitle,
+        labelColor: colors.onSurface,
+        unselectedLabelColor: colors.onSurfaceVariant,
+        indicatorColor: colors.onSurface,
+        indicatorWeight: AppSpacing.xs / 2,
+        tabs: [for (final tab in tabs) Tab(text: tab)],
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _ChannelTabBarDelegate oldDelegate) =>
+      oldDelegate.controller != controller || oldDelegate.tabs != tabs;
 }
 
 class _ChannelTabSkeleton extends StatelessWidget {

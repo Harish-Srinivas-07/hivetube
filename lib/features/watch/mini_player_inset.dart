@@ -4,6 +4,9 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+/// True while a shell route (and its floating navigation) is active.
+final shellRouteVisible = ValueNotifier<bool>(false);
+
 class MiniPlayerInset extends InheritedWidget {
   const MiniPlayerInset({
     super.key,
@@ -19,8 +22,7 @@ class MiniPlayerInset extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<MiniPlayerInset>();
 
   /// Returns 0 if no ancestor exists (safe default).
-  static double of(BuildContext context) =>
-      maybeOf(context)?.bottom ?? 0.0;
+  static double of(BuildContext context) => maybeOf(context)?.bottom ?? 0.0;
 
   @override
   bool updateShouldNotify(MiniPlayerInset oldWidget) =>

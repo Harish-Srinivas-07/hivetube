@@ -6,18 +6,24 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'app/router.dart';
+import 'core/playback/player_ui_state.dart';
+import 'core/providers.dart';
 import 'core/content/language_profile.dart';
 import 'core/settings/app_settings.dart';
 import 'core/streams/adaptive_quality_policy.dart';
 import 'core/db/app_db.dart';
-import 'core/providers.dart';
 import 'core/playback/audio_handler.dart';
 import 'features/home/home_cache.dart';
 import 'features/home/home_controller.dart';
 import 'features/home/home_variety.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_motion.dart';
+import 'theme/app_spacing.dart';
 import 'core/playback/preview_coordinator.dart';
+import 'features/watch/mini_player_inset.dart';
+import 'features/watch/player_back_scope.dart';
+import 'features/watch/watch_panel.dart';
+import 'widgets/player/player_controls.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -128,19 +134,81 @@ Future<void> main() async {
   );
 }
 
-class HiveTubeApp extends StatelessWidget {
+class HiveTubeApp extends ConsumerWidget {
   const HiveTubeApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
-    title: 'HiveTube',
-    theme: AppTheme.light,
-    darkTheme: AppTheme.dark,
-    themeMode: ThemeMode.system,
-    locale: const Locale('en'),
-    supportedLocales: const [Locale('en')],
-    routerConfig: appRouter,
-    builder: (context, child) =>
-        PreviewScrollListener(child: child ?? const SizedBox.shrink()),
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    playerBackButtonDispatcher.onPlayerBack = () async {
+      if (ref.read(watchPanelProvider) == null) return false;
+      final ui = ref.read(playerUiProvider);
+      if (ui.locked) {
+        ref.read(playerUiProvider.notifier).setOverlayVisible(true);
+        return true;
+      }
+      if (ui.isFullscreen) {
+        ref.read(playerUiProvider.notifier).setFullscreen(false);
+        await setPlayerFullscreenOrientation(false);
+        return true;
+      }
+      if (ui.panelMode == PlayerPanelMode.expanded) {
+        ref.read(watchPanelExpandProvider.notifier).minimize();
+        return true;
+      }
+      return false;
+    };
+    return MaterialApp.router(
+      title: 'HiveTube',
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
+      locale: const Locale('en'),
+      supportedLocales: const [Locale('en')],
+      routeInformationProvider: appRouter.routeInformationProvider,
+      routeInformationParser: appRouter.routeInformationParser,
+      routerDelegate: appRouter.routerDelegate,
+      backButtonDispatcher: playerBackButtonDispatcher,
+      builder: (context, child) => _RootPlayerOverlay(child: child),
+    );
+  }
+}
+
+class _RootPlayerOverlay extends ConsumerWidget {
+  const _RootPlayerOverlay({this.child});
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ui = ref.watch(playerUiProvider);
+    final panelOpen = ref.watch(watchPanelProvider) != null;
+    final wide =
+        MediaQuery.sizeOf(context).shortestSide >=
+        AppSpacing.navigationBreakpoint;
+    final miniHeight =
+        (wide
+            ? AppSpacing.videoMaxWidth
+            : MediaQuery.sizeOf(context).width * .55) /
+        AppSpacing.thumbnailRatio;
+    final miniInset = panelOpen && ui.panelMode != PlayerPanelMode.expanded
+        ? miniHeight + AppSpacing.sm * 2
+        : 0.0;
+    return MiniPlayerInset(
+      bottom: miniInset,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PreviewScrollListener(child: child ?? const SizedBox.shrink()),
+          Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: WatchPanel(
+                navigatorContext: () =>
+                    rootNavigatorKey.currentState?.overlay?.context,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

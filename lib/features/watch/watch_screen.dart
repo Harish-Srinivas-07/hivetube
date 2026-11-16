@@ -64,6 +64,7 @@ class WatchScreen extends ConsumerStatefulWidget {
     this.embedded = false,
     this.deferHeavyContent = false,
     this.onMinimize,
+    this.navigatorContext,
   });
   final String id;
   final Widget? videoOverride;
@@ -71,19 +72,21 @@ class WatchScreen extends ConsumerStatefulWidget {
   final bool embedded;
   final bool deferHeavyContent;
   final VoidCallback? onMinimize;
+  final BuildContext? Function()? navigatorContext;
   @override
   ConsumerState<WatchScreen> createState() => _WatchScreenState();
 }
 
 class _WatchScreenState extends ConsumerState<WatchScreen> {
+  BuildContext get _routerContext => widget.navigatorContext?.call() ?? context;
+
   late String id;
   String? started;
   final Set<String> _metadataWritten = {};
   final Set<String> _subscriptionChecksStarted = {};
   final Set<String> _reactionChecksStarted = {};
   PlaybackService? _activeService;
-  String? panel;
-  String? _lastPanel;
+  bool _contentSheetOpen = false;
   bool subscribed = false;
   int reaction = 0;
   final previous = <String>[];
@@ -131,7 +134,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       setState(() {
         id = widget.id;
         started = null;
-        panel = null;
         extra.clear();
         continuation = null;
         reaction = reactions[widget.id] ?? 0;
@@ -208,7 +210,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     setState(() {
       id = next;
       started = null;
-      panel = null;
       extra.clear();
       continuation = null;
       reaction = reactions[next] ?? 0;
@@ -277,33 +278,28 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   Future<void> _back() async {
+    if (_contentSheetOpen) {
+      await Navigator.of(_routerContext, rootNavigator: true).maybePop();
+      return;
+    }
     final ui = ref.read(playerUiProvider);
-    final action = watchBackAction(
-      locked: ui.locked,
-      fullscreen: ui.isFullscreen,
-      panelOpen: panel != null,
-    );
-    if (action == WatchBackAction.locked) {
+    if (ui.locked) {
       ref.read(playerUiProvider.notifier).setOverlayVisible(true);
       return;
     }
-    if (action == WatchBackAction.fullscreen) {
+    if (ui.isFullscreen) {
       ref.read(playerUiProvider.notifier).setFullscreen(false);
       await setPlayerFullscreenOrientation(false);
-      return;
-    }
-    if (action == WatchBackAction.panel) {
-      setState(() => panel = null);
       return;
     }
     if (widget.embedded) {
       widget.onMinimize?.call();
       return;
     }
-    if (mounted && context.canPop()) {
-      context.pop();
+    if (mounted && _routerContext.canPop()) {
+      _routerContext.pop();
     } else if (mounted) {
-      context.go('/home');
+      _routerContext.go('/home');
     }
   }
 
@@ -459,6 +455,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : SharedPlayer(
                     service: service,
+                    requestVideoId: id,
+                    thumbnailUrl: info?.thumbnail ?? '',
                     videoOverride: widget.videoOverride,
                     chapters: info?.chapters ?? const [],
                     onChapters: () => _showChapters(info?.chapters ?? const []),
@@ -496,12 +494,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   )
                 : const CircularProgressIndicator(),
           )
-        : _details(
-            info,
-            related,
-            heavyContentReady: heavyContentReady,
-            wide: wide,
-          );
+        : _details(info, related, heavyContentReady: heavyContentReady);
     return Focus(
       autofocus: true,
       onKeyEvent: (_, event) {
@@ -593,13 +586,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                   ),
                                 ),
                                 Expanded(
-                                  child: panel != null && info != null
-                                      ? _panel(
-                                          info,
-                                          related,
-                                          heavyContentReady: heavyContentReady,
-                                        )
-                                      : heavyContentReady
+                                  child: heavyContentReady
                                       ? _relatedList(related)
                                       : const SizedBox.shrink(),
                                 ),
@@ -631,66 +618,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 ],
                               ),
                             ),
-                          Expanded(
-                            child: Stack(
-                              children: [
-                                details,
-                                IgnorePointer(
-                                  ignoring: panel == null,
-                                  child: AnimatedOpacity(
-                                    opacity: panel != null ? 1.0 : 0.0,
-                                    duration: const Duration(milliseconds: 250),
-                                    child: GestureDetector(
-                                      onTap: () => setState(() => panel = null),
-                                      behavior: HitTestBehavior.opaque,
-                                      child: const ColoredBox(
-                                        color: AppColors.scrim50,
-                                        child: SizedBox.expand(),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Positioned.fill(
-                                  child: AnimatedSlide(
-                                    offset: panel != null
-                                        ? Offset.zero
-                                        : const Offset(0, 1),
-                                    duration: const Duration(milliseconds: 250),
-                                    curve: Curves.easeOutCubic,
-                                    child: IgnorePointer(
-                                      ignoring: panel == null,
-                                      child:
-                                          (panel != null ||
-                                                  _lastPanel != null) &&
-                                              info != null
-                                          ? Material(
-                                              color: Theme.of(
-                                                context,
-                                              ).scaffoldBackgroundColor,
-                                              borderRadius:
-                                                  const BorderRadius.vertical(
-                                                    top: Radius.circular(
-                                                      AppRadius.lg,
-                                                    ),
-                                                  ),
-                                              clipBehavior: Clip.antiAlias,
-                                              elevation: 0,
-                                              child: _panel(
-                                                info,
-                                                related,
-                                                heavyContentReady:
-                                                    heavyContentReady,
-                                                currentPanel:
-                                                    panel ?? _lastPanel!,
-                                              ),
-                                            )
-                                          : const SizedBox.shrink(),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          Expanded(child: details),
                         ],
                       ],
                     ),
@@ -703,7 +631,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   void _showChapters(List<WatchChapter> chapters) {
     showAppSheet<void>(
-      context,
+      _routerContext,
       title: 'Chapters',
       builder: (context, scrollController) => ListView.builder(
         controller: scrollController,
@@ -730,24 +658,93 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
   }
 
-  void _openPanel(
-    String name,
-    WatchInfo info,
-    List<VideoItem> related, {
+  Future<void> _showDescriptionSheet(
+    WatchInfo info, {
     required bool heavyContentReady,
-    required bool wide,
-  }) {
-    setState(() {
-      panel = name;
-      _lastPanel = name;
-    });
+  }) async {
+    if (_contentSheetOpen) return;
+    _contentSheetOpen = true;
+    try {
+      await showAppSheet<void>(
+        _routerContext,
+        title: 'Description',
+        initialFraction: 0.6,
+        onVideo: true,
+        builder: (context, scrollController) => heavyContentReady
+            ? ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                children: [
+                  Text(info.title, style: AppTextStyles.watchTitle),
+                  Text(
+                    [
+                      info.views,
+                      info.likes,
+                      info.date,
+                    ].where((value) => value.isNotEmpty).join(' · '),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _LinkedDescription(
+                    text: info.description,
+                    onSeek: (position) =>
+                        ref.read(playbackProvider)?.seek(position),
+                  ),
+                  for (final chapter in info.chapters)
+                    ListTile(
+                      title: Text(chapter.title),
+                      subtitle: Text(
+                        '${chapter.start.inMinutes}:${(chapter.start.inSeconds % 60).toString().padLeft(2, '0')}',
+                      ),
+                      onTap: () =>
+                          ref.read(playbackProvider)?.seek(chapter.start),
+                    ),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri.parse('https://www.returnyoutubedislike.com/'),
+                    ),
+                    child: const Text('Dislike data: Return YouTube Dislike'),
+                  ),
+                ],
+              )
+            : const Center(child: CircularProgressIndicator()),
+      );
+    } finally {
+      _contentSheetOpen = false;
+    }
+  }
+
+  Future<void> _showCommentsSheet(
+    WatchInfo info, {
+    required bool heavyContentReady,
+  }) async {
+    if (_contentSheetOpen) return;
+    _contentSheetOpen = true;
+    try {
+      await showAppSheet<void>(
+        _routerContext,
+        title: 'Comments',
+        initialFraction: 0.6,
+        onVideo: true,
+        builder: (context, scrollController) {
+          if (!heavyContentReady) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final token = info.commentsToken;
+          if (token == null) {
+            return const Center(child: Text('Comments unavailable'));
+          }
+          return _Comments(token: token, scrollController: scrollController!);
+        },
+      );
+    } finally {
+      _contentSheetOpen = false;
+    }
   }
 
   Widget _details(
     WatchInfo info,
     List<VideoItem> related, {
     required bool heavyContentReady,
-    bool wide = false,
   }) => CustomScrollView(
     controller: scroll,
     slivers: [
@@ -764,12 +761,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             children: [
               InkWell(
                 borderRadius: AppRadius.smBorder,
-                onTap: () => _openPanel(
-                  'Description',
-                  info,
-                  related,
-                  heavyContentReady: heavyContentReady,
-                  wide: wide,
+                onTap: () => unawaited(
+                  _showDescriptionSheet(
+                    info,
+                    heavyContentReady: heavyContentReady,
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -818,7 +814,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   InkWell(
                     borderRadius: AppRadius.pillBorder,
                     onTap: info.channelId.isNotEmpty
-                        ? () => context.push('/channel/${info.channelId}')
+                        ? () =>
+                              _routerContext.push('/channel/${info.channelId}')
                         : null,
                     child: ChannelAvatar(
                       name: info.channelName,
@@ -830,7 +827,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   Expanded(
                     child: InkWell(
                       onTap: info.channelId.isNotEmpty
-                          ? () => context.push('/channel/${info.channelId}')
+                          ? () => _routerContext.push(
+                              '/channel/${info.channelId}',
+                            )
                           : null,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -900,7 +899,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       LucideIcons.bookmark,
                       'Save',
                       () => showSaveToPlaylistSheet(
-                        context,
+                        _routerContext,
                         videoId: id,
                         media: MediaCompanion.insert(
                           videoId: id,
@@ -922,7 +921,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       if (inWl) {
                         await db.playlistsDao.removePlaylistItem(wl.id, id);
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(_routerContext).showSnackBar(
                             const SnackBar(
                               content: Text('Removed from Watch Later'),
                             ),
@@ -943,7 +942,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                           ),
                         );
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(_routerContext).showSnackBar(
                             const SnackBar(
                               content: Text('Saved to Watch Later'),
                             ),
@@ -955,7 +954,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       LucideIcons.listVideo,
                       'Queue',
                       () => showQueueSheet(
-                        context,
+                        _routerContext,
                         current: VideoItem(
                           id: info.id,
                           title: info.title,
@@ -990,12 +989,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       borderRadius: AppRadius.mdBorder,
                       child: InkWell(
                         borderRadius: AppRadius.mdBorder,
-                        onTap: () => _openPanel(
-                          'Comments',
-                          info,
-                          related,
-                          heavyContentReady: heavyContentReady,
-                          wide: wide,
+                        onTap: () => unawaited(
+                          _showCommentsSheet(
+                            info,
+                            heavyContentReady: heavyContentReady,
+                          ),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.md),
@@ -1201,7 +1199,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   void _soon() => ScaffoldMessenger.of(
-    context,
+    _routerContext,
   ).showSnackBar(const SnackBar(content: Text('Coming soon')));
   Widget _relatedList(List<VideoItem> related) => ListView.builder(
     itemCount: related.length,
@@ -1219,7 +1217,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     tooltip: 'More options',
     icon: const Icon(LucideIcons.ellipsisVertical),
     onPressed: () => showVideoOptionsMenu(
-      context,
+      _routerContext,
       videoId: item.id,
       ref: ref,
       video: item,
@@ -1233,112 +1231,6 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       ),
     ),
   );
-  Widget _panel(
-    WatchInfo info,
-    List<VideoItem> related, {
-    required bool heavyContentReady,
-    String? currentPanel,
-  }) {
-    final activePanel = currentPanel ?? panel ?? _lastPanel ?? 'Comments';
-    return Column(
-      children: [
-        GestureDetector(
-          onVerticalDragEnd: (d) {
-            if ((d.primaryVelocity ?? 0) > 200) setState(() => panel = null);
-          },
-          behavior: HitTestBehavior.opaque,
-          child: Column(
-            children: [
-              const SizedBox(height: AppSpacing.sm),
-              Container(
-                width: AppSpacing.contentSheetHandleWidth,
-                height: AppSpacing.contentSheetHandleHeight,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).dividerColor,
-                  borderRadius: AppRadius.pillBorder,
-                ),
-              ),
-              ListTile(
-                title: Text(
-                  activePanel,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () => setState(() => panel = null),
-                      icon: const Icon(LucideIcons.x),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _panelBody(
-            activePanel,
-            info,
-            related,
-            heavyContentReady: heavyContentReady,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _panelBody(
-    String name,
-    WatchInfo info,
-    List<VideoItem> related, {
-    required bool heavyContentReady,
-    ScrollController? scrollController,
-  }) => switch (name) {
-    'Description' when heavyContentReady => ListView(
-      controller: scrollController,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      children: [
-        Text(info.title, style: Theme.of(context).textTheme.titleLarge),
-        Text(
-          [
-            info.views,
-            info.likes,
-            info.date,
-          ].where((s) => s.isNotEmpty).join(' · '),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        _LinkedDescription(
-          text: info.description,
-          onSeek: (position) => ref.read(playbackProvider)?.seek(position),
-        ),
-        for (final c in info.chapters)
-          ListTile(
-            title: Text(c.title),
-            subtitle: Text(
-              '${c.start.inMinutes}:${(c.start.inSeconds % 60).toString().padLeft(2, '0')}',
-            ),
-            onTap: () => ref.read(playbackProvider)?.seek(c.start),
-          ),
-        TextButton(
-          onPressed: () =>
-              launchUrl(Uri.parse('https://www.returnyoutubedislike.com/')),
-          child: const Text('Dislike data: Return YouTube Dislike'),
-        ),
-      ],
-    ),
-    'Queue' => const SizedBox.shrink(),
-    'Description' => const Center(child: CircularProgressIndicator()),
-    'Comments' when heavyContentReady =>
-      info.commentsToken == null
-          ? const Center(child: Text('Comments unavailable'))
-          : _Comments(
-              token: info.commentsToken!,
-              scrollController: scrollController,
-            ),
-    'Comments' => const Center(child: CircularProgressIndicator()),
-    _ => const SizedBox.shrink(),
-  };
 }
 
 class _LinkedDescription extends StatefulWidget {
@@ -1413,9 +1305,9 @@ class _LinkedDescriptionState extends State<_LinkedDescription> {
 }
 
 class _Comments extends ConsumerStatefulWidget {
-  const _Comments({required this.token, this.scrollController});
+  const _Comments({required this.token, required this.scrollController});
   final String token;
-  final ScrollController? scrollController;
+  final ScrollController scrollController;
   @override
   ConsumerState<_Comments> createState() => _CommentsState();
 }
@@ -1433,20 +1325,20 @@ class _CommentsState extends ConsumerState<_Comments> {
   @override
   void initState() {
     super.initState();
-    controller = widget.scrollController ?? ScrollController();
-    controller.addListener(() {
-      if (controller.hasClients && controller.position.extentAfter < 300) {
-        unawaited(_more());
-      }
-    });
+    controller = widget.scrollController;
+    controller.addListener(_onScroll);
     unawaited(_fetch(widget.token, replace: true));
+  }
+
+  void _onScroll() {
+    if (controller.hasClients && controller.position.extentAfter < 300) {
+      unawaited(_more());
+    }
   }
 
   @override
   void dispose() {
-    if (widget.scrollController == null) {
-      controller.dispose();
-    }
+    controller.removeListener(_onScroll);
     super.dispose();
   }
 
@@ -1543,6 +1435,19 @@ class _CommentsState extends ConsumerState<_Comments> {
         Row(
           key: const ValueKey('commentsSortRow'),
           children: [
+            if (current.count.isNotEmpty)
+              Expanded(
+                child: Text(
+                  current.count,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.meta.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
             for (final value in ['Top', 'Newest'])
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.xs),

@@ -16,7 +16,10 @@ import '../core/playback/preview_coordinator.dart';
 import '../core/orientation/orientation_policy.dart';
 import 'app_shell.dart';
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation: '/home',
   observers: [previewNavigatorObserver, appRouteObserver],
   routes: [

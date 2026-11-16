@@ -124,9 +124,10 @@ class MiniPlayerCloseButton extends StatelessWidget {
 // ─────────────────────────── main panel ──────────────────────────────────────
 
 class WatchPanel extends ConsumerStatefulWidget {
-  const WatchPanel({super.key, this.videoOverride});
+  const WatchPanel({super.key, this.videoOverride, this.navigatorContext});
   @visibleForTesting
   final Widget? videoOverride;
+  final BuildContext? Function()? navigatorContext;
   @override
   ConsumerState<WatchPanel> createState() => _WatchPanelState();
 }
@@ -155,9 +156,15 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   final GlobalKey _sharedVideoKey = GlobalKey(debugLabel: 'shared-watch-video');
 
+  void _onShellRouteChanged() {
+    _lastBounds = null;
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    shellRouteVisible.addListener(_onShellRouteChanged);
     _progress = ref.read(watchPanelProgressProvider);
     // Start at 1 (expanded) when opened
     animation = AnimationController(vsync: this, value: 1)
@@ -172,6 +179,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   @override
   void dispose() {
+    shellRouteVisible.removeListener(_onShellRouteChanged);
     _countdown?.cancel();
     animation.dispose();
     _snapCtrl.dispose();
@@ -438,11 +446,14 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                 : bounds.maxWidth * .55;
             final miniHeight = miniWidth / AppSpacing.thumbnailRatio;
             final safeTop = padding.top + AppSpacing.md;
-            final safeBottom =
-                padding.bottom +
-                AppSpacing.navHeight +
-                AppSpacing.sm +
-                AppSpacing.md;
+            final hasFloatingNav =
+                shellRouteVisible.value &&
+                MediaQuery.sizeOf(context).shortestSide <
+                    AppSpacing.navigationBreakpoint;
+            final shellNavInset = hasFloatingNav
+                ? AppSpacing.navHeight + AppSpacing.sm
+                : 0.0;
+            final safeBottom = padding.bottom + shellNavInset + AppSpacing.md;
             final left = AppSpacing.md;
             final right = bounds.maxWidth - miniWidth - AppSpacing.md;
             final top = safeTop;
@@ -475,6 +486,8 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                 : SharedPlayer(
                     key: _sharedVideoKey,
                     service: service,
+                    requestVideoId: id,
+                    thumbnailUrl: metadata?.thumbUrl ?? '',
                     topInsetAlreadyApplied: true,
                     videoOverride: widget.videoOverride,
                     onMinimize: () => _animate(0),
@@ -512,6 +525,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                   embedded: true,
                   deferHeavyContent: true,
                   onMinimize: () => _animate(0),
+                  navigatorContext: widget.navigatorContext,
                 ),
               ),
             );
@@ -604,6 +618,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                           padding.top + AppSpacing.md,
                                           bounds.maxHeight -
                                               padding.bottom -
+                                              shellNavInset -
                                               miniHeight -
                                               AppSpacing.md,
                                         ),

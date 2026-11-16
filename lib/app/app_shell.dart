@@ -66,16 +66,28 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
   }
 
   @override
-  void didPush() => _setHomeOrientationForCurrentBranch();
+  void didPush() {
+    shellRouteVisible.value = true;
+    _setHomeOrientationForCurrentBranch();
+  }
 
   @override
-  void didPopNext() => _setHomeOrientationForCurrentBranch();
+  void didPopNext() {
+    shellRouteVisible.value = true;
+    _setHomeOrientationForCurrentBranch();
+  }
 
   @override
-  void didPushNext() => unawaited(setHomeScreenOrientationEnabled(false));
+  void didPushNext() {
+    shellRouteVisible.value = false;
+    unawaited(setHomeScreenOrientationEnabled(false));
+  }
 
   @override
-  void didPop() => unawaited(setHomeScreenOrientationEnabled(false));
+  void didPop() {
+    shellRouteVisible.value = false;
+    unawaited(setHomeScreenOrientationEnabled(false));
+  }
 
   @override
   void dispose() {
@@ -314,14 +326,6 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
                 },
               ),
             ),
-
-          // ── Watch panel overlay (above everything) ───────────────────────────
-          const Positioned.fill(
-            child: Material(
-              type: MaterialType.transparency,
-              child: WatchPanel(),
-            ),
-          ),
         ],
       ),
     );

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -73,6 +74,8 @@ class SharedPlayer extends ConsumerStatefulWidget {
     this.compact = false,
     this.topInsetAlreadyApplied = false,
     this.videoOverride,
+    this.requestVideoId,
+    this.thumbnailUrl,
     this.chapters = const [],
     this.onChapters,
   });
@@ -84,6 +87,8 @@ class SharedPlayer extends ConsumerStatefulWidget {
   final bool topInsetAlreadyApplied;
   @visibleForTesting
   final Widget? videoOverride;
+  final String? requestVideoId;
+  final String? thumbnailUrl;
   final VoidCallback? onMinimize, onPrevious, onNext;
   final ValueChanged<double>? onPanelDragUpdate, onPanelDragEnd;
   @override
@@ -751,6 +756,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final notifier = ref.read(playerUiProvider.notifier);
     final service = widget.service;
     final state = service.state;
+    final requestVideoId = widget.requestVideoId ?? state.videoId;
+    final thumbnailUrl = widget.thumbnailUrl?.isNotEmpty == true
+        ? widget.thumbnailUrl!
+        : requestVideoId == null || requestVideoId.isEmpty
+        ? ''
+        : 'https://i.ytimg.com/vi/$requestVideoId/hqdefault.jpg';
+    final frameReady =
+        requestVideoId != null && state.frameReadyId == requestVideoId;
     final videoAspectRatio = videoAspectRatioFromController(service);
     final fillVerticalFullscreen =
         ui.isFullscreen && videoAspectRatio != null && videoAspectRatio < 1;
@@ -826,36 +839,59 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
               onVerticalDragEnd: compact || videoZoomed
                   ? null
                   : (d) => _endVertical(d, ui.isFullscreen),
-              child:
-                  widget.videoOverride ??
-                  InteractiveViewer(
-                    transformationController: _videoTransform,
-                    minScale: 1,
-                    maxScale: 3,
-                    panEnabled: !widget.short && !compact,
-                    scaleEnabled: !widget.short && !compact,
-                    child: Video(
-                      controller: service.controller,
-                      controls: NoVideoControls,
-                      fit: widget.short || fillVerticalFullscreen
-                          ? BoxFit.cover
-                          : BoxFit.contain,
-                      subtitleViewConfiguration: SubtitleViewConfiguration(
-                        visible: !ui.isFullscreen,
-                        style: AppTextStyles.body.copyWith(
-                          color: AppColors.shortsForeground,
-                          backgroundColor: AppColors.shortsScrim,
-                        ),
-                        textAlign: TextAlign.center,
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          0,
-                          AppSpacing.lg,
-                          AppSpacing.xl,
-                        ),
-                      ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const ColoredBox(color: AppColors.black),
+                  if (thumbnailUrl.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: thumbnailUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) =>
+                          const ColoredBox(color: AppColors.black),
+                      placeholder: (_, _) =>
+                          const ColoredBox(color: AppColors.black),
+                    ),
+                  IgnorePointer(
+                    ignoring: !frameReady,
+                    child: AnimatedOpacity(
+                      opacity: frameReady ? 1 : 0,
+                      duration: frameReady ? AppMotion.fast : Duration.zero,
+                      child:
+                          widget.videoOverride ??
+                          InteractiveViewer(
+                            transformationController: _videoTransform,
+                            minScale: 1,
+                            maxScale: 3,
+                            panEnabled: !widget.short && !compact,
+                            scaleEnabled: !widget.short && !compact,
+                            child: Video(
+                              controller: service.controller,
+                              controls: NoVideoControls,
+                              fit: widget.short || fillVerticalFullscreen
+                                  ? BoxFit.cover
+                                  : BoxFit.contain,
+                              subtitleViewConfiguration:
+                                  SubtitleViewConfiguration(
+                                    visible: !ui.isFullscreen,
+                                    style: AppTextStyles.body.copyWith(
+                                      color: AppColors.shortsForeground,
+                                      backgroundColor: AppColors.shortsScrim,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      AppSpacing.lg,
+                                      0,
+                                      AppSpacing.lg,
+                                      AppSpacing.xl,
+                                    ),
+                                  ),
+                            ),
+                          ),
                     ),
                   ),
+                ],
+              ),
             ),
           ),
           if (state.frozenFrame != null)
