@@ -76,15 +76,16 @@ void main() {
         final surface = tester.widget<Container>(
           find.byKey(const ValueKey('floatingNavSurface')),
         );
-        final indicator = tester.widget<Container>(
+        final indicator = tester.widget<AnimatedPositioned>(
           find.byKey(const ValueKey('floatingNavIndicator')),
         );
+        final indicatorDecoration = indicator.child as DecoratedBox;
         expect(
           (surface.decoration! as BoxDecoration).color,
           AppColors.shortsNavGlassFill,
         );
         expect(
-          (indicator.decoration! as BoxDecoration).color,
+          (indicatorDecoration.decoration as BoxDecoration).color,
           AppColors.primary,
         );
       }

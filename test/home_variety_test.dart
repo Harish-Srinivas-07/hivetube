@@ -51,6 +51,30 @@ void main() {
       isNot(homeSeenKey(settings, chip: 'Movies')),
     );
   });
+
+  test('Music and Gaming query templates stay in their selected category', () {
+    for (final category in ['Music', 'Gaming']) {
+      final queries = chooseHomeQueries(
+        chip: category,
+        hasHistory: false,
+        localRatio: 0.6,
+        shownLanguages: {'en'},
+        random: Random(7),
+      );
+
+      expect(queries, isNotEmpty, reason: category);
+      expect(
+        queries,
+        everyElement(
+          predicate<String>(
+            (query) => query.toLowerCase().contains(category.toLowerCase()),
+          ),
+        ),
+        reason: '$category filter must generate category-specific searches',
+      );
+    }
+  });
+
   test('detects the supported Unicode scripts', () {
     expect(scriptLanguage('தமிழ்'), 'ta');
     expect(scriptLanguage('हिन्दी'), 'hi');

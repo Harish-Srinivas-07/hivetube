@@ -11,6 +11,7 @@ import 'package:hivetube/features/home/home_screen.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/widgets/ui/app_controls.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _RecordingHome extends HomeController {
   _RecordingHome(this.initialData);
@@ -110,10 +111,17 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
     ),
   );
   await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  addTearDown(router.dispose);
+  addTearDown(container.dispose);
   return (container: container, router: router);
 }
 
 void main() {
+  setUpAll(() {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+
   testWidgets('video tap records interaction and opens the watch panel', (
     tester,
   ) async {
@@ -125,8 +133,6 @@ void main() {
     expect(home.calls, contains('interact'));
     expect(home.remembered, contains('video-0'));
     expect(mounted.container.read(watchPanelProvider), 'video-0');
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 
   testWidgets('load more fires once for repeated notifications at the end', (
@@ -141,8 +147,6 @@ void main() {
     await tester.pumpAndSettle();
     final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls.where((call) => call == 'loadMore').length, 1);
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 
   testWidgets('pull to refresh calls refresh', (tester) async {
@@ -151,8 +155,6 @@ void main() {
     await tester.pumpAndSettle();
     final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls, contains('refresh'));
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 
   testWidgets('chip tap selects it and updates the selected chip', (tester) async {
@@ -165,8 +167,6 @@ void main() {
       find.ancestor(of: find.text('Music').first, matching: find.byType(AppChip)),
     );
     expect(chip.selected, isTrue);
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 
   testWidgets('Shorts shelf tap selects items and navigates to Shorts', (
@@ -194,25 +194,21 @@ void main() {
   testWidgets('empty state has Retry and partial failures show one banner', (
     tester,
   ) async {
-    final empty = await _mount(tester, data: _data(videos: const []));
+    await _mount(tester, data: _data(videos: const []));
     expect(find.text('No videos found'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
-    empty.router.dispose();
-    empty.container.dispose();
 
-    final partial = await _mount(
+    await _mount(
       tester,
       data: _data(errors: const ['source-a', 'source-b']),
     );
     expect(find.text('Some sources could not load'), findsOneWidget);
-    partial.router.dispose();
-    partial.container.dispose();
   });
 
   testWidgets('avatar completion does not rebuild feed cards', (tester) async {
     final avatar = Completer<({String url, String channelId})>();
     final builds = <String, int>{};
-    final mounted = await _mount(
+    await _mount(
       tester,
       data: _data(),
       onCardBuilt: (id) => builds.update(
@@ -228,7 +224,5 @@ void main() {
     avatar.complete((url: '', channelId: 'channel-0'));
     await tester.pump();
     expect(builds, before);
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 }

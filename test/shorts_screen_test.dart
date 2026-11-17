@@ -75,7 +75,7 @@ void main() {
       );
       expect(
         find.descendant(of: sheet, matching: find.text('Copy link')),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.tap(find.byIcon(LucideIcons.x));
       await tester.pumpAndSettle();

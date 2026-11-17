@@ -22,6 +22,7 @@ import '../../core/yt/models.dart';
 import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/video_options_menu.dart';
+import '../../widgets/home_top_bar.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -418,58 +419,38 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     return compact.isEmpty ? '@local' : '@$compact';
   }
 
-  Widget _profileTopBar(ProfileRow? profile) {
+  Widget _profileTopBar({required double topInset}) {
     final colors = Theme.of(context).colorScheme;
-    final name = profile?.name.trim().isNotEmpty == true
-        ? profile!.name.trim()
-        : 'HiveUser';
-    return Material(
-      color: colors.surface,
-      child: SizedBox(
-        height: AppSizes.appBarHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          child: Row(
-            children: [
-              Flexible(
-                child: Material(
-                  color: colors.surfaceContainerHighest,
-                  borderRadius: AppRadius.pillBorder,
-                  child: InkWell(
-                    borderRadius: AppRadius.pillBorder,
-                    onTap: () => _editProfile(profile),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: AppSpacing.sm,
-                      ),
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodyStrong.copyWith(
-                          color: colors.onSurface,
-                        ),
-                      ),
-                    ),
-                  ),
+    return GlassAppBar(
+      scrollController: _scrollController,
+      topInset: topInset,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Library',
+                style: AppTextStyles.pageTitle.copyWith(
+                  color: colors.onSurface,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const Spacer(),
-              AppIconButton(
-                icon: LucideIcons.search,
-                tooltip: 'Search',
-                tonal: false,
-                onPressed: () => context.push('/search'),
-              ),
-              AppIconButton(
-                icon: LucideIcons.settings2,
-                tooltip: 'Settings',
-                tonal: false,
-                onPressed: () => context.push('/settings'),
-              ),
-            ],
-          ),
+            ),
+            AppIconButton(
+              icon: LucideIcons.search,
+              tooltip: 'Search',
+              tonal: false,
+              onPressed: () => context.push('/search'),
+            ),
+            AppIconButton(
+              icon: LucideIcons.settings2,
+              tooltip: 'Settings',
+              tonal: false,
+              onPressed: () => context.push('/settings'),
+            ),
+          ],
         ),
       ),
     );
@@ -532,6 +513,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               AppIconButton(
                 icon: LucideIcons.ellipsisVertical,
                 tooltip: 'More options',
+                color: AppColors.white,
+                backgroundColor: AppColors.black,
                 tonal: false,
                 onPressed: () => showVideoOptionsMenu(
                   context,
@@ -610,7 +593,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final historyAsync = ref.watch(historyStreamProvider);
     final playlistsAsync = ref.watch(playlistsStreamProvider);
     final likedVideosAsync = ref.watch(likedVideosStreamProvider);
-    final profile = profileAsync.asData?.value;
     final playlists = playlistsAsync.asData?.value ?? const <PlaylistRow>[];
     final userPlaylists = playlists
         .where((playlist) => playlist.remoteId != 'watch_later')
@@ -626,7 +608,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
     return Scaffold(
       body: SafeArea(
-        top: true,
+        top: false,
         bottom: false,
         child: Stack(
           children: [
@@ -643,7 +625,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: AppSizes.appBarHeight),
+                    SizedBox(
+                      height:
+                          AppSizes.appBarHeight +
+                          MediaQuery.viewPaddingOf(context).top,
+                    ),
                     profileAsync.when(
                       data: (value) {
                         final avatarPath = value?.avatarPath;
@@ -803,9 +789,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         return SizedBox(
                           key: const ValueKey('historyShelf'),
                           height:
-                              AppSizes.libraryHistoryCardWidth +
-                              AppSpacing.xxl +
-                              AppSpacing.sm,
+                              AppSizes.libraryHistoryCardWidth /
+                                  AppSpacing.thumbnailRatio +
+                              AppSizes.listRowHeight,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             padding: const EdgeInsets.symmetric(
@@ -831,7 +817,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxl),
+                    const SizedBox(height: AppSpacing.lg),
                     Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg,
@@ -850,7 +836,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           label: 'Recent',
                           selected: _libraryFilter == 'Recent',
                           leading: const Icon(
-                            LucideIcons.chevronDown,
+                            LucideIcons.history,
                             size: AppSizes.iconXs,
                           ),
                           onTap: () =>
@@ -859,12 +845,20 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         AppChip(
                           label: 'Downloaded',
                           selected: _libraryFilter == 'Downloaded',
+                          leading: const Icon(
+                            LucideIcons.download,
+                            size: AppSizes.iconXs,
+                          ),
                           onTap: () =>
                               setState(() => _libraryFilter = 'Downloaded'),
                         ),
                         AppChip(
                           label: 'Playlists',
                           selected: _libraryFilter == 'Playlists',
+                          leading: const Icon(
+                            LucideIcons.listVideo,
+                            size: AppSizes.iconXs,
+                          ),
                           onTap: () =>
                               setState(() => _libraryFilter = 'Playlists'),
                         ),
@@ -1015,7 +1009,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               top: AppSpacing.none,
               left: AppSpacing.none,
               right: AppSpacing.none,
-              child: _profileTopBar(profile),
+              child: _profileTopBar(
+                topInset: MediaQuery.viewPaddingOf(context).top,
+              ),
             ),
           ],
         ),
@@ -1079,29 +1075,44 @@ class _LibraryEntryRow extends StatelessWidget {
                           top: AppSpacing.xs,
                           right: AppSpacing.xs,
                         ),
-                        child: ThumbnailWithDuration(
-                          url: thumbnail,
-                          borderRadius: AppRadius.smBorder,
-                        ),
+                        child: thumbnail.trim().isEmpty
+                            ? DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceContainerHighest,
+                                  borderRadius: AppRadius.smBorder,
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    badgeIcon,
+                                    size: AppSizes.iconLg,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              )
+                            : ThumbnailWithDuration(
+                                url: thumbnail,
+                                borderRadius: AppRadius.smBorder,
+                              ),
                       ),
-                      Positioned(
-                        right: AppSpacing.xs,
-                        bottom: AppSpacing.xs,
-                        child: DecoratedBox(
-                          decoration: const BoxDecoration(
-                            color: AppColors.badgeBg,
-                            borderRadius: AppRadius.pillBorder,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.xs),
-                            child: Icon(
-                              badgeIcon,
-                              size: AppSizes.iconXs,
-                              color: AppColors.badgeFg,
+                      if (thumbnail.trim().isNotEmpty)
+                        Positioned(
+                          right: AppSpacing.xs,
+                          bottom: AppSpacing.xs,
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              color: AppColors.badgeBg,
+                              borderRadius: AppRadius.pillBorder,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpacing.xs),
+                              child: Icon(
+                                badgeIcon,
+                                size: AppSizes.iconXs,
+                                color: AppColors.badgeFg,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1135,6 +1146,8 @@ class _LibraryEntryRow extends StatelessWidget {
               AppIconButton(
                 icon: LucideIcons.ellipsisVertical,
                 tooltip: 'More options',
+                color: AppColors.white,
+                backgroundColor: AppColors.black,
                 tonal: false,
                 onPressed: onMore,
               ),

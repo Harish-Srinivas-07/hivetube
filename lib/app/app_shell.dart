@@ -61,7 +61,10 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
 
   void _setHomeOrientationForCurrentBranch() {
     unawaited(
-      setHomeScreenOrientationEnabled(navigationShell.currentIndex == 0),
+      setHomeScreenOrientationEnabled(
+        navigationShell.currentIndex == 0 &&
+            ref.read(watchPanelProvider) == null,
+      ),
     );
   }
 
@@ -99,6 +102,9 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final ref = this.ref;
+    ref.listen(watchPanelProvider, (_, _) {
+      _setHomeOrientationForCurrentBranch();
+    });
     final hasUnreadSubs = ref.watch(hasUnreadUploadsProvider).value ?? false;
     final screenSize = MediaQuery.sizeOf(context);
     final wide = screenSize.shortestSide >= AppSpacing.navigationBreakpoint;
@@ -121,7 +127,11 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
         ref.read(tabRefreshProvider.notifier).request(index);
         return;
       }
-      unawaited(setHomeScreenOrientationEnabled(index == 0));
+      unawaited(
+        setHomeScreenOrientationEnabled(
+          index == 0 && ref.read(watchPanelProvider) == null,
+        ),
+      );
       if (index == 1 && navigationShell.currentIndex != 1) {
         // Navigating TO Shorts: stop mini player
         ref.read(watchPanelProvider.notifier).close();
@@ -213,6 +223,7 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
                     ],
                   )
                 : SafeArea(
+                    top: false,
                     bottom: false,
                     child: Column(
                       children: [

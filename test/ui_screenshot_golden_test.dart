@@ -27,6 +27,7 @@ import 'package:hivetube/features/home/home_cache.dart';
 import 'package:hivetube/features/home/home_controller.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/main.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _NoPlayback extends PlaybackController {
   @override
@@ -130,6 +131,7 @@ class _FakeYtApi extends Fake implements YtApi {
 void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('plugins.flutter.io/path_provider'),
@@ -252,22 +254,29 @@ void main() {
                 appRouter.go(r.path);
                 await tester.pumpWidget(buildAuditApp());
                 await tester.pump(const Duration(milliseconds: 100));
+                await tester.pump(const Duration(milliseconds: 300));
 
                 // Capture image for screenshot documentation
                 try {
                   final ro = repaintKey.currentContext?.findRenderObject();
                   if (ro is RenderRepaintBoundary) {
-                    final image = await ro.toImage(pixelRatio: 1.0);
-                    final byteData = await image.toByteData(
-                      format: ui.ImageByteFormat.png,
-                    );
-                    if (byteData != null) {
-                      final filename =
-                          '${dev.name}_${th.name}_scale${scale}_${r.name}.png';
-                      File(
-                        '${outDir.path}/$filename',
-                      ).writeAsBytesSync(byteData.buffer.asUint8List());
-                    }
+                    await tester.runAsync(() async {
+                      final image = await ro.toImage(pixelRatio: 1.0);
+                      try {
+                        final byteData = await image.toByteData(
+                          format: ui.ImageByteFormat.png,
+                        );
+                        if (byteData != null) {
+                          final filename =
+                              '${dev.name}_${th.name}_scale${scale}_${r.name}.png';
+                          File(
+                            '${outDir.path}/$filename',
+                          ).writeAsBytesSync(byteData.buffer.asUint8List());
+                        }
+                      } finally {
+                        image.dispose();
+                      }
+                    });
                   }
                 } catch (_) {}
 

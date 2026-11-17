@@ -447,6 +447,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final viewport = MediaQuery.sizeOf(context);
     final width = viewport.width;
     final wide = !ui.isFullscreen && (width >= 900 || width > viewport.height);
+    final videoAspectRatio = videoAspectRatioFromController(service);
+    final inlineAspectRatio = videoAspectRatio != null && videoAspectRatio < 1
+        ? videoAspectRatio
+        : AppSpacing.thumbnailRatio;
     Widget player = widget.placeholderVideo
         ? const SizedBox.expand()
         : ColoredBox(
@@ -480,10 +484,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   ),
           );
     if (!ui.isFullscreen) {
-      player = AspectRatio(
-        aspectRatio: AppSpacing.thumbnailRatio,
-        child: player,
-      );
+      player = AspectRatio(aspectRatio: inlineAspectRatio, child: player);
     }
     final details = info == null
         ? Center(
@@ -559,7 +560,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 ? AppColors.shortsBackground
                 : Theme.of(context).scaffoldBackgroundColor,
             body: ui.isFullscreen
-                ? SizedBox.expand(child: player)
+                ? Center(
+                    child: AspectRatio(
+                      aspectRatio:
+                          videoAspectRatio ?? AppSpacing.thumbnailRatio,
+                      child: player,
+                    ),
+                  )
                 : SafeArea(
                     top: false,
                     child: Column(
@@ -665,11 +672,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     if (_contentSheetOpen) return;
     _contentSheetOpen = true;
     try {
+      final maxFraction = _watchVideoAreaFraction();
       await showAppSheet<void>(
         _routerContext,
         title: 'Description',
-        initialFraction: 0.6,
+        initialFraction: maxFraction,
+        minFraction: min(0.25, maxFraction),
+        maxFraction: maxFraction,
+        snapSizes: [maxFraction],
         onVideo: true,
+        useRootNavigator: false,
         builder: (context, scrollController) => heavyContentReady
             ? ListView(
                 controller: scrollController,
@@ -720,11 +732,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     if (_contentSheetOpen) return;
     _contentSheetOpen = true;
     try {
+      final maxFraction = _watchVideoAreaFraction();
       await showAppSheet<void>(
         _routerContext,
         title: 'Comments',
-        initialFraction: 0.6,
+        initialFraction: maxFraction,
+        minFraction: min(0.25, maxFraction),
+        maxFraction: maxFraction,
+        snapSizes: [maxFraction],
         onVideo: true,
+        useRootNavigator: false,
         builder: (context, scrollController) {
           if (!heavyContentReady) {
             return const Center(child: CircularProgressIndicator());
@@ -739,6 +756,31 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     } finally {
       _contentSheetOpen = false;
     }
+  }
+
+  double _watchVideoAreaFraction() {
+    final viewport = MediaQuery.sizeOf(context);
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    final videoAspectRatio = videoAspectRatioFromController(
+      ref.read(playbackProvider),
+    );
+    final aspectRatio = videoAspectRatio != null && videoAspectRatio < 1
+        ? videoAspectRatio
+        : AppSpacing.thumbnailRatio;
+    final wide = viewport.width >= 900 || viewport.width > viewport.height;
+    final videoWidth = wide ? viewport.width * 0.64 : viewport.width;
+    final videoBottom = viewPadding.top + videoWidth / aspectRatio;
+    final bottomInset = max(viewInsets.bottom, viewPadding.bottom);
+    final sheetLimit =
+        MediaQuery.orientationOf(context) == Orientation.landscape
+        ? AppSpacing.sheetMaxHeightFactor
+        : 1.0;
+    return min(
+      (viewport.height - bottomInset - videoBottom + AppSpacing.xl) /
+          viewport.height,
+      sheetLimit,
+    ).clamp(0.01, sheetLimit);
   }
 
   Widget _details(
@@ -1432,45 +1474,48 @@ class _CommentsState extends ConsumerState<_Comments> {
     }
     return Column(
       children: [
-        Row(
-          key: const ValueKey('commentsSortRow'),
-          children: [
-            if (current.count.isNotEmpty)
-              Expanded(
-                child: Text(
-                  current.count,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.meta.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Row(
+            key: const ValueKey('commentsSortRow'),
+            children: [
+              if (current.count.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    current.count,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.meta.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              for (final value in ['Top', 'Newest'])
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xs),
+                  child: AppChip(
+                    label: value,
+                    selected: selected == value,
+                    onTap: () {
+                      final token = current.sorts.entries
+                          .where(
+                            (entry) => value == 'Top'
+                                ? entry.key.toLowerCase().contains('top')
+                                : entry.key.toLowerCase().contains('new'),
+                          )
+                          .firstOrNull
+                          ?.value;
+                      if (token != null) {
+                        setState(() => selected = value);
+                        unawaited(_fetch(token, replace: true));
+                      }
+                    },
                   ),
                 ),
-              )
-            else
-              const Spacer(),
-            for (final value in ['Top', 'Newest'])
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                child: AppChip(
-                  label: value,
-                  selected: selected == value,
-                  onTap: () {
-                    final token = current.sorts.entries
-                        .where(
-                          (entry) => value == 'Top'
-                              ? entry.key.toLowerCase().contains('top')
-                              : entry.key.toLowerCase().contains('new'),
-                        )
-                        .firstOrNull
-                        ?.value;
-                    if (token != null) {
-                      setState(() => selected = value);
-                      unawaited(_fetch(token, replace: true));
-                    }
-                  },
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
         Expanded(
           child: ListView.builder(
@@ -1551,13 +1596,6 @@ class _CommentsState extends ConsumerState<_Comments> {
                 ],
               );
             },
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.all(AppSpacing.sm),
-          child: TextField(
-            enabled: false,
-            decoration: InputDecoration(hintText: "Sign-in isn't supported"),
           ),
         ),
       ],

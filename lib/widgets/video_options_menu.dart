@@ -9,6 +9,7 @@ import '../core/playback/session_queue.dart';
 import '../core/providers.dart';
 import '../core/yt/models.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
+import '../theme/app_spacing.dart';
 import 'sheets/app_sheet.dart';
 import 'ui/app_feedback.dart';
 
@@ -48,6 +49,8 @@ Future<void> showVideoOptionsMenu(
     showClose: false,
     floatingInset: floatingInset,
     extendToBottom: true,
+    sideMargin: floatingInset ? AppSpacing.xs : AppSpacing.sm,
+    bottomMargin: floatingInset ? AppSpacing.none : AppSpacing.sm,
     builder: (sheetContext, _) => ListView(
       shrinkWrap: true,
       padding: EdgeInsets.zero,

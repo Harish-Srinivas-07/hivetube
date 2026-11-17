@@ -144,6 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     return OrientationBuilder(
       builder: (context, orientation) {
         final landscape = orientation == Orientation.landscape;
+        final statusBarInset = MediaQuery.viewPaddingOf(context).top;
         return SafeArea(
           left: landscape,
           right: landscape,
@@ -164,15 +165,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                             child: home.when(
                               skipLoadingOnRefresh: false,
                               skipLoadingOnReload: false,
-                              loading: () => const Padding(
+                              loading: () => Padding(
                                 padding: EdgeInsets.only(
-                                  top: AppSizes.appBarHeight,
+                                  top: statusBarInset + AppSizes.appBarHeight,
                                 ),
                                 child: FeedSkeleton(),
                               ),
                               error: (_, _) => Padding(
-                                padding: const EdgeInsets.only(
-                                  top: AppSizes.appBarHeight,
+                                padding: EdgeInsets.only(
+                                  top: statusBarInset + AppSizes.appBarHeight,
                                 ),
                                 child: ErrorRetry(
                                   message: 'Unable to load Home',
@@ -203,12 +204,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                         top: AppSpacing.none,
                         left: AppSpacing.none,
                         right: AppSpacing.none,
-                        child: landscape
-                            ? SizedBox(
-                                height: AppSizes.buttonIconTouch,
-                                child: HomeTopBar(scrollController: controller),
-                              )
-                            : HomeTopBar(scrollController: controller),
+                        child: HomeTopBar(
+                          scrollController: controller,
+                          topInset: statusBarInset,
+                          barHeight: landscape
+                              ? AppSizes.buttonIconTouch
+                              : AppSizes.appBarHeight,
+                        ),
                       ),
                     ],
                   ),
@@ -231,12 +233,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
       SliverPersistentHeader(
         pinned: true,
         delegate: _LandscapeHomeHeaderDelegate(
-          extent: AppSizes.buttonIconTouch + AppSpacing.homeChipHeight,
+          extent:
+              MediaQuery.viewPaddingOf(context).top +
+              AppSizes.buttonIconTouch +
+              AppSpacing.homeChipHeight,
           child: ColoredBox(
             color: Theme.of(context).colorScheme.surface,
             child: Column(
               children: [
-                const SizedBox(height: AppSizes.buttonIconTouch),
+                SizedBox(
+                  height:
+                      MediaQuery.viewPaddingOf(context).top +
+                      AppSizes.buttonIconTouch,
+                ),
                 SizedBox(
                   height: AppSpacing.homeChipHeight,
                   child: _CompactChipRow(
@@ -254,7 +263,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
         ),
       )
     else ...[
-      const SliverToBoxAdapter(child: SizedBox(height: AppSizes.appBarHeight)),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height:
+              AppSizes.appBarHeight + MediaQuery.viewPaddingOf(context).top,
+        ),
+      ),
       SliverToBoxAdapter(
         child: _ChipRow(
           selected: chip,
@@ -704,111 +718,121 @@ class _Shorts extends ConsumerWidget {
   final ValueChanged<int> onTap;
   final double cardWidth;
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            const Icon(LucideIcons.clapperboard, size: AppSizes.icon),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              'Shorts',
-              style: AppTextStyles.homeShelfTitle.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          ],
-        ),
-      ),
-      SizedBox(
-        height:
-            cardWidth / AppSpacing.homeShortRatio +
-            AppSpacing.xxxl +
-            AppSpacing.xs,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-          itemBuilder: (context, index) => InkWell(
-            onTap: () => onTap(index),
-            child: SizedBox(
-              width: cardWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: AppRadius.mdBorder,
-                    child: AspectRatio(
-                      aspectRatio: AppSpacing.homeShortRatio,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            imageUrl: items[index].thumbUrl,
-                            fit: BoxFit.cover,
-                            memCacheWidth:
-                                (cardWidth *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round(),
-                            maxWidthDiskCache:
-                                (cardWidth *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round(),
-                            fadeInDuration: AppMotion.imageFade,
-                            placeholder: (_, _) => ColoredBox(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                            ),
-                          ),
-                          Positioned(
-                            right: AppSpacing.xs,
-                            top: AppSpacing.xs,
-                            child: IconButton(
-                              tooltip: 'More options',
-                              onPressed: () => showVideoOptionsMenu(
-                                context,
-                                videoId: items[index].id,
-                                onVideo: true,
-                              ),
-                              icon: const Icon(
-                                LucideIcons.ellipsisVertical,
-                                color: AppColors.shortsForeground,
-                              ),
-                            ),
-                          ),
-                        ],
+  Widget build(BuildContext context, WidgetRef ref) => LayoutBuilder(
+    builder: (context, _) {
+      final itemWidth = cardWidth;
+      final itemHeight =
+          itemWidth / AppSpacing.homeShortRatio + AppSizes.listRowHeight;
+
+      Widget shortCard(int index) => InkWell(
+        onTap: () => onTap(index),
+        child: SizedBox(
+          width: itemWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: AppRadius.mdBorder,
+                child: AspectRatio(
+                  aspectRatio: AppSpacing.homeShortRatio,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: items[index].thumbUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth:
+                            (itemWidth * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                        maxWidthDiskCache:
+                            (itemWidth * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                        fadeInDuration: AppMotion.imageFade,
+                        placeholder: (_, _) => ColoredBox(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    items[index].title ?? '',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.homeShortTitle.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  if ((items[index].viewsText ?? '').isNotEmpty)
-                    Text(
-                      items[index].viewsText!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Positioned(
+                        right: AppSpacing.xs,
+                        top: AppSpacing.xs,
+                        child: IconButton(
+                          tooltip: 'More options',
+                          onPressed: () => showVideoOptionsMenu(
+                            context,
+                            videoId: items[index].id,
+                            onVideo: true,
+                          ),
+                          icon: const Icon(
+                            LucideIcons.ellipsisVertical,
+                            color: AppColors.shortsForeground,
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                items[index].title ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.homeShortTitle.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              if ((items[index].viewsText ?? '').isNotEmpty)
+                Text(
+                  items[index].viewsText!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
           ),
         ),
-      ),
-      const SizedBox(height: AppSpacing.lg),
-    ],
+      );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                const Icon(LucideIcons.clapperboard, size: AppSizes.icon),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'Shorts',
+                  style: AppTextStyles.homeShelfTitle.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: itemHeight * 2 + AppSpacing.sm,
+            child: GridView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisExtent: itemWidth,
+                mainAxisSpacing: AppSpacing.sm,
+                crossAxisSpacing: AppSpacing.sm,
+              ),
+              itemCount: items.length,
+              itemBuilder: (_, index) => shortCard(index),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+      );
+    },
   );
 }

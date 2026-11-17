@@ -407,9 +407,10 @@ class LanguageProfileRegistry {
           final freshness = profile.freshnessWords.isEmpty
               ? ['latest', 'new']
               : profile.freshnessWords;
-          final topics = profile.topicTemplates.keys
-              .where((e) => e != 'All')
-              .toList();
+          final topics =
+              chip != 'All' && profile.topicTemplates.containsKey(chip)
+              ? [chip]
+              : profile.topicTemplates.keys.where((e) => e != 'All').toList();
           final currentSeason = profile.seasonalTerms
               .where((e) => e.contains(date ?? DateTime.now()))
               .toList();

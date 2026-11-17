@@ -7,6 +7,12 @@ import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/core/yt/models.dart';
 
+AppDb _memoryDb() {
+  final db = AppDb(NativeDatabase.memory());
+  addTearDown(db.close);
+  return db;
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +24,7 @@ void main() {
     late ContentFilter filter;
 
     setUp(() {
-      cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+      cache = ChannelLanguageCache(_memoryDb());
       filter = ContentFilter(channelCache: cache);
     });
 
@@ -184,7 +190,7 @@ void main() {
     late ContentFilter filter;
 
     setUp(() {
-      cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+      cache = ChannelLanguageCache(_memoryDb());
       filter = ContentFilter(channelCache: cache);
     });
 
@@ -235,7 +241,7 @@ void main() {
     late ContentFilter filter;
 
     setUp(() {
-      cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+      cache = ChannelLanguageCache(_memoryDb());
       filter = ContentFilter(channelCache: cache);
     });
 
@@ -314,7 +320,7 @@ void main() {
 
   group('Probe Cap & Failure Handling', () {
     test('Channel cache registers not_in_shown after 2 probe failures', () {
-      final cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+      final cache = ChannelLanguageCache(_memoryDb());
       expect(cache.getClassifiedLanguage('failed_ch'), isNull);
 
       cache.recordProbeFailure('failed_ch');
@@ -340,7 +346,7 @@ void main() {
   group('Guard Test: Raw Unfiltered Feeds Never Reach Home', () {
     test('Strict Home does not fill its quota with unknown languages', () {
       final filter = ContentFilter(
-        channelCache: ChannelLanguageCache(AppDb(NativeDatabase.memory())),
+        channelCache: ChannelLanguageCache(_memoryDb()),
       );
       const unknown = VideoItem(id: 'unknown', title: 'Qzv blarn');
 
@@ -370,7 +376,7 @@ void main() {
     });
 
     test('FilterVideos removes all non-shown items strictly', () {
-      final cache = ChannelLanguageCache(AppDb(NativeDatabase.memory()));
+      final cache = ChannelLanguageCache(_memoryDb());
       final filter = ContentFilter(channelCache: cache);
 
       final mixed = [

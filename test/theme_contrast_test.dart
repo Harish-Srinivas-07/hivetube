@@ -6,8 +6,13 @@ import 'package:hivetube/app/router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/theme/app_theme.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 void main() {
+  setUpAll(() {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+
   testWidgets('root screen titles contrast in light and dark themes', (
     tester,
   ) async {

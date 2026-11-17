@@ -1038,10 +1038,10 @@ class _ChannelTabSkeleton extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         for (var i = 0; i < 3; i++) ...[
-          const AspectRatio(
-            aspectRatio: AppSpacing.thumbnailRatio,
-            child: SkeletonBox(
-              height: double.infinity,
+          LayoutBuilder(
+            builder: (context, constraints) => SkeletonBox(
+              width: constraints.maxWidth,
+              height: constraints.maxWidth / AppSpacing.thumbnailRatio,
               borderRadius: AppRadius.md,
             ),
           ),

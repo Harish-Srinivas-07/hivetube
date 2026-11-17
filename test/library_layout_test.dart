@@ -8,6 +8,7 @@ import 'package:hivetube/features/library/library_screen.dart';
 import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/theme/app_sizes.dart';
 import 'package:hivetube/theme/app_spacing.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 const _rectKeys = [
   'libraryAvatar',
@@ -24,6 +25,10 @@ const _rectKeys = [
 ];
 
 void main() {
+  setUpAll(() {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+
   for (final brightness in [Brightness.light, Brightness.dark]) {
     testWidgets('Library spacing at 360 x 800 in $brightness theme', (
       tester,
@@ -68,6 +73,7 @@ void main() {
       for (var frame = 0; frame < 6; frame++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
+      await tester.pump(const Duration(milliseconds: 300));
 
       final rects = <String, Rect>{
         for (final key in _rectKeys)

@@ -146,6 +146,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   bool _panelActive = false;
   bool _skipHistory = false;
   bool _keepMini = false;
+  bool _shellRouteUpdateScheduled = false;
 
   String? _started;
   PlaybackService? _active;
@@ -158,7 +159,12 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   void _onShellRouteChanged() {
     _lastBounds = null;
-    if (mounted) setState(() {});
+    if (!mounted || _shellRouteUpdateScheduled) return;
+    _shellRouteUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _shellRouteUpdateScheduled = false;
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -437,10 +443,20 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
           builder: (context, bounds) {
             final padding = MediaQuery.paddingOf(context);
             final wide = bounds.maxWidth >= 900;
-            final fullWidth = wide ? bounds.maxWidth * .64 : bounds.maxWidth;
-            final fullHeight = ui.isFullscreen
+            final aspectRatio = videoAspectRatioFromController(service);
+            final portraitVideo = aspectRatio != null && aspectRatio < 1;
+            final maxPlayerWidth = wide
+                ? bounds.maxWidth * .64
+                : bounds.maxWidth;
+            final fullWidth = ui.isFullscreen && portraitVideo
+                ? min(maxPlayerWidth, bounds.maxHeight * aspectRatio)
+                : maxPlayerWidth;
+            final fullHeight = ui.isFullscreen && !portraitVideo
                 ? bounds.maxHeight
-                : fullWidth / AppSpacing.thumbnailRatio;
+                : fullWidth /
+                      (portraitVideo
+                          ? aspectRatio
+                          : AppSpacing.thumbnailRatio);
             final miniWidth = wide
                 ? AppSpacing.videoMaxWidth
                 : bounds.maxWidth * .55;
@@ -474,10 +490,12 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
               _hasInitialMiniPosition = true;
             }
 
-            final expandedTopLeft = Offset(
-              0,
-              ui.isFullscreen ? 0 : padding.top,
-            );
+            final expandedTopLeft = ui.isFullscreen
+                ? Offset(
+                    (bounds.maxWidth - fullWidth) / 2,
+                    (bounds.maxHeight - fullHeight) / 2,
+                  )
+                : Offset(0, padding.top);
             final sharedPlayer = service == null
                 ? const ColoredBox(
                     color: AppColors.shortsBackground,

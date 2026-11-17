@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/home/home_controller.dart';
 import 'package:hivetube/features/home/home_screen.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _Home extends HomeController {
   @override
@@ -22,6 +23,10 @@ class _Home extends HomeController {
 }
 
 void main() {
+  setUpAll(() {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+
   testWidgets('avatar completion does not rebuild feed cards', (tester) async {
     final avatar = Completer<({String url, String channelId})>();
     final builds = <String, int>{};
@@ -50,5 +55,6 @@ void main() {
     avatar.complete((url: '', channelId: 'UC0'));
     await tester.pump();
     expect(builds, before);
+    await tester.pump(const Duration(milliseconds: 300));
   });
 }

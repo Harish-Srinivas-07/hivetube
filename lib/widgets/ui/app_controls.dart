@@ -57,7 +57,10 @@ class AppChip extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (leading != null) ...[
-                  leading!,
+                  IconTheme.merge(
+                    data: IconThemeData(color: fgColor),
+                    child: leading!,
+                  ),
                   if (label.isNotEmpty) const SizedBox(width: AppSpacing.xs),
                 ],
                 if (label.isNotEmpty)
@@ -467,6 +470,7 @@ class AppIconButton extends StatelessWidget {
     this.tooltip,
     this.size = AppSizes.icon,
     this.color,
+    this.backgroundColor,
     this.tonal = true,
   });
 
@@ -475,13 +479,16 @@ class AppIconButton extends StatelessWidget {
   final String? tooltip;
   final double size;
   final Color? color;
+  final Color? backgroundColor;
   final bool tonal;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final effectiveColor = color ?? cs.onSurface;
-    final bgColor = tonal ? cs.surfaceContainerHighest : AppColors.transparent;
+    final bgColor =
+        backgroundColor ??
+        (tonal ? cs.surfaceContainerHighest : AppColors.transparent);
 
     return SizedBox.square(
       dimension: AppSizes.buttonIconTouch,

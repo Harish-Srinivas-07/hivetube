@@ -12,9 +12,17 @@ import 'hive_logo.dart';
 
 /// Shared scroll-reactive glass layer used by the main tab app bars.
 class GlassAppBar extends StatelessWidget {
-  const GlassAppBar({super.key, this.scrollController, required this.child});
+  const GlassAppBar({
+    super.key,
+    this.scrollController,
+    this.topInset = 0,
+    this.barHeight = AppSizes.appBarHeight,
+    required this.child,
+  });
 
   final ScrollController? scrollController;
+  final double topInset;
+  final double barHeight;
   final Widget child;
 
   @override
@@ -28,13 +36,16 @@ class GlassAppBar extends StatelessWidget {
       statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
       statusBarBrightness: dark ? Brightness.dark : Brightness.light,
     );
-    final contents = SizedBox(height: AppSizes.appBarHeight, child: child);
+    final contents = Padding(
+      padding: EdgeInsets.only(top: topInset),
+      child: SizedBox(height: barHeight, child: child),
+    );
     final controller = scrollController;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: SizedBox(
-        height: AppSizes.appBarHeight,
+        height: topInset + barHeight,
         child: controller == null
             ? contents
             : AnimatedBuilder(
@@ -74,14 +85,23 @@ class GlassAppBar extends StatelessWidget {
 }
 
 class HomeTopBar extends StatelessWidget {
-  const HomeTopBar({super.key, this.scrollController});
+  const HomeTopBar({
+    super.key,
+    this.scrollController,
+    this.topInset = 0,
+    this.barHeight = AppSizes.appBarHeight,
+  });
 
   final ScrollController? scrollController;
+  final double topInset;
+  final double barHeight;
 
   @override
   Widget build(BuildContext context) {
     return GlassAppBar(
       scrollController: scrollController,
+      topInset: topInset,
+      barHeight: barHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         child: Row(

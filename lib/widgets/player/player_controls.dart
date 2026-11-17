@@ -30,13 +30,17 @@ import 'player_settings_menu.dart';
 
 double? videoAspectRatioFromController(PlaybackService? service) {
   if (service == null) return null;
-  final videoSize = service.controller.player.state;
-  final width = videoSize.width;
-  final height = videoSize.height;
-  if (width == null || height == null || width <= 0 || height <= 0) {
+  try {
+    final videoSize = service.controller.player.state;
+    final width = videoSize.width;
+    final height = videoSize.height;
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return null;
+    }
+    return width / height;
+  } catch (_) {
     return null;
   }
-  return width / height;
 }
 
 Future<void> setPlayerFullscreenOrientation(
@@ -404,6 +408,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     double size = AppSizes.iconMd,
     double diameter = AppSizes.buttonIconTouch,
     bool dimmed = false,
+    bool showBackground = true,
   }) => SizedBox(
     width: diameter,
     height: diameter,
@@ -411,7 +416,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       tooltip: tooltip,
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: AppColors.playerControlGlass,
+        backgroundColor: showBackground
+            ? AppColors.playerControlGlass
+            : AppColors.transparent,
         shape: const CircleBorder(),
         padding: EdgeInsets.zero,
       ),
@@ -424,16 +431,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       ),
     ),
   );
-
-  Future<void> _copyVideoLink() async {
-    final id = widget.service.state.videoId;
-    if (id == null) return;
-    await Clipboard.setData(ClipboardData(text: 'https://youtu.be/$id'));
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Video link copied')));
-  }
 
   Widget _fullscreenOverlay({
     required BuildContext context,
@@ -557,11 +554,12 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                             ),
                           ),
                         if (!compactFullscreen && state.captions.isNotEmpty)
-                          const SizedBox(width: AppSpacing.md),
+                          const SizedBox(width: AppSpacing.lg),
                         if (state.captions.isNotEmpty)
                           _roundControl(
                             icon: Icons.closed_caption_rounded,
                             tooltip: 'Captions',
+                            showBackground: false,
                             onPressed: () => unawaited(
                               service.setCaption(
                                 state.selectedCaption == null ? 0 : null,
@@ -569,20 +567,13 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                             ),
                           ),
                         if (state.captions.isNotEmpty || !compactFullscreen)
-                          const SizedBox(width: AppSpacing.md),
+                          const SizedBox(width: AppSpacing.lg),
                         _roundControl(
                           icon: Icons.settings_rounded,
                           tooltip: 'Settings',
+                          showBackground: false,
                           onPressed: _settings,
                         ),
-                        if (state.videoId != null)
-                          const SizedBox(width: AppSpacing.md),
-                        if (state.videoId != null)
-                          _roundControl(
-                            icon: Icons.ios_share_rounded,
-                            tooltip: 'Share',
-                            onPressed: () => unawaited(_copyVideoLink()),
-                          ),
                       ],
                     ),
                   ),
@@ -1055,7 +1046,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                           ),
                                         ),
                                         if (state.captions.isNotEmpty) ...[
-                                          const SizedBox(width: AppSpacing.sm),
+                                          const SizedBox(width: AppSpacing.lg),
                                           InkWell(
                                             onTap: () => unawaited(
                                               service.setCaption(
@@ -1121,6 +1112,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                               ),
                                             ),
                                           ),
+                                          const SizedBox(width: AppSpacing.lg),
                                         ],
                                         IconButton(
                                           icon: const Icon(

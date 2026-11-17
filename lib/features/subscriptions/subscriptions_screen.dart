@@ -163,8 +163,12 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: AppSizes.appBarHeight),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height:
+                        AppSizes.appBarHeight +
+                        MediaQuery.viewPaddingOf(context).top,
+                  ),
                 ),
                 if (subscriptionStatus.loading)
                   const SliverToBoxAdapter(child: ChannelStripSkeleton())
@@ -242,6 +246,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             right: AppSpacing.none,
             child: GlassAppBar(
               scrollController: _scrollController,
+              topInset: MediaQuery.viewPaddingOf(context).top,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 child: Row(

@@ -37,7 +37,10 @@ void main() {
       expect(find.byKey(const ValueKey('notificationBadge')), findsNothing);
       expect(find.byTooltip('Search'), findsOneWidget);
       if (wide) {
-        for (final label in ['Home', 'Shorts', 'Subscriptions', 'Library']) {
+        final labels = size.width > size.height
+            ? ['Home', 'Shorts', 'Subs', 'Library']
+            : ['Home', 'Shorts', 'Subscriptions', 'Library'];
+        for (final label in labels) {
           expect(
             find.descendant(of: nav, matching: find.text(label)),
             findsOneWidget,

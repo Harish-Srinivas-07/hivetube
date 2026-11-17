@@ -235,8 +235,11 @@ Future<T?> showAppSheet<T>(
   bool enableDrag = true,
   bool floatingInset = false,
   bool extendToBottom = false,
+  double sideMargin = AppSpacing.none,
+  double bottomMargin = AppSpacing.none,
   Color? backgroundColor,
   bool onVideo = false,
+  bool useRootNavigator = true,
 }) {
   final inheritedTheme = onVideo ? AppTheme.dark : Theme.of(context);
   final cs = inheritedTheme.colorScheme;
@@ -257,7 +260,7 @@ Future<T?> showAppSheet<T>(
 
   return showModalBottomSheet<T>(
     context: context,
-    useRootNavigator: true,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     useSafeArea: false,
     isDismissible: floatingInset || isDismissible,
@@ -275,6 +278,10 @@ Future<T?> showAppSheet<T>(
       final borderRadius = floatingInset
           ? AppRadius.xlBorder
           : AppRadius.sheetTopBorder;
+      final effectiveSideMargin = math.max(
+        sideMargin,
+        floatingInset ? AppSpacing.xs : AppSpacing.none,
+      );
 
       Widget content;
 
@@ -355,20 +362,21 @@ Future<T?> showAppSheet<T>(
         data: inheritedTheme,
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: extendToBottom && !floatingInset ? 0 : bottomInset,
+            bottom:
+                (extendToBottom && !floatingInset ? 0 : bottomInset) +
+                bottomMargin,
           ),
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
               padding: EdgeInsets.only(
-                left: floatingInset ? AppSpacing.xs : AppSpacing.none,
-                right: floatingInset ? AppSpacing.xs : AppSpacing.none,
+                left: effectiveSideMargin,
+                right: effectiveSideMargin,
                 bottom: floatingInset ? AppSpacing.xs : AppSpacing.none,
               ),
               child: SizedBox(
                 width: math.min(
-                  mq.size.width -
-                      (floatingInset ? AppSpacing.xs * 2 : AppSpacing.none),
+                  mq.size.width - effectiveSideMargin * 2,
                   AppSizes.sheetMaxWidth,
                 ),
                 child: content,

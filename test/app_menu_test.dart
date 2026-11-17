@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
+import 'package:hivetube/core/streams/adaptive_quality_policy.dart';
 import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/widgets/player/player_settings_menu.dart';
 import 'package:hivetube/widgets/video_options_menu.dart';
@@ -8,6 +9,8 @@ import 'package:hivetube/widgets/video_options_menu.dart';
 class _Playback extends Fake implements PlaybackService {
   final snapshot = PlaybackSnapshot()..heights = [1080, 720];
   final listeners = <VoidCallback>[];
+  @override
+  VideoQualityPreference get qualityPreference => VideoQualityPreference.auto;
   @override
   PlaybackSnapshot get state => snapshot;
   @override
@@ -95,7 +98,7 @@ void main() {
     await tester.tap(find.text('Open menu'));
     await tester.pumpAndSettle();
     expect(find.text('Share'), findsOneWidget);
-    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.text('Copy link'), findsNothing);
     await tester.tap(find.text('Add to queue'));
     await tester.pumpAndSettle();
     expect(queue, 1);

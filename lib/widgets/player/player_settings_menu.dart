@@ -47,6 +47,9 @@ Future<void> showPlayerSettingsMenu(
   fit: true,
   onVideo: true,
   floatingInset: floating,
+  extendToBottom: true,
+  sideMargin: floating ? AppSpacing.xs : AppSpacing.sm,
+  bottomMargin: floating ? AppSpacing.none : AppSpacing.sm,
   showClose: false,
   builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );

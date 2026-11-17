@@ -211,7 +211,7 @@ Overlay layout over video (scrim black@40% flat, fades 200ms):
 - Bottom: time "0:12 / 3:45" 12 white left | spacer | fullscreen icon 24. Seek bar full width directly above, edge to edge.
 Behavior: single tap toggles overlay. Auto-hide 3s after last interaction when playing. Double-tap left/right third = seek -10/+10 with expanding ripple + "10 seconds" label, 400ms. Long-press hold = 2x speed (indicator top-center "2x"). Swipe down on inline player = minimize to mini player (follows finger, snap threshold 25% or velocity).
 Fullscreen controls:
-- Top: title and channel, Autoplay, captions when available, Settings, and Share.
+- Top: title and channel, Autoplay, captions when available, and Settings.
 - Center: Previous, Play/Pause/Replay, Next; unavailable Previous/Next are dimmed.
 - Bottom: seek bar, time chip, fullscreen exit, and More videos / Play next when Next exists.
 - Keep the flat scrim, double-tap seek, long-press 2x, brightness/volume drag, lock, system-back exit, and swipe-down exit.

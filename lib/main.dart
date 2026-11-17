@@ -199,11 +199,26 @@ class _RootPlayerOverlay extends ConsumerWidget {
         children: [
           PreviewScrollListener(child: child ?? const SizedBox.shrink()),
           Positioned.fill(
-            child: Material(
-              type: MaterialType.transparency,
-              child: WatchPanel(
-                navigatorContext: () =>
-                    rootNavigatorKey.currentState?.overlay?.context,
+            child: IgnorePointer(
+              ignoring: !panelOpen,
+              child: Overlay(
+                initialEntries: [
+                  OverlayEntry(
+                    builder: (context) => Navigator(
+                      onGenerateRoute: (_) => PageRouteBuilder<void>(
+                        opaque: false,
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                        pageBuilder: (context, _, _) => Material(
+                          type: MaterialType.transparency,
+                          child: WatchPanel(
+                            navigatorContext: () => context,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
