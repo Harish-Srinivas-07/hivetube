@@ -22,11 +22,16 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 1));
+    });
 
     const screens = <({String route, String title, bool searchField})>[
       (route: '/home', title: 'HiveTube', searchField: false),
       (route: '/subscriptions', title: 'Subscriptions', searchField: false),
-      (route: '/library', title: 'You', searchField: false),
+      (route: '/library', title: 'Library', searchField: false),
       (route: '/search', title: 'Search', searchField: true),
       (route: '/settings', title: 'Settings', searchField: false),
       (route: '/history', title: 'History', searchField: false),
@@ -36,7 +41,32 @@ void main() {
       appRouter.go('/home');
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [dbProvider.overrideWithValue(db)],
+          overrides: [
+            dbProvider.overrideWithValue(db),
+            subscriptionsStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            feedItemsStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            profileStreamProvider.overrideWith((ref) => Stream.value(null)),
+            historyStreamProvider.overrideWith((ref) => Stream.value(const [])),
+            playlistsStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            playlistItemsStreamProvider.overrideWith(
+              (ref, playlistId) => Stream.value(const []),
+            ),
+            likedVideosStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            savedRemoteStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            recentSearchesStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+          ],
           child: MaterialApp.router(theme: theme, routerConfig: appRouter),
         ),
       );
@@ -45,6 +75,11 @@ void main() {
         appRouter.go(screen.route);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          find.text(screen.title),
+          findsWidgets,
+          reason: '${screen.route} should render its specified title',
+        );
         final background = _screenBackground(tester);
         final foreground = screen.searchField
             ? _searchTextColor(tester)
@@ -58,9 +93,6 @@ void main() {
         );
       }
     }
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 500));
   });
 }
 

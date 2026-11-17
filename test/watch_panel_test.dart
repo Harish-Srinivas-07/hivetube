@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
@@ -13,6 +14,7 @@ import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/watch_info.dart';
 import 'package:hivetube/core/yt/yt_comments.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
+import 'package:hivetube/features/channel/channel_screen.dart';
 import 'package:hivetube/features/watch/mini_player_inset.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
@@ -211,6 +213,85 @@ Widget _buildTestApp({
 }
 
 void main() {
+  testWidgets('watch channel tap pushes a visible channel route', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final router = GoRouter(
+      navigatorKey: navigatorKey,
+      initialLocation: '/home',
+      routes: [
+        GoRoute(path: '/home', builder: (_, _) => const Scaffold()),
+        GoRoute(
+          path: '/channel/:id',
+          builder: (_, state) =>
+              ChannelScreen(channelId: state.pathParameters['id']!),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    var minimized = false;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          playbackProvider.overrideWith(
+            () => _MockPlaybackController(_MockPlaybackService()),
+          ),
+          playerUiProvider.overrideWith(_FakeUi.new),
+          watchInfoProvider('vid1').overrideWith(
+            (ref) async => const WatchInfo(
+              id: 'vid1',
+              title: 'Video',
+              channelName: 'Test channel',
+              channelId: 'UCtest',
+              avatar: '',
+              subscribers: '',
+              description: '',
+              likes: '',
+              views: '',
+              date: '',
+              handle: '',
+              commentsToken: null,
+              related: VideoPage([], null),
+              chapters: [],
+              chips: {},
+            ),
+          ),
+          dislikeCountProvider('vid1').overrideWith((ref) async => 0),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (context, child) => StatefulBuilder(
+            builder: (context, setState) => Stack(
+              children: [
+                child!,
+                if (!minimized)
+                  WatchScreen(
+                    id: 'vid1',
+                    embedded: true,
+                    placeholderVideo: true,
+                    navigatorContext: () => navigatorKey.currentContext,
+                    onMinimize: () => setState(() => minimized = true),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Test channel').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(minimized, isTrue);
+    expect(find.byType(ChannelScreen), findsOneWidget);
+    expect(find.byType(WatchScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'expanded player pause does not resume during WatchPanel rebuild',
     (tester) async {

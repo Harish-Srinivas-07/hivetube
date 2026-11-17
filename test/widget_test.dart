@@ -53,7 +53,7 @@ void main() {
         expect(bar.bottom, closeTo(size.height - AppSpacing.sm, 0.1));
         expect(find.byTooltip('Home'), findsOneWidget);
         expect(find.byTooltip('Shorts'), findsOneWidget);
-        expect(find.byTooltip('Subscriptions'), findsOneWidget);
+        expect(find.byTooltip('Subs'), findsOneWidget);
         expect(find.byTooltip('Library'), findsOneWidget);
       }
       expect(find.text('Create'), findsNothing);

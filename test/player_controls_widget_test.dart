@@ -182,8 +182,8 @@ void main() {
     );
     final captions = tester.getRect(find.byTooltip('Captions'));
     final settings = tester.getRect(find.byTooltip('Settings'));
-    expect(captions.left - tester.getRect(autoplay.first).right, AppSpacing.md);
-    expect(settings.left - captions.right, AppSpacing.md);
+    expect(captions.left - tester.getRect(autoplay.first).right, AppSpacing.lg);
+    expect(settings.left - captions.right, AppSpacing.lg);
   });
 
   testWidgets('overlay hides after playing and returns on tap', (tester) async {

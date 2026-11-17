@@ -80,6 +80,11 @@ class WatchScreen extends ConsumerStatefulWidget {
 class _WatchScreenState extends ConsumerState<WatchScreen> {
   BuildContext get _routerContext => widget.navigatorContext?.call() ?? context;
 
+  void _openChannel(String channelId) {
+    widget.onMinimize?.call();
+    _routerContext.push('/channel/${Uri.encodeComponent(channelId)}');
+  }
+
   late String id;
   String? started;
   final Set<String> _metadataWritten = {};
@@ -750,7 +755,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           if (token == null) {
             return const Center(child: Text('Comments unavailable'));
           }
-          return _Comments(token: token, scrollController: scrollController!);
+          return WatchComments(
+            token: token,
+            scrollController: scrollController!,
+          );
         },
       );
     } finally {
@@ -856,8 +864,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   InkWell(
                     borderRadius: AppRadius.pillBorder,
                     onTap: info.channelId.isNotEmpty
-                        ? () =>
-                              _routerContext.push('/channel/${info.channelId}')
+                        ? () => _openChannel(info.channelId)
                         : null,
                     child: ChannelAvatar(
                       name: info.channelName,
@@ -869,9 +876,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   Expanded(
                     child: InkWell(
                       onTap: info.channelId.isNotEmpty
-                          ? () => _routerContext.push(
-                              '/channel/${info.channelId}',
-                            )
+                          ? () => _openChannel(info.channelId)
                           : null,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1346,15 +1351,19 @@ class _LinkedDescriptionState extends State<_LinkedDescription> {
   }
 }
 
-class _Comments extends ConsumerStatefulWidget {
-  const _Comments({required this.token, required this.scrollController});
+class WatchComments extends ConsumerStatefulWidget {
+  const WatchComments({
+    super.key,
+    required this.token,
+    required this.scrollController,
+  });
   final String token;
   final ScrollController scrollController;
   @override
-  ConsumerState<_Comments> createState() => _CommentsState();
+  ConsumerState<WatchComments> createState() => _CommentsState();
 }
 
-class _CommentsState extends ConsumerState<_Comments> {
+class _CommentsState extends ConsumerState<WatchComments> {
   CommentPage? page;
   final items = <WatchComment>[];
   final replies = <String, List<WatchComment>>{};
@@ -1471,6 +1480,9 @@ class _CommentsState extends ConsumerState<_Comments> {
               )
             : const CircularProgressIndicator(),
       );
+    }
+    if (items.isEmpty && !loading) {
+      return const Center(child: Text('No comments yet'));
     }
     return Column(
       children: [

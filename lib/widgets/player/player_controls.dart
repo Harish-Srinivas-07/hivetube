@@ -143,11 +143,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
 
   void _logVideoRatio(PlaybackService service, bool fullscreen) {
     final videoId = service.state.videoId;
+    if (videoId == null) {
+      _lastLoggedVideoSize = null;
+      return;
+    }
     final videoSize = service.controller.player.state;
     final width = videoSize.width;
     final height = videoSize.height;
-    if (videoId == null ||
-        width == null ||
+    if (width == null ||
         height == null ||
         width <= 0 ||
         height <= 0) {

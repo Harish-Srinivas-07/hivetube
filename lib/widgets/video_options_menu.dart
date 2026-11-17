@@ -9,7 +9,6 @@ import '../core/playback/session_queue.dart';
 import '../core/providers.dart';
 import '../core/yt/models.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
-import '../theme/app_spacing.dart';
 import 'sheets/app_sheet.dart';
 import 'ui/app_feedback.dart';
 
@@ -20,7 +19,6 @@ Future<void> showVideoOptionsMenu(
   VoidCallback? onPlayNext,
   VoidCallback? onAddToQueue,
   bool onVideo = true,
-  bool floatingInset = false,
   WidgetRef? ref,
   MediaCompanion? media,
   VideoItem? video,
@@ -42,15 +40,9 @@ Future<void> showVideoOptionsMenu(
               AppSnackbar.show(context, 'Added to queue');
             }
           : null);
-  final action = await showAppSheet<String>(
+  final action = await showAppMenuSheet<String>(
     context,
-    fit: true,
     onVideo: onVideo,
-    showClose: false,
-    floatingInset: floatingInset,
-    extendToBottom: true,
-    sideMargin: floatingInset ? AppSpacing.xs : AppSpacing.sm,
-    bottomMargin: floatingInset ? AppSpacing.none : AppSpacing.sm,
     builder: (sheetContext, _) => ListView(
       shrinkWrap: true,
       padding: EdgeInsets.zero,

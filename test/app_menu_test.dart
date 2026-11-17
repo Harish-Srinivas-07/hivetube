@@ -9,8 +9,17 @@ import 'package:hivetube/widgets/video_options_menu.dart';
 class _Playback extends Fake implements PlaybackService {
   final snapshot = PlaybackSnapshot()..heights = [1080, 720];
   final listeners = <VoidCallback>[];
+  VideoQualityPreference preference = VideoQualityPreference.auto;
   @override
-  VideoQualityPreference get qualityPreference => VideoQualityPreference.auto;
+  VideoQualityPreference get qualityPreference => preference;
+  @override
+  Future<void> setQualityPreference(VideoQualityPreference value) async {
+    preference = value;
+    for (final listener in [...listeners]) {
+      listener();
+    }
+  }
+
   @override
   PlaybackSnapshot get state => snapshot;
   @override
@@ -63,8 +72,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('720p'));
     await tester.pumpAndSettle();
-    expect(service.state.quality, 720);
-    await tester.tap(find.text('Quality'));
+    expect(service.qualityPreference, VideoQualityPreference.always720);
+    await tester.tap(find.text('Open settings'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Playback speed'));
     await tester.pumpAndSettle();

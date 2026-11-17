@@ -673,11 +673,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       if (shorts.isNotEmpty) slivers.add(_shortsShelfSliver(shorts));
       if (videos.isEmpty && shorts.isEmpty) {
         slivers.add(
-          const SliverFillRemaining(
+          SliverFillRemaining(
             hasScrollBody: false,
             child: EmptyState(
               icon: LucideIcons.video,
               title: 'This channel has no videos',
+              actionLabel: 'Retry',
+              onAction: _load,
             ),
           ),
         );
@@ -701,11 +703,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       }
       if (videos.isEmpty && !_loadingTabs.contains(tab)) {
         slivers.add(
-          const SliverFillRemaining(
+          SliverFillRemaining(
             hasScrollBody: false,
             child: EmptyState(
               icon: LucideIcons.video,
               title: 'This channel has no videos',
+              actionLabel: 'Retry',
+              onAction: () => _refreshTab(tab),
             ),
           ),
         );
@@ -728,9 +732,14 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     } else if (tab == 'Shorts') {
       if (shorts.isEmpty && !_loadingTabs.contains(tab)) {
         slivers.add(
-          const SliverFillRemaining(
+          SliverFillRemaining(
             hasScrollBody: false,
-            child: EmptyState(icon: LucideIcons.play, title: 'No Shorts'),
+            child: EmptyState(
+              icon: LucideIcons.play,
+              title: 'No Shorts',
+              actionLabel: 'Retry',
+              onAction: () => _refreshTab(tab),
+            ),
           ),
         );
       } else {

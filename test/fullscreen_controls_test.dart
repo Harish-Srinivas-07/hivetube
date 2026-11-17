@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
+import 'package:hivetube/core/streams/adaptive_quality_policy.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
 
 class _FakePlayerState extends Fake implements PlayerState {
@@ -29,6 +30,9 @@ class _FakePlayback extends Fake implements PlaybackService {
     ..status = PlayerStatus.playing
     ..playing = true;
   int toggleCount = 0;
+
+  @override
+  VideoQualityPreference get qualityPreference => VideoQualityPreference.auto;
 
   @override
   PlaybackSnapshot get state => snapshot;

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/theme/app_colors.dart';
 import 'package:hivetube/widgets/floating_nav.dart';
+import 'package:hivetube/widgets/glass_surface.dart';
 
 void main() {
   testWidgets('centers the pill and selects a tab by dragging', (tester) async {
@@ -73,20 +74,15 @@ void main() {
             ),
           ),
         );
-        final surface = tester.widget<Container>(
-          find.byKey(const ValueKey('floatingNavSurface')),
-        );
+        final surface = tester.widget<GlassSurface>(find.byType(GlassSurface));
         final indicator = tester.widget<AnimatedPositioned>(
           find.byKey(const ValueKey('floatingNavIndicator')),
         );
         final indicatorDecoration = indicator.child as DecoratedBox;
-        expect(
-          (surface.decoration! as BoxDecoration).color,
-          AppColors.shortsNavGlassFill,
-        );
+        expect(surface.fill, AppColors.navGlassFillDark);
         expect(
           (indicatorDecoration.decoration as BoxDecoration).color,
-          AppColors.primary,
+          AppColors.navSelectionFillDark,
         );
       }
     },

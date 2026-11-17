@@ -163,6 +163,10 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async => _service?.stop();
   @override
+  Future<void> onTaskRemoved() async {
+    if (_service?.state.playing != true) await stop();
+  }
+  @override
   Future<void> skipToNext() async => onNext?.call();
   @override
   Future<void> skipToPrevious() async => onPrevious?.call();

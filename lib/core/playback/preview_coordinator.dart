@@ -130,6 +130,7 @@ class PreviewCoordinator extends Notifier<String?> with WidgetsBindingObserver {
   }
 
   void removeCandidate(String id) {
+    if (!ref.mounted) return;
     final removed = _candidates.remove(id);
     if (removed == null) return;
     if (state == id) _setActive(null);
@@ -172,6 +173,10 @@ class PreviewCoordinator extends Notifier<String?> with WidgetsBindingObserver {
   }
 
   void _scheduleElection() {
+    if (_candidates.isEmpty) {
+      _electionTimer?.cancel();
+      return;
+    }
     if (_scrolling || !_appActive || !_playbackAllowed || _modalOpen) return;
     _electionTimer?.cancel();
     _electionTimer = Timer(AppMotion.previewElectionDebounce, _electWinner);
@@ -204,6 +209,7 @@ class PreviewCoordinator extends Notifier<String?> with WidgetsBindingObserver {
       if (_activeUpdateScheduled) return;
       _activeUpdateScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!ref.mounted) return;
         _activeUpdateScheduled = false;
         final pendingId = _pendingActiveId;
         _pendingActiveId = null;

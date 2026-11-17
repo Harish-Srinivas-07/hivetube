@@ -146,7 +146,7 @@ SelectedStreams selectStreams(
   }
   final video = byHeight.values.toList()
     ..sort((a, b) => resolutionOf(b, mode).compareTo(resolutionOf(a, mode)));
-  final itags = mode == PlaybackMode.audio ? [251, 250, 249] : [140];
+  final itags = mode == PlaybackMode.audio ? [140, 251, 250, 249] : [140];
   final audio =
       all.where((f) {
         final track = f.json['audioTrack'];

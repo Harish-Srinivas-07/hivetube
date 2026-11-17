@@ -52,7 +52,16 @@ void main() {
       3,
       4,
     ]);
-    expect(selectStreams(data, PlaybackMode.audio).audio?.itag, 250);
+    expect(selectStreams(data, PlaybackMode.audio).audio?.itag, 140);
+    final opusOnly = {
+      'streamingData': {
+        'adaptiveFormats': [
+          format(251, 'audio/webm'),
+          format(250, 'audio/webm'),
+        ],
+      },
+    };
+    expect(selectStreams(opusOnly, PlaybackMode.audio).audio?.itag, 251);
   });
   test('portrait shorts use the shorter side for the 1080p cap', () {
     final input = {

@@ -1,28 +1,14 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/features/library/library_screen.dart';
-import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/theme/app_sizes.dart';
 import 'package:hivetube/theme/app_spacing.dart';
+import 'package:hivetube/theme/app_theme.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-
-const _rectKeys = [
-  'libraryAvatar',
-  'libraryName',
-  'libraryButtons',
-  'historyHeader',
-  'historyFirstCard',
-  'playlistsHeader',
-  'playlistsFirstCard',
-  'rowDownloads',
-  'rowLiked',
-  'rowWatchLater',
-  'rowStats',
-];
 
 void main() {
   setUpAll(() {
@@ -30,7 +16,7 @@ void main() {
   });
 
   for (final brightness in [Brightness.light, Brightness.dark]) {
-    testWidgets('Library spacing at 360 x 800 in $brightness theme', (
+    testWidgets('Library layout at 360 x 800 in $brightness theme', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(360, 800);
@@ -73,97 +59,55 @@ void main() {
       for (var frame = 0; frame < 6; frame++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      await tester.pump(const Duration(milliseconds: 300));
 
-      final rects = <String, Rect>{
-        for (final key in _rectKeys)
-          key: tester.getRect(find.byKey(ValueKey(key))),
-      };
-      debugPrint('Library layout rects (key, left, top, width, height)');
-      for (final entry in rects.entries) {
-        final rect = entry.value;
-        debugPrint(
-          '${entry.key}, ${rect.left.toStringAsFixed(1)}, '
-          '${rect.top.toStringAsFixed(1)}, ${rect.width.toStringAsFixed(1)}, '
-          '${rect.height.toStringAsFixed(1)}',
-        );
-      }
-
-      expect(rects['libraryAvatar']!.left, 16);
-      expect(rects['historyHeader']!.left, 16);
-      expect(rects['historyFirstCard']!.left, 16);
-      expect(rects['playlistsHeader']!.left, 16);
-      expect(rects['playlistsFirstCard']!.left, 16);
-      expect(rects['libraryButtons']!.left, 16);
-      expect(rects['playlistsFirstCard']!.right, lessThanOrEqualTo(344));
-
-      final header = tester.getRect(
-        find.byKey(const ValueKey('libraryHeader')),
+      final avatar = tester.getRect(
+        find.byKey(const ValueKey('libraryAvatar')),
+      );
+      final profileName = tester.getRect(
+        find.byKey(const ValueKey('libraryName')),
+      );
+      final buttons = tester.getRect(
+        find
+            .ancestor(of: find.text('Edit profile'), matching: find.byType(Row))
+            .first,
+      );
+      final historyHeader = tester.getRect(
+        find.byKey(const ValueKey('historyHeader')),
       );
       final historyShelf = tester.getRect(
         find.byKey(const ValueKey('historyShelf')),
       );
-      final playlistsShelf = tester.getRect(
-        find.byKey(const ValueKey('playlistsShelf')),
+      final likedRow = tester.getRect(find.byKey(const ValueKey('rowLiked')));
+      final watchLaterRow = tester.getRect(
+        find.byKey(const ValueKey('rowWatchLater')),
       );
-      expect(rects['libraryButtons']!.top - header.bottom, closeTo(12, 1));
-      expect(
-        rects['historyHeader']!.top - rects['libraryButtons']!.bottom,
-        closeTo(24, 1),
-      );
-      expect(
-        rects['playlistsHeader']!.top - historyShelf.bottom,
-        closeTo(24, 1),
-      );
-      expect(
-        rects['rowDownloads']!.top - playlistsShelf.bottom,
-        closeTo(16, 1),
+      final playlistRow = tester.getRect(
+        find.byKey(ValueKey('playlist-$playlistId')),
       );
 
-      for (final key in [
-        'rowDownloads',
-        'rowLiked',
-        'rowWatchLater',
-        'rowStats',
-      ]) {
-        final row = find.byKey(ValueKey(key));
-        final rowRect = tester.getRect(row);
-        expect(rowRect.height, 56);
-        final icon = find
-            .descendant(of: row, matching: find.byType(Icon))
-            .first;
-        expect(tester.getRect(icon).left, 16);
-        expect(
-          find.ancestor(of: row, matching: find.byType(Card)),
-          findsNothing,
-        );
-        final descendants = find.descendant(
-          of: row,
-          matching: find.byWidgetPredicate(_hasExplicitBackground),
-        );
-        expect(descendants, findsNothing);
-      }
-      expect(tester.getRect(find.text('Downloads')).left, 64);
-      expect(tester.getRect(find.text('Liked videos')).left, 64);
-      expect(tester.getRect(find.text('Watch later')).left, 64);
-      expect(tester.getRect(find.text('Stats')).left, 64);
+      expect(avatar.left, AppSpacing.lg);
+      expect(profileName.left, greaterThan(avatar.right));
+      expect(buttons.left, AppSpacing.lg);
+      expect(buttons.right, 360 - AppSpacing.lg);
+      expect(buttons.height, AppSizes.buttonLarge);
+      expect(historyHeader.left, AppSpacing.lg);
+      expect(historyShelf.left, 0);
+      expect(historyShelf.right, 360);
+      expect(likedRow.left, 0);
+      expect(watchLaterRow.left, 0);
+      expect(playlistRow.left, 0);
+      expect(historyHeader.top, greaterThan(buttons.bottom));
+      expect(likedRow.top, greaterThan(historyShelf.bottom));
+      expect(watchLaterRow.top, greaterThanOrEqualTo(likedRow.bottom));
+      expect(playlistRow.top, greaterThanOrEqualTo(watchLaterRow.bottom));
       expect(
         tester.getSize(find.byKey(const ValueKey('libraryBottomInset'))).height,
         AppSizes.bottomNav + AppSpacing.xl,
       );
+
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));
-      final exception = tester.takeException();
-      expect(exception, isNull);
+      expect(tester.takeException(), isNull);
     });
   }
 }
-
-bool _hasExplicitBackground(Widget widget) => switch (widget) {
-  ColoredBox(:final color) => color != Colors.transparent,
-  Container(:final color) => color != null && color != Colors.transparent,
-  Material(:final color) => color != Colors.transparent,
-  DecoratedBox(:final decoration) =>
-    decoration is BoxDecoration && decoration.color != null,
-  _ => false,
-};

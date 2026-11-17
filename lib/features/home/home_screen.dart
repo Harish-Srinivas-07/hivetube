@@ -1,8 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
+
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../widgets/video_options_menu.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_text_styles.dart';
@@ -13,7 +17,9 @@ import '../watch/watch_panel.dart';
 import '../watch/mini_player_inset.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/settings/app_settings.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/yt/models.dart';
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
@@ -25,6 +31,8 @@ import '../../widgets/ui/ui.dart';
 import '../../widgets/home_top_bar.dart';
 import 'home_controller.dart';
 import 'home_variety.dart';
+import '../../core/update/update_controller.dart';
+import '../../widgets/update_dialog.dart';
 
 final homeHistoryProvider = FutureProvider<List<HistoryEntry>>(
   (ref) => ref.watch(historyRepoProvider).recent(),
@@ -48,6 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   ModalRoute<dynamic>? _route;
   String chip = 'All';
   bool _shortsPrefetchStarted = false;
+  Timer? _updateCheckTimer;
   static const chips = homeChips;
 
   @override
@@ -75,6 +84,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
+    if (Platform.isAndroid) {
+      _updateCheckTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          unawaited(ref.read(updateControllerProvider.notifier).check());
+        }
+      });
+    }
     controller.addListener(() {
       if (controller.offset > 0) ref.read(homeProvider.notifier).interact();
       if (controller.position.extentAfter < AppSpacing.xxxl) {
@@ -85,6 +101,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
 
   @override
   void dispose() {
+    _updateCheckTimer?.cancel();
     homeRouteObserver.unsubscribe(this);
     setHomeScreenOrientationEnabled(false);
     controller.dispose();
@@ -93,6 +110,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(updateControllerProvider, (previous, next) {
+      if (next case UpdateAvailable(:final info, automatic: true)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) showUpdateDialog(context, ref, info);
+        });
+      }
+    });
     ref.listen(contentPrefsProvider, (previous, next) {
       if (previous != null && previous.prefsVersion != next.prefsVersion) {
         _shortsPrefetchStarted = false;
@@ -265,8 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     else ...[
       SliverToBoxAdapter(
         child: SizedBox(
-          height:
-              AppSizes.appBarHeight + MediaQuery.viewPaddingOf(context).top,
+          height: AppSizes.appBarHeight + MediaQuery.viewPaddingOf(context).top,
         ),
       ),
       SliverToBoxAdapter(
@@ -749,9 +772,9 @@ class _Shorts extends ConsumerWidget {
                                 .round(),
                         fadeInDuration: AppMotion.imageFade,
                         placeholder: (_, _) => ColoredBox(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                         ),
                       ),
                       Positioned(

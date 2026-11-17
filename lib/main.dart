@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+
+import 'dart:io';
+
 import 'package:flutter/services.dart';
+
 import 'dart:developer' as dev;
+
 import 'package:media_kit/media_kit.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+
 import 'app/router.dart';
 import 'core/playback/player_ui_state.dart';
 import 'core/providers.dart';
@@ -24,9 +30,22 @@ import 'features/watch/mini_player_inset.dart';
 import 'features/watch/player_back_scope.dart';
 import 'features/watch/watch_panel.dart';
 import 'widgets/player/player_controls.dart';
+import 'core/update/update_cache.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isAndroid) {
+    try {
+      await cleanStaleUpdateFiles();
+    } catch (error, stackTrace) {
+      dev.log(
+        'Unable to clean stale update files',
+        name: 'HiveTube',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   VisibilityDetectorController.instance.updateInterval =
@@ -212,7 +231,8 @@ class _RootPlayerOverlay extends ConsumerWidget {
                         pageBuilder: (context, _, _) => Material(
                           type: MaterialType.transparency,
                           child: WatchPanel(
-                            navigatorContext: () => context,
+                            navigatorContext: () =>
+                                rootNavigatorKey.currentContext,
                           ),
                         ),
                       ),

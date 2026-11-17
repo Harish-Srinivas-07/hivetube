@@ -13,6 +13,7 @@ abstract final class AppSizes {
       seekThumb = 12,
       progressBarWatched = 3,
       miniPlayerH = 56;
+  static const double updateChangelogMaxHeight = 120;
   // Touch targets (minimum 48 for accessibility)
   static const double touchMin = 48;
 

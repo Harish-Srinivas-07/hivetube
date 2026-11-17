@@ -15,7 +15,7 @@ import '../../core/playback/playback_service.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../features/watch/watch_screen.dart'
-    show watchCommentsProvider, watchInfoProvider;
+    show WatchComments, watchInfoProvider;
 import 'shorts_feed_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
@@ -102,6 +102,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   PageController controller = PageController();
   late final ProviderSubscription<ShortsSelection> selectionSubscription;
   late final ProviderSubscription<ShortsFeedState> feedSubscription;
+  late final ShortsFeedController _feedController;
   PlaybackService? active;
   Stopwatch? _tabOpenTimer;
   bool? _tabOpenCacheHit;
@@ -111,6 +112,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _feedController = ref.read(shortsFeedProvider.notifier);
     final feed = ref.read(shortsFeedProvider);
     items = List.of(feed.items);
     cursor = feed.cursor;
@@ -459,10 +461,9 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     feedSubscription.close();
     playbackGeneration++;
     final service = active;
-    final feedController = ref.read(shortsFeedProvider.notifier);
-    Future<void>(() {
+    scheduleMicrotask(() {
       service?.cancelShortPreloads(disposePlayer: true);
-      feedController.releaseWarmWindow();
+      _feedController.releaseWarmWindow();
       unawaited(service?.setVisible(false));
     });
     controller.dispose();
@@ -810,74 +811,29 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   }
 
   Future<void> _openComments() async {
-    try {
-      final info = await ref.read(watchInfoProvider(widget.item.id).future);
-      if (!mounted) return;
-      await showAppSheet<void>(
-        context,
-        title: 'Comments',
-        showClose: false,
-        builder: (sheetContext, scrollController) {
-          final token = info.commentsToken;
-          if (token == null) {
-            return const Center(child: Text('Comments unavailable'));
-          }
-          return Consumer(
-            builder: (context, ref, _) => ref
-                .watch(watchCommentsProvider(token))
-                .when(
-                  data: (page) => ListView.builder(
-                    controller: scrollController,
-                    itemCount: page.items.length,
-                    itemBuilder: (context, index) {
-                      final comment = page.items[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.sm,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ChannelAvatar(
-                              name: comment.author,
-                              url: comment.avatar,
-                              size: AppSizes.avatarSm,
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${comment.author} · ${comment.age}',
-                                    style: AppTextStyles.meta.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.xs),
-                                  Text(comment.content),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (_, _) =>
-                      const Center(child: Text('Could not load comments')),
-                ),
-          );
-        },
-      );
-    } catch (_) {
-      if (mounted) AppSnackbar.show(context, 'Could not load comments');
-    }
+    final videoId = widget.item.id;
+    await showAppSheet<void>(
+      context,
+      title: 'Comments',
+      showClose: false,
+      builder: (sheetContext, scrollController) {
+        return Consumer(
+          builder: (context, ref, _) => ref
+              .watch(watchInfoProvider(videoId))
+              .when(
+                data: (info) => info.commentsToken == null
+                    ? const Center(child: Text('Comments unavailable'))
+                    : WatchComments(
+                        token: info.commentsToken!,
+                        scrollController: scrollController!,
+                      ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) =>
+                    const Center(child: Text('Could not load comments')),
+              ),
+        );
+      },
+    );
   }
 
   Future<void> _openShortDetails() async {
@@ -933,17 +889,10 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   void _openMoreOptions() {
     final session = _settingsSession;
     if (session != null) {
-      unawaited(
-        showPlayerSettingsMenu(context, session: session, floating: true),
-      );
+      unawaited(showPlayerSettingsMenu(context, session: session));
     } else {
       unawaited(
-        showVideoOptionsMenu(
-          context,
-          videoId: widget.item.id,
-          onVideo: true,
-          floatingInset: true,
-        ),
+        showVideoOptionsMenu(context, videoId: widget.item.id, onVideo: true),
       );
     }
   }
@@ -1234,17 +1183,19 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
           right: AppSpacing.none,
           bottom: AppSpacing.none,
           height: AppSpacing.shortsScrimHeight + bottom + AppSpacing.md,
-          child: Opacity(
-            opacity: _scrubbing ? 0.35 : 1,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    AppColors.shortsTopControlsTint,
-                    AppColors.transparent,
-                  ],
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: _scrubbing ? 0.35 : 1,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      AppColors.shortsTopControlsTint,
+                      AppColors.transparent,
+                    ],
+                  ),
                 ),
               ),
             ),

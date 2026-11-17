@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../core/settings/app_settings.dart';
 import '../../core/providers.dart';
 import '../home/home_controller.dart';
@@ -12,11 +15,29 @@ import '../../theme/app_text_styles.dart';
 import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 import 'content_debug_screen.dart';
+import '../../widgets/update_dialog.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) checkForUpdates(context, ref);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     final theme = Theme.of(context);
     final settings = ref.watch(contentPrefsProvider);
     Future<void> clearDatabase() async {
@@ -388,6 +409,13 @@ class SettingsScreen extends ConsumerWidget {
               onTap: clearDatabase,
             ),
             section('About'),
+            if (Platform.isAndroid)
+              settingTile(
+                icon: LucideIcons.refreshCw,
+                title: 'Check for updates',
+                subtitle: 'Check the latest HiveTube release on GitHub',
+                onTap: () => checkForUpdates(context, ref),
+              ),
             settingTile(
               icon: LucideIcons.bug,
               title: 'Content debug',

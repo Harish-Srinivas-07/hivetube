@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+
 import '../providers.dart';
 import '../settings/app_settings.dart';
 import 'load_guard.dart';
@@ -45,29 +47,26 @@ class PlayRequest {
     required this.mode,
     this.startAt = Duration.zero,
     this.play = true,
+    this.saveHistory = true,
   });
+  const PlayRequest.short(String id)
+    : this(videoId: id, mode: PlaybackMode.short, saveHistory: false);
   final String videoId;
   final PlaybackMode mode;
   final Duration startAt;
   final bool play;
+  final bool saveHistory;
 }
 
-class _PreparedShort {
-  const _PreparedShort({
-    required this.videoId,
-    required this.player,
-    required this.controller,
-    required this.streams,
-    required this.audioUri,
-    required this.qualityHeight,
-  });
-
-  final String videoId;
-  final Player player;
-  final VideoController controller;
-  final SelectedStreams streams;
-  final Uri audioUri;
-  final int qualityHeight;
+@visibleForTesting
+Future<void> savePlaybackHistory(
+  HistoryRepo history,
+  PlayRequest? request,
+  Duration position,
+  Duration duration,
+) async {
+  if (request == null || !request.saveHistory) return;
+  await history.save(HistoryEntry(request.videoId, position, duration));
 }
 
 class PlaybackSnapshot {
@@ -193,14 +192,10 @@ class PlaybackService extends ChangeNotifier {
   final BandwidthEstimator? bandwidthEstimator;
   final Future<void> Function(VideoQualityPreference)?
   onQualityPreferenceChanged;
-  Player _player = Player();
-  late VideoController _controller = VideoController(_player);
+  final Player _player = Player();
+  late final VideoController _controller = VideoController(_player);
   Player get player => _player;
   VideoController get controller => _controller;
-  Player? _nextPlayer;
-  VideoController? _nextController;
-  _PreparedShort? _preparedShort;
-  Future<void> _shortPreloadTail = Future.value();
   int _shortPreloadGeneration = 0;
   final Set<Player> _observedPlayers = {};
   final Set<VideoController> _frameWaitedControllers = {};
@@ -214,6 +209,7 @@ class PlaybackService extends ChangeNotifier {
   bool _switching = false, _disposed = false, _userPaused = false;
   bool _visible = true, _resumeAfterVisibility = false;
   bool _resumeAfterFocus = false;
+  double? _volumeBeforeDuck;
   bool _mpvSeeking = false;
   VideoQualityPreference _qualityPreference = VideoQualityPreference.auto;
   bool _wifiNetwork = false, _mobileNetwork = false;
@@ -299,6 +295,7 @@ class PlaybackService extends ChangeNotifier {
           mode: current.mode,
           startAt: state.position,
           play: _shouldResumeCurrent,
+          saveHistory: current.saveHistory,
         ),
         qualitySwitch: true,
       ),
@@ -373,6 +370,7 @@ class PlaybackService extends ChangeNotifier {
           mode: current.mode,
           startAt: state.position,
           play: _shouldResumeCurrent,
+          saveHistory: current.saveHistory,
         ),
         qualitySwitch: true,
         adaptiveHeight: height,
@@ -381,10 +379,16 @@ class PlaybackService extends ChangeNotifier {
   }
 
   Future<void> _onAudioFocus(MethodCall call) async {
-    if (call.method == 'focusLoss') {
+    if (call.method == 'focusDuck') {
+      _volumeBeforeDuck ??= player.state.volume;
+      await player.setVolume(_volumeBeforeDuck! * .3);
+    } else if (call.method == 'focusLoss') {
       _resumeAfterFocus = player.state.playing && !_userPaused;
       if (_resumeAfterFocus) await player.pause();
     } else if (call.method == 'focusGain') {
+      final volume = _volumeBeforeDuck;
+      _volumeBeforeDuck = null;
+      if (volume != null) await player.setVolume(volume);
       if (_resumeAfterFocus && !_userPaused && request != null && _visible) {
         _resumeAfterFocus = false;
         await player.play();
@@ -465,13 +469,13 @@ class PlaybackService extends ChangeNotifier {
         if (state.status == PlayerStatus.playing) {
           _budget.tick(DateTime.now());
         }
-        if (request != null &&
+        if (request?.saveHistory == true &&
             (_lastWrite == null ||
                 DateTime.now().difference(_lastWrite!) >=
                     const Duration(seconds: 5))) {
           _lastWrite = DateTime.now();
           unawaited(
-            history.save(HistoryEntry(request!.videoId, value, state.duration)),
+            savePlaybackHistory(history, request, value, state.duration),
           );
         }
         _notify();
@@ -513,7 +517,11 @@ class PlaybackService extends ChangeNotifier {
         if (!identical(player, activePlayer)) return;
         state.playing = v;
         try {
-          unawaited(WakelockPlus.toggle(enable: v).catchError((_) {}));
+          unawaited(
+            WakelockPlus.toggle(
+              enable: v && _visible && state.mode != PlaybackMode.audio,
+            ).catchError((_) {}),
+          );
         } catch (_) {}
         if (!_switching &&
             state.status != PlayerStatus.error &&
@@ -604,38 +612,10 @@ class PlaybackService extends ChangeNotifier {
     await _load(value, newRequest: true, requestGeneration: generation);
   }
 
-  int beginShortPreloadCycle() {
-    final generation = ++_shortPreloadGeneration;
-    _preparedShort = null;
-    final standby = _nextPlayer;
-    if (standby != null) {
-      final stopped = standby.stop();
-      _shortPreloadTail = _shortPreloadTail
-          .then((_) => stopped)
-          .catchError((Object _) {});
-    }
-    return generation;
-  }
+  int beginShortPreloadCycle() => ++_shortPreloadGeneration;
 
   void cancelShortPreloads({bool disposePlayer = false}) {
     _shortPreloadGeneration++;
-    _preparedShort = null;
-    if (!disposePlayer) return;
-    final standby = _nextPlayer;
-    _nextPlayer = null;
-    _nextController = null;
-    if (standby != null) unawaited(_retirePlayer(standby));
-  }
-
-  Future<void> _retirePlayer(Player target) async {
-    _observedPlayers.remove(target);
-    try {
-      await target.pause();
-      await target.stop();
-    } catch (_) {}
-    try {
-      await target.dispose();
-    } catch (_) {}
   }
 
   Future<void> preResolve(
@@ -654,168 +634,13 @@ class PlaybackService extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> preloadShort(String id, {required int generation}) {
-    final task = _shortPreloadTail.then(
-      (_) => _preloadShortNow(id, generation),
-    );
-    _shortPreloadTail = task.catchError((Object _) {});
-    return task;
-  }
-
-  Future<void> _preloadShortNow(String id, int generation) async {
-    if (_disposed || generation != _shortPreloadGeneration) return;
-    if (_preparedShort?.videoId == id) return;
-    try {
-      final target = await _initialQualityFor(id, PlaybackMode.short);
-      final streams = await cache.resolve(
-        id,
-        PlaybackMode.short,
-        quality: target,
-        maxHeight: _qualityCap,
-      );
-      if (_disposed || generation != _shortPreloadGeneration) return;
-      final videoFormat = streams.videos.firstOrNull;
-      final audioFormat = streams.audio;
-      if (videoFormat == null || audioFormat == null) return;
-      final videoUri = await relay.register(videoFormat);
-      final audioUri = await relay.register(audioFormat);
-      if (_disposed || generation != _shortPreloadGeneration) return;
-
-      final standby = _nextPlayer ??= Player();
-      final controller = _nextController ??= VideoController(standby);
-      _configurePlayer(standby, shortBuffer: true);
-      await standby.setVolume(0);
-      await standby.setPlaylistMode(PlaylistMode.single);
-      if (standby.platform is NativePlayer) {
-        unawaited(
-          (standby.platform as NativePlayer).setProperty('loop-file', 'inf'),
-        );
-      }
-      await standby.open(Media(videoUri.toString()), play: false);
-      await standby.setAudioTrack(AudioTrack.uri(audioUri.toString()));
-      await standby.pause();
-      await controller.waitUntilFirstFrameRendered.timeout(
-        const Duration(seconds: 15),
-      );
-      _frameWaitedControllers.add(controller);
-      if (_disposed || generation != _shortPreloadGeneration) {
-        if (identical(_nextPlayer, standby)) _preparedShort = null;
-        return;
-      }
-      _preparedShort = _PreparedShort(
-        videoId: id,
-        player: standby,
-        controller: controller,
-        streams: streams,
-        audioUri: audioUri,
-        qualityHeight: resolutionOf(videoFormat, PlaybackMode.short),
-      );
-    } catch (_) {
-      if (generation == _shortPreloadGeneration) _preparedShort = null;
-    }
-  }
+  Future<void> preloadShort(String id, {required int generation}) =>
+      preResolve(id, PlaybackMode.short, generation: generation);
 
   Future<bool> playShort(String id) async {
     if (!_visible || _disposed) return false;
-    final prepared = _preparedShort;
-    final now = DateTime.now();
-    final selectedVideo = prepared?.streams.videos.firstOrNull;
-    final selectedAudio = prepared?.streams.audio;
-    final stillFresh =
-        (selectedVideo?.expires == null ||
-            selectedVideo!.expires!.isAfter(
-              now.add(const Duration(seconds: 30)),
-            )) &&
-        (selectedAudio?.expires == null ||
-            selectedAudio!.expires!.isAfter(
-              now.add(const Duration(seconds: 30)),
-            ));
-    if (prepared != null &&
-        prepared.videoId == id &&
-        stillFresh &&
-        _visible &&
-        !_disposed) {
-      _shortPreloadGeneration++;
-      _loadGuard.next();
-      _preparedShort = null;
-      _failureMonitor.cancel();
-      unawaited(_saveProgress());
-      _switching = true;
-      final previousPlayer = player;
-      final previousController = controller;
-      await previousPlayer.pause();
-      for (final subscription in _subscriptions) {
-        await subscription.cancel();
-      }
-      _subscriptions.clear();
-      _player = prepared.player;
-      _controller = prepared.controller;
-      _nextPlayer = previousPlayer;
-      _nextController = previousController;
-      _seekController.dispose();
-      _seekController = _createSeekController();
-      _configurePlayer(player, shortBuffer: true);
-      _observeActivePlayer(player);
-      _listen();
-      request = PlayRequest(videoId: id, mode: PlaybackMode.short);
-      state.videoId = id;
-      state.frameReadyId = id;
-      state.mode = PlaybackMode.short;
-      state.quality = null;
-      state.autoQualityHeight = _preferenceUsesAdaptiveQuality
-          ? prepared.qualityHeight
-          : null;
-      _adaptiveQuality.reset(state.autoQualityHeight, DateTime.now());
-      _userPaused = false;
-      _resumeAfterVisibility = false;
-      _budget.reset();
-      _currentAudioUri = prepared.audioUri;
-      state.frozenFrame = null;
-      state.subtitleText = player.state.subtitle
-          .where((line) => line.trim().isNotEmpty)
-          .join('\n');
-      state.position = Duration.zero;
-      state.playing = player.state.playing;
-      state.duration = player.state.duration;
-      state.buffered = player.state.buffer;
-      state.videoWidth = player.state.width;
-      state.videoHeight = player.state.height;
-      state.heights = prepared.streams.videos
-          .map((stream) => stream.height)
-          .toList();
-      state.captions = cache.captionTracks(id);
-      state.selectedCaption = null;
-      state.captionError = false;
-      state.error = null;
-      state.recovering = false;
-      state.status = PlayerStatus.ready;
-      _activeFrameVideoId = id;
-      _frameWaitedControllers.add(controller);
-      await player.setVolume(state.muted ? 0 : state.volume);
-      await player.seek(Duration.zero);
-      if (!_visible || _disposed) {
-        _switching = false;
-        return false;
-      }
-      final focus = await _activateAudioFocus();
-      _switching = false;
-      _notify();
-      if (focus && _visible && !_userPaused) {
-        await player.play();
-        state.status = PlayerStatus.playing;
-        _notify();
-      }
-      return true;
-    }
-
     cancelShortPreloads();
-    final standby = _nextPlayer;
-    if (standby != null) {
-      try {
-        await standby.stop();
-      } catch (_) {}
-    }
-    await play(PlayRequest(videoId: id, mode: PlaybackMode.short));
+    await play(PlayRequest.short(id));
     return false;
   }
 
@@ -1150,6 +975,7 @@ class PlaybackService extends ChangeNotifier {
         videoId: request!.videoId,
         mode: request!.mode,
         startAt: state.position,
+        saveHistory: request!.saveHistory,
       ),
       recovery: true,
     );
@@ -1164,6 +990,7 @@ class PlaybackService extends ChangeNotifier {
           videoId: request!.videoId,
           mode: request!.mode,
           startAt: state.position,
+          saveHistory: request!.saveHistory,
         ),
       );
     }
@@ -1172,6 +999,11 @@ class PlaybackService extends ChangeNotifier {
   Future<void> setVisible(bool visible) async {
     if (_visible == visible) return;
     _visible = visible;
+    unawaited(
+      WakelockPlus.toggle(
+        enable: visible && state.playing && state.mode != PlaybackMode.audio,
+      ).catchError((_) {}),
+    );
     if (!visible) {
       cancelShortPreloads(disposePlayer: true);
       _resumeAfterVisibility = request != null && !_userPaused;
@@ -1394,6 +1226,7 @@ class PlaybackService extends ChangeNotifier {
             mode: current.mode,
             startAt: state.position,
             play: _shouldResumeCurrent,
+            saveHistory: current.saveHistory,
           ),
           qualitySwitch: true,
         ),
@@ -1433,7 +1266,6 @@ class PlaybackService extends ChangeNotifier {
     }
     _disposed = true;
     _shortPreloadGeneration++;
-    _preparedShort = null;
     _seekController.dispose();
     _failureMonitor.cancel();
     _qualityTimer?.cancel();
@@ -1442,10 +1274,6 @@ class PlaybackService extends ChangeNotifier {
       unawaited(s.cancel());
     }
     unawaited(player.dispose());
-    final standby = _nextPlayer;
-    _nextPlayer = null;
-    _nextController = null;
-    if (standby != null) unawaited(standby.dispose());
     unawaited(relay.close());
     super.dispose();
   }
@@ -1453,8 +1281,11 @@ class PlaybackService extends ChangeNotifier {
   Future<void> _saveProgress() async {
     final current = request;
     if (current != null && state.duration > Duration.zero) {
-      await history.save(
-        HistoryEntry(current.videoId, state.position, state.duration),
+      await savePlaybackHistory(
+        history,
+        current,
+        state.position,
+        state.duration,
       );
     }
   }

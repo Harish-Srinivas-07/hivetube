@@ -210,6 +210,22 @@ class AppSheetRow extends StatelessWidget {
   }
 }
 
+/// Shared presentation for watch and Shorts action menus.
+Future<T?> showAppMenuSheet<T>(
+  BuildContext context, {
+  required Widget Function(BuildContext, ScrollController?) builder,
+  bool onVideo = true,
+}) => showAppSheet<T>(
+  context,
+  fit: true,
+  onVideo: onVideo,
+  showClose: false,
+  extendToBottom: true,
+  sideMargin: AppSpacing.sm,
+  bottomMargin: AppSpacing.sm,
+  builder: builder,
+);
+
 /// Unified bottom-anchored modal sheet.
 Future<T?> showAppSheet<T>(
   BuildContext context, {

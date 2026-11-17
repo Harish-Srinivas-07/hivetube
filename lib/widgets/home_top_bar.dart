@@ -62,6 +62,7 @@ class GlassAppBar extends StatelessWidget {
                   if (amount == AppSpacing.none) return content!;
 
                   return ClipRect(
+                    // allowed: scroll-reactive top bar glass
                     child: GlassSurface(
                       borderRadius: BorderRadius.zero,
                       blurSigma: AppSpacing.navGlassBlur * amount,

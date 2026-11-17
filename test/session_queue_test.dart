@@ -5,8 +5,14 @@ import 'package:hivetube/core/playback/session_queue.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/watch/queue_sheet.dart';
 import 'package:hivetube/features/watch/watch_rules.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 void main() {
+  final visibilityController = VisibilityDetectorController.instance;
+  final oldUpdateInterval = visibilityController.updateInterval;
+  setUpAll(() => visibilityController.updateInterval = Duration.zero);
+  tearDownAll(() => visibilityController.updateInterval = oldUpdateInterval);
+
   test('queue adds, prioritizes, reorders, and clears items', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

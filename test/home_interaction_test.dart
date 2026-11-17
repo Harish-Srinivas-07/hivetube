@@ -8,6 +8,7 @@ import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
 import 'package:hivetube/features/home/home_controller.dart';
 import 'package:hivetube/features/home/home_screen.dart';
+import 'package:hivetube/features/shorts/shorts_feed_provider.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/widgets/ui/app_controls.dart';
@@ -27,7 +28,11 @@ class _RecordingHome extends HomeController {
   void interact() => calls.add('interact');
 
   @override
-  Future<void> rememberChannel(String id, String name, {bool isShort = false}) async {
+  Future<void> rememberChannel(
+    String id,
+    String name, {
+    bool isShort = false,
+  }) async {
     remembered.add(id);
   }
 
@@ -47,6 +52,14 @@ class _RecordingHome extends HomeController {
 class _TestPlayerUi extends PlayerUiController {
   @override
   PlayerUiState build() => const PlayerUiState();
+}
+
+class _ShortsFeed extends ShortsFeedController {
+  @override
+  ShortsFeedState build() => const ShortsFeedState();
+
+  @override
+  Future<void> prefetch({List<ShortItem> seedItems = const []}) async {}
 }
 
 List<VideoItem> _videos() => List.generate(
@@ -77,7 +90,8 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
   void Function(String id)? onCardBuilt,
   Future<({String url, String channelId})> Function(
     ({String channelId, String videoId}) key,
-  )? avatar,
+  )?
+  avatar,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -89,6 +103,7 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
             avatar?.call(key) ??
             Future.value((url: '', channelId: key.channelId)),
       ),
+      shortsFeedProvider.overrideWith(_ShortsFeed.new),
     ],
   );
   final router = GoRouter(
@@ -129,7 +144,8 @@ void main() {
     await tester.tap(find.text('Video 0').first);
     await tester.pump();
 
-    final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls, contains('interact'));
     expect(home.remembered, contains('video-0'));
     expect(mounted.container.read(watchPanelProvider), 'video-0');
@@ -145,7 +161,8 @@ void main() {
     final scrollable = find.byType(CustomScrollView);
     await tester.drag(scrollable, const Offset(0, -5000));
     await tester.pumpAndSettle();
-    final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls.where((call) => call == 'loadMore').length, 1);
   });
 
@@ -153,18 +170,25 @@ void main() {
     final mounted = await _mount(tester, data: _data());
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 450));
     await tester.pumpAndSettle();
-    final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls, contains('refresh'));
   });
 
-  testWidgets('chip tap selects it and updates the selected chip', (tester) async {
+  testWidgets('chip tap selects it and updates the selected chip', (
+    tester,
+  ) async {
     final mounted = await _mount(tester, data: _data());
     await tester.tap(find.text('Music').first);
     await tester.pump();
-    final home = mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
     expect(home.calls, contains('select:Music'));
     final chip = tester.widget<AppChip>(
-      find.ancestor(of: find.text('Music').first, matching: find.byType(AppChip)),
+      find.ancestor(
+        of: find.text('Music').first,
+        matching: find.byType(AppChip),
+      ),
     );
     expect(chip.selected, isTrue);
   });
@@ -177,9 +201,17 @@ void main() {
       ShortItem(id: 'short-1', thumbUrl: '', title: 'Short 1'),
     ];
     final mounted = await _mount(tester, data: _data(shorts: shorts));
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1800));
+    await tester.scrollUntilVisible(
+      find.text('Short 0'),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Short 0'));
     await tester.tap(find.text('Short 0'));
     await tester.pumpAndSettle();
 
@@ -187,8 +219,6 @@ void main() {
     expect(selection.items.map((item) => item.id), ['short-0', 'short-1']);
     expect(selection.index, 0);
     expect(mounted.router.routeInformationProvider.value.uri.path, '/shorts');
-    mounted.router.dispose();
-    mounted.container.dispose();
   });
 
   testWidgets('empty state has Retry and partial failures show one banner', (
@@ -198,10 +228,7 @@ void main() {
     expect(find.text('No videos found'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
 
-    await _mount(
-      tester,
-      data: _data(errors: const ['source-a', 'source-b']),
-    );
+    await _mount(tester, data: _data(errors: const ['source-a', 'source-b']));
     expect(find.text('Some sources could not load'), findsOneWidget);
   });
 
@@ -211,11 +238,8 @@ void main() {
     await _mount(
       tester,
       data: _data(),
-      onCardBuilt: (id) => builds.update(
-        id,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      ),
+      onCardBuilt: (id) =>
+          builds.update(id, (count) => count + 1, ifAbsent: () => 1),
       avatar: (key) => key.channelId == 'channel-0'
           ? avatar.future
           : Future.value((url: '', channelId: key.channelId)),

@@ -41,16 +41,8 @@ Future<void> showPlayerSettingsMenu(
   BuildContext context, {
   required PlayerSettingsSession session,
   VoidCallback? onLock,
-  bool floating = false,
-}) => showAppSheet<void>(
+}) => showAppMenuSheet<void>(
   context,
-  fit: true,
-  onVideo: true,
-  floatingInset: floating,
-  extendToBottom: true,
-  sideMargin: floating ? AppSpacing.xs : AppSpacing.sm,
-  bottomMargin: floating ? AppSpacing.none : AppSpacing.sm,
-  showClose: false,
   builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );
 

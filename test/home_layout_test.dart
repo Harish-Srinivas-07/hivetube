@@ -10,12 +10,21 @@ import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/home/home_cache.dart';
 import 'package:hivetube/features/home/home_controller.dart';
+import 'package:hivetube/features/shorts/shorts_feed_provider.dart';
 import 'package:hivetube/main.dart';
 import 'package:hivetube/theme/app_radius.dart';
 
 class _FailedHome extends HomeController {
   @override
   Future<HomeData> build() async => throw StateError('offline');
+}
+
+class _ShortsFeed extends ShortsFeedController {
+  @override
+  ShortsFeedState build() => const ShortsFeedState();
+
+  @override
+  Future<void> prefetch({List<ShortItem> seedItems = const []}) async {}
 }
 
 class _History implements HistoryRepo {
@@ -78,6 +87,7 @@ void main() {
             previewPlaybackAllowedProvider.overrideWithValue(false),
             initialHomeCacheProvider.overrideWithValue(cache),
             historyRepoProvider.overrideWithValue(history),
+            shortsFeedProvider.overrideWith(_ShortsFeed.new),
           ],
           child: const HiveTubeApp(),
         ),
@@ -117,6 +127,7 @@ void main() {
         overrides: [
           dbProvider.overrideWithValue(db),
           homeProvider.overrideWith(_FailedHome.new),
+          shortsFeedProvider.overrideWith(_ShortsFeed.new),
         ],
         child: const HiveTubeApp(),
       ),
