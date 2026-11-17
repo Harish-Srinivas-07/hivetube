@@ -7,6 +7,18 @@ import 'package:flutter/widgets.dart';
 /// True while a shell route (and its floating navigation) is active.
 final shellRouteVisible = ValueNotifier<bool>(false);
 
+/// Marks the navigator above the app routes that owns player sheets.
+class PlayerNavigatorScope extends InheritedWidget {
+  const PlayerNavigatorScope({super.key, required super.child});
+
+  static bool contains(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PlayerNavigatorScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(PlayerNavigatorScope oldWidget) => false;
+}
+
 class MiniPlayerInset extends InheritedWidget {
   const MiniPlayerInset({
     super.key,

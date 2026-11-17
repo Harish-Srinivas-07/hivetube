@@ -384,78 +384,97 @@ class _CompactCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    return ListTile(
-      enabled: enabled,
+    return InkWell(
       onTap: enabled ? onTap : null,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      horizontalTitleGap: AppSpacing.md,
-      minLeadingWidth: 0,
-      minTileHeight: AppSizes.compactRowMinHeight,
-      leading: SizedBox(
-        width: AppSizes.compactThumbW,
-        child: Stack(
-          fit: StackFit.expand,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (enabled)
-              ThumbnailWithDuration(
-                thumbnailKey: ValueKey('compactThumbnail:${video.id}'),
-                progressKey: ValueKey('watchedProgress:${video.id}'),
-                url: video.thumbUrl,
-                duration: video.durationText,
-                progress: progress,
-                borderRadius: AppRadius.smBorder,
-              )
-            else
-              ClipRRect(
-                borderRadius: AppRadius.smBorder,
-                child: ColoredBox(color: cs.surfaceContainerHighest),
-              ),
-            if (thumbnailBadge != null)
-              Positioned(
-                top: AppSpacing.xs,
-                left: AppSpacing.xs,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                    vertical: AppSpacing.xxs,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: AppColors.thumbnailBadge,
-                    borderRadius: AppRadius.xsBorder,
-                  ),
-                  child: Text(
-                    thumbnailBadge!,
-                    style: AppTextStyles.badge.copyWith(
-                      color: AppColors.thumbnailBadgeText,
-                    ),
-                  ),
+            SizedBox(
+              width: AppSizes.compactThumbW,
+              child: AspectRatio(
+                aspectRatio: AppSpacing.thumbnailRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (enabled)
+                      ThumbnailWithDuration(
+                        thumbnailKey: ValueKey('compactThumbnail:${video.id}'),
+                        progressKey: ValueKey('watchedProgress:${video.id}'),
+                        url: video.thumbUrl,
+                        duration: video.durationText,
+                        progress: progress,
+                        borderRadius: AppRadius.smBorder,
+                      )
+                    else
+                      ClipRRect(
+                        borderRadius: AppRadius.smBorder,
+                        child: ColoredBox(color: cs.surfaceContainerHighest),
+                      ),
+                    if (thumbnailBadge != null)
+                      Positioned(
+                        top: AppSpacing.xs,
+                        left: AppSpacing.xs,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                            vertical: AppSpacing.xxs,
+                          ),
+                          decoration: const BoxDecoration(
+                            color: AppColors.thumbnailBadge,
+                            borderRadius: AppRadius.xsBorder,
+                          ),
+                          child: Text(
+                            thumbnailBadge!,
+                            style: AppTextStyles.badge.copyWith(
+                              color: AppColors.thumbnailBadgeText,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    video.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: enabled
+                        ? AppTextStyles.videoTitle
+                        : AppTextStyles.videoTitle.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    [
+                      video.channelName,
+                      video.viewsText,
+                      video.publishedText,
+                    ].where((s) => s.isNotEmpty).join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.meta.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ?trailing,
           ],
         ),
       ),
-      title: Text(
-        video.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: enabled
-            ? AppTextStyles.videoTitle
-            : AppTextStyles.videoTitle.copyWith(color: cs.onSurfaceVariant),
-      ),
-      subtitle: Text(
-        [
-          video.channelName,
-          video.viewsText,
-          video.publishedText,
-        ].where((s) => s.isNotEmpty).join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTextStyles.meta.copyWith(color: cs.onSurfaceVariant),
-      ),
-      trailing: trailing,
     );
   }
 }

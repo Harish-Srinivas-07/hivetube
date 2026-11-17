@@ -94,11 +94,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 children: [
                   CircleAvatar(
                     radius: AppSizes.avatarLg / 2,
+                    backgroundColor: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    foregroundColor: Theme.of(ctx).colorScheme.surface,
                     backgroundImage:
                         avatarPath != null && File(avatarPath!).existsSync()
                         ? FileImage(File(avatarPath!))
                         : null,
-                    child: avatarPath == null
+                    child: avatarPath == null || !File(avatarPath!).existsSync()
                         ? const Icon(LucideIcons.user)
                         : null,
                   ),
@@ -468,7 +470,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           ? media!.title
           : 'Untitled video',
       channelName: media?.channelName ?? '',
-      thumbUrl: media?.thumbUrl ?? 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      thumbUrl: media?.thumbUrl.isNotEmpty == true
+          ? media!.thumbUrl
+          : 'https://i.ytimg.com/vi/$id/mqdefault.jpg',
       durationText: media?.durationSec == null
           ? ''
           : AppFormatters.formatDurationSeconds(media!.durationSec!),
@@ -513,8 +517,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               AppIconButton(
                 icon: LucideIcons.ellipsisVertical,
                 tooltip: 'More options',
-                color: AppColors.white,
-                backgroundColor: AppColors.black,
                 tonal: false,
                 onPressed: () => showVideoOptionsMenu(
                   context,
@@ -642,7 +644,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           key: const ValueKey('libraryHeader'),
                           padding: const EdgeInsets.fromLTRB(
                             AppSpacing.lg,
-                            AppSpacing.xl,
+                            AppSpacing.sm,
                             AppSpacing.lg,
                             AppSpacing.lg,
                           ),
@@ -652,6 +654,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               CircleAvatar(
                                 key: const ValueKey('libraryAvatar'),
                                 radius: AppSizes.avatarLg / 2,
+                                backgroundColor: colors.onSurfaceVariant,
                                 backgroundImage: hasAvatar
                                     ? FileImage(File(avatarPath))
                                     : null,
@@ -660,7 +663,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                     : Icon(
                                         LucideIcons.userRound,
                                         size: AppSizes.iconLg,
-                                        color: colors.onSurfaceVariant,
+                                        color: colors.surface,
                                       ),
                               ),
                               const SizedBox(width: AppSpacing.lg),
@@ -799,7 +802,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                             ),
                             itemCount: items.take(15).length,
                             separatorBuilder: (_, _) =>
-                                const SizedBox(width: AppSpacing.md),
+                                const SizedBox(width: AppSpacing.lg),
                             itemBuilder: (_, index) =>
                                 _historyCard(items[index]),
                           ),
@@ -1056,44 +1059,24 @@ class _LibraryEntryRow extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Positioned.fill(
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            top: AppSpacing.xs,
-                            right: AppSpacing.xs,
-                          ),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: colors.surfaceContainerHighest,
-                              borderRadius: AppRadius.smBorder,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          top: AppSpacing.xs,
-                          right: AppSpacing.xs,
-                        ),
-                        child: thumbnail.trim().isEmpty
-                            ? DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: colors.surfaceContainerHighest,
-                                  borderRadius: AppRadius.smBorder,
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    badgeIcon,
-                                    size: AppSizes.iconLg,
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              )
-                            : ThumbnailWithDuration(
-                                url: thumbnail,
+                      thumbnail.trim().isEmpty
+                          ? DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colors.surfaceContainerHighest,
                                 borderRadius: AppRadius.smBorder,
                               ),
-                      ),
+                              child: Center(
+                                child: Icon(
+                                  badgeIcon,
+                                  size: AppSizes.iconLg,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            )
+                          : ThumbnailWithDuration(
+                              url: thumbnail,
+                              borderRadius: AppRadius.smBorder,
+                            ),
                       if (thumbnail.trim().isNotEmpty)
                         Positioned(
                           right: AppSpacing.xs,
@@ -1146,8 +1129,6 @@ class _LibraryEntryRow extends StatelessWidget {
               AppIconButton(
                 icon: LucideIcons.ellipsisVertical,
                 tooltip: 'More options',
-                color: AppColors.white,
-                backgroundColor: AppColors.black,
                 tonal: false,
                 onPressed: onMore,
               ),

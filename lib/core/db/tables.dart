@@ -140,6 +140,12 @@ class Downloads extends Table {
   TextColumn get path => text().nullable()();
   IntColumn get total => integer().withDefault(const Constant(0))();
   IntColumn get done => integer().withDefault(const Constant(0))();
+  IntColumn get videoDone => integer().withDefault(const Constant(0))();
+  IntColumn get audioDone => integer().withDefault(const Constant(0))();
+  IntColumn get videoTotal => integer().withDefault(const Constant(0))();
+  IntColumn get audioTotal => integer().withDefault(const Constant(0))();
+  TextColumn get videoEtag => text().nullable()();
+  TextColumn get audioEtag => text().nullable()();
   TextColumn get status => text().withDefault(const Constant('pending'))();
   TextColumn get error => text().nullable()();
   IntColumn get createdAt => integer()();

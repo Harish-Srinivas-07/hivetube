@@ -42,7 +42,10 @@ class YtBrowse {
           : {'continuation': continuation},
       cancelToken: cancelToken,
     );
-    return parseChannelPage(json, channelId);
+    final tab = params == tabParamsPlaylists
+        ? 'Playlists'
+        : (params == tabParamsLive ? 'Live' : null);
+    return parseChannelPage(json, channelId, tab: tab);
   }
 
   Future<PlaylistPageData> playlistPage(

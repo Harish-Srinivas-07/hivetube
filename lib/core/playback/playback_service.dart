@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -104,6 +105,7 @@ class PlaybackService extends ChangeNotifier {
     this.history, {
     this.bandwidthEstimator,
     this.onQualityPreferenceChanged,
+    this.completedDownloadPath,
   }) {
     _seekController = _createSeekController();
     _configurePlayer(player, shortBuffer: false);
@@ -189,6 +191,7 @@ class PlaybackService extends ChangeNotifier {
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
+  final Future<String?> Function(String videoId)? completedDownloadPath;
   final BandwidthEstimator? bandwidthEstimator;
   final Future<void> Function(VideoQualityPreference)?
   onQualityPreferenceChanged;
@@ -217,6 +220,7 @@ class PlaybackService extends ChangeNotifier {
       AdaptiveQualityController();
   Timer? _adaptiveTimer;
   Uri? _currentAudioUri;
+  bool _playingLocalFile = false;
   String? _activeFrameVideoId;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
 
@@ -570,6 +574,22 @@ class PlaybackService extends ChangeNotifier {
         _debugLog('player stream error: $v');
         if (v.contains('audio device') || v.contains('no sound')) return;
         final current = request;
+        if (_playingLocalFile && !_switching && current != null) {
+          _playingLocalFile = false;
+          unawaited(
+            _load(
+              PlayRequest(
+                videoId: current.videoId,
+                mode: current.mode,
+                startAt: state.position,
+                play: !_userPaused,
+                saveHistory: current.saveHistory,
+              ),
+              skipLocalFile: true,
+            ),
+          );
+          return;
+        }
         if (!_switching &&
             current != null &&
             !_userPaused &&
@@ -649,6 +669,7 @@ class PlaybackService extends ChangeNotifier {
     bool newRequest = false,
     bool recovery = false,
     bool qualitySwitch = false,
+    bool skipLocalFile = false,
     int? adaptiveHeight,
     int? requestGeneration,
   }) async {
@@ -700,6 +721,67 @@ class PlaybackService extends ChangeNotifier {
     }
     if (!_loadGuard.isCurrent(generation)) return;
     try {
+      _playingLocalFile = false;
+      if (!skipLocalFile &&
+          value.mode == PlaybackMode.video &&
+          completedDownloadPath != null) {
+        try {
+          final path = await completedDownloadPath!(value.videoId);
+          if (!_loadGuard.isCurrent(generation)) return;
+          if (path != null && await File(path).exists()) {
+            final previous = _commitTail;
+            final done = Completer<void>();
+            _commitTail = done.future;
+            try {
+              await previous;
+              if (!_loadGuard.isCurrent(generation)) return;
+              await player.setPlaylistMode(
+                state.loop ? PlaylistMode.single : PlaylistMode.none,
+              );
+              final shouldPlay = value.play && _visible && !_userPaused;
+              await player.open(
+                Media(Uri.file(path).toString(), start: value.startAt),
+                play: shouldPlay,
+              );
+              if (!_loadGuard.isCurrent(generation)) return;
+              _currentAudioUri = null;
+              if (shouldPlay) {
+                final ready = await _waitForRequestFrame(
+                  videoId: value.videoId,
+                  startAt: value.startAt,
+                  generation: generation,
+                );
+                if (!_loadGuard.isCurrent(generation)) return;
+                if (!ready) throw StateError('Local video did not open');
+                state.frameReadyId = value.videoId;
+              }
+              state.heights = [];
+              state.captions = [];
+              state.selectedCaption = null;
+              state.duration = player.state.duration;
+              _switching = false;
+              _playingLocalFile = true;
+              state.recovering = false;
+              final focus = await _activateAudioFocus();
+              if (shouldPlay && focus && !_userPaused && _visible) {
+                await player.play();
+                state.status = PlayerStatus.playing;
+              } else {
+                if (player.state.playing) await player.pause();
+                state.playing = false;
+                state.status = PlayerStatus.paused;
+              }
+              _notify();
+              return;
+            } finally {
+              done.complete();
+            }
+          }
+        } catch (error) {
+          _debugLog('Local playback failed; resolving stream: $error');
+          if (!_loadGuard.isCurrent(generation)) return;
+        }
+      }
       _debugLog('_load: resolving streams for ${value.videoId}...');
       var requestedQuality =
           state.quality ?? adaptiveHeight ?? state.autoQualityHeight;
@@ -1397,6 +1479,17 @@ class PlaybackController extends Notifier<PlaybackService?> {
         bandwidthEstimator: estimator,
       ),
       ref.read(historyRepoProvider),
+      completedDownloadPath: (videoId) async {
+        final db = ref.read(dbProvider);
+        final rows =
+            await (db.select(db.downloads)..where(
+                  (row) =>
+                      row.videoId.equals(videoId) &
+                      row.status.equals('completed'),
+                ))
+                .get();
+        return rows.isEmpty ? null : rows.last.path;
+      },
       bandwidthEstimator: estimator,
       onQualityPreferenceChanged: (value) => ref
           .read(appSettingsProvider.notifier)

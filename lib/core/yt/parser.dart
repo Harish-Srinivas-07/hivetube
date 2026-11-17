@@ -109,14 +109,21 @@ Map<String, String> searchFreshnessParams(dynamic json) {
     for (final filter in findAll(node, 'searchFilterRenderer')) {
       if (filter is! Map) continue;
       final label = _text(filter['label']).trim().toLowerCase();
-      final endpoint = safeNav(filter, ['navigationEndpoint', 'searchEndpoint', 'params']);
+      final endpoint = safeNav(filter, [
+        'navigationEndpoint',
+        'searchEndpoint',
+        'params',
+      ]);
       if (endpoint is! String || endpoint.isEmpty) continue;
       if (group.contains('upload')) {
         if (label.contains('today')) found['today'] = endpoint;
         if (label.contains('week')) found['week'] = endpoint;
         if (label.contains('month')) found['month'] = endpoint;
       }
-      if (group.contains('sort') && (label.contains('upload') || label.contains('date') || label.contains('latest'))) {
+      if (group.contains('sort') &&
+          (label.contains('upload') ||
+              label.contains('date') ||
+              label.contains('latest'))) {
         found['sortUpload'] = endpoint;
       }
     }
@@ -255,8 +262,8 @@ VideoPage parseVideos(dynamic json) {
           durationText: _text(value['lengthText']).isNotEmpty
               ? _text(value['lengthText'])
               : (value['lengthSeconds'] != null
-                  ? '${(int.tryParse(value['lengthSeconds'].toString()) ?? 0) ~/ 60}:${((int.tryParse(value['lengthSeconds'].toString()) ?? 0) % 60).toString().padLeft(2, '0')}'
-                  : ''),
+                    ? '${(int.tryParse(value['lengthSeconds'].toString()) ?? 0) ~/ 60}:${((int.tryParse(value['lengthSeconds'].toString()) ?? 0) % 60).toString().padLeft(2, '0')}'
+                    : ''),
           viewsText: _text(value['viewCountText']),
           publishedText: _text(value['publishedTimeText']),
           isShort: findAll(
@@ -360,8 +367,8 @@ ChannelItem? parseChannelItem(dynamic v) {
   final handle = _text(v['subscriberCountText']).startsWith('@')
       ? _text(v['subscriberCountText'])
       : (_text(v['videoCountText']).startsWith('@')
-          ? _text(v['videoCountText'])
-          : '');
+            ? _text(v['videoCountText'])
+            : '');
   final subCount = handle.startsWith('@')
       ? _text(v['videoCountText'])
       : _text(v['subscriberCountText']);
@@ -380,7 +387,8 @@ ChannelItem? parseChannelItem(dynamic v) {
 
 PlaylistItem? parsePlaylistItem(dynamic v) {
   if (v is! Map) return null;
-  final id = v['playlistId'] ??
+  final id =
+      v['playlistId'] ??
       v['contentId'] ??
       safeNav(v, ['navigationEndpoint', 'watchEndpoint', 'playlistId']);
   if (id is! String || id.isEmpty) return null;
@@ -561,7 +569,126 @@ SearchResultPage parseSearchResults(dynamic json) {
   );
 }
 
-ChannelPageData parseChannelPage(dynamic json, String channelId) {
+List<ChannelPlaylistItem> parseChannelPlaylists(dynamic json) {
+  final items = <ChannelPlaylistItem>[];
+  final seen = <String>{};
+  for (final key in [
+    'gridPlaylistRenderer',
+    'playlistRenderer',
+    'lockupViewModel',
+  ]) {
+    for (final node in findAll(json, key)) {
+      if (node is! Map ||
+          (key == 'lockupViewModel' &&
+              node['contentType'] != 'LOCKUP_CONTENT_TYPE_PLAYLIST')) {
+        continue;
+      }
+      final playlist = parsePlaylistItem(node);
+      if (playlist == null || !seen.add(playlist.id)) continue;
+      final badges = findAll(
+        node,
+        'thumbnailBadgeViewModel',
+      ).map((badge) => _text(badge is Map ? badge['text'] : null));
+      final count = badges.firstWhere(
+        (text) => text.toLowerCase().contains('video'),
+        orElse: () => playlist.videoCountText,
+      );
+      final updated = findAll(node, 'content').whereType<String>().firstWhere(
+        (text) => text.toLowerCase().startsWith('updated'),
+        orElse: () => _text(node['publishedTimeText']),
+      );
+      items.add(
+        ChannelPlaylistItem(
+          id: playlist.id,
+          title: playlist.title,
+          channelId: playlist.channelId,
+          channelName: playlist.channelName,
+          thumbUrl: playlist.thumbUrl,
+          videoCountText: count,
+          updatedText: updated,
+        ),
+      );
+    }
+  }
+  return items;
+}
+
+List<ChannelLiveItem> parseChannelLive(dynamic json) {
+  final items = <ChannelLiveItem>[];
+  final seen = <String>{};
+  for (final key in ['videoRenderer', 'gridVideoRenderer', 'lockupViewModel']) {
+    for (final node in findAll(json, key)) {
+      if (node is! Map ||
+          (key == 'lockupViewModel' &&
+              node['contentType'] != 'LOCKUP_CONTENT_TYPE_VIDEO')) {
+        continue;
+      }
+      final parsed = parseVideos({key: node}).items;
+      if (parsed.isEmpty || !seen.add(parsed.first.id)) continue;
+      final original = parsed.first;
+      final metadata = safeNav(node, [
+        'metadata',
+        'lockupMetadataViewModel',
+        'metadata',
+      ]);
+      final parts = findAll(metadata, 'metadataParts')
+          .whereType<List>()
+          .expand((parts) => parts)
+          .map((part) => _text(part is Map ? part['text'] : null))
+          .where((text) => text.isNotEmpty)
+          .toList();
+      final badgeTexts = <String>[
+        ...findAll(node['badges'], 'label').whereType<String>(),
+        ...findAll(node['thumbnailOverlays'], 'style').whereType<String>(),
+        ...findAll(node['contentImage'], 'badgeStyle').whereType<String>(),
+        ...findAll(
+          node['contentImage'],
+          'thumbnailBadgeViewModel',
+        ).map((badge) => _text(badge is Map ? badge['text'] : null)),
+      ].join(' ').toLowerCase();
+      final isUpcoming =
+          badgeTexts.contains('upcoming') || node['upcomingEventData'] != null;
+      final isLive =
+          !isUpcoming &&
+          (badgeTexts.contains('live') ||
+              parts.any((text) => text.toLowerCase().contains('watching')));
+      final duration = findAll(node['contentImage'], 'thumbnailBadgeViewModel')
+          .map((badge) => _text(badge is Map ? badge['text'] : null))
+          .firstWhere(
+            (text) => RegExp(r'^\d+:\d').hasMatch(text),
+            orElse: () => original.durationText,
+          );
+      items.add(
+        ChannelLiveItem(
+          video: VideoItem(
+            id: original.id,
+            title: original.title,
+            channelId: original.channelId,
+            channelName: original.channelName,
+            channelAvatarUrl: original.channelAvatarUrl,
+            thumbUrl: original.thumbUrl,
+            durationText: duration,
+            viewsText: original.viewsText.isNotEmpty
+                ? original.viewsText
+                : (parts.isNotEmpty ? parts.first : ''),
+            publishedText: original.publishedText.isNotEmpty
+                ? original.publishedText
+                : (parts.length > 1 ? parts[1] : ''),
+            isLive: isLive,
+          ),
+          badge: isUpcoming ? 'UPCOMING' : (isLive ? 'LIVE' : ''),
+        ),
+      );
+    }
+  }
+  return items;
+}
+
+ChannelPageData parseChannelPage(
+  dynamic json,
+  String channelId, {
+  String? tab,
+}) {
   String name = '';
   String handle = '';
   String avatar = '';
@@ -645,7 +772,11 @@ ChannelPageData parseChannelPage(dynamic json, String channelId) {
 
   final videoItems = parseVideos(json).items;
   final shortItems = parseShorts(json);
-  final currentItems = videoItems.isNotEmpty ? videoItems : shortItems;
+  final List<dynamic> currentItems = switch (tab) {
+    'Playlists' => parseChannelPlaylists(json),
+    'Live' => parseChannelLive(json),
+    _ => videoItems.isNotEmpty ? videoItems : shortItems,
+  };
   final continuation = continuationToken(json);
 
   return ChannelPageData(

@@ -66,6 +66,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       _continuationByTab.clear();
       _loadedTabs.clear();
       _sortByTab.clear();
+      _selectedTabIndex = 0;
       _resolvedChannelId = '';
       data = null;
       unawaited(_load());
@@ -125,18 +126,33 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       }
       final page = await api.browse.channelPage(id);
       final subs = await ref.read(subscriptionRepoProvider).channelIds();
-      final tabs = <String>['Home', 'Videos', 'Shorts', 'Playlists', 'Posts'];
+      final tabs = page.tabs
+          .where(
+            (tab) => const {
+              'Home',
+              'Videos',
+              'Shorts',
+              'Live',
+              'Playlists',
+              'Posts',
+            }.contains(tab),
+          )
+          .toList();
+      if (tabs.isEmpty) tabs.add('Home');
       if (!mounted) return;
       setState(() {
         _resolvedChannelId = id;
         data = page;
-        _itemsByTab['Home'] = List<dynamic>.of(page.currentTabItems);
-        _continuationByTab['Home'] = page.continuation;
-        _loadedTabs.add('Home');
+        _itemsByTab[tabs.first] = List<dynamic>.of(page.currentTabItems);
+        _continuationByTab[tabs.first] = page.continuation;
+        if (tabs.first != 'Live' && tabs.first != 'Playlists') {
+          _loadedTabs.add(tabs.first);
+        }
         isSubscribed = subs.contains(id);
         loading = false;
       });
       _configureTabController(tabs);
+      if (!_loadedTabs.contains(tabs.first)) unawaited(_loadTab(tabs.first));
       if (isSubscribed) unawaited(_loadNotificationMode());
     } catch (e) {
       if (!mounted) return;
@@ -159,6 +175,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
   String? _paramsForTab(String tab) => switch (tab) {
     'Videos' => _sortByTab['Videos'] ?? YtBrowse.tabParamsVideos,
     'Shorts' => YtBrowse.tabParamsShorts,
+    'Live' => YtBrowse.tabParamsLive,
     'Playlists' => YtBrowse.tabParamsPlaylists,
     _ => null,
   };
@@ -226,7 +243,11 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     setState(() => loadingMore = true);
     try {
       final api = await ref.read(ytApiProvider.future);
-      final page = await api.browse.channelPage(data!.id, continuation: token);
+      final page = await api.browse.channelPage(
+        data!.id,
+        params: _paramsForTab(tab),
+        continuation: token,
+      );
       if (!mounted) return;
       setState(() {
         _continuationByTab[tab] = page.continuation;
@@ -443,7 +464,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
   Widget _profileHeader(BuildContext context, ChannelPageData channel) {
     final colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -453,7 +474,8 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
               child: ClipRRect(
                 borderRadius: AppRadius.mdBorder,
                 child: AspectRatio(
-                  aspectRatio: AppSpacing.thumbnailRatio,
+                  aspectRatio:
+                      AppSpacing.thumbnailRatio + AppSpacing.thumbnailRatio,
                   child: CachedNetworkImage(
                     imageUrl: channel.bannerUrl,
                     fit: BoxFit.cover,
@@ -620,6 +642,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     final items = _itemsByTab[tab] ?? const <dynamic>[];
     final videos = items.whereType<VideoItem>().toList(growable: false);
     final shorts = items.whereType<ShortItem>().toList(growable: false);
+    final playlists = items.whereType<ChannelPlaylistItem>().toList(
+      growable: false,
+    );
+    final streams = items.whereType<ChannelLiveItem>().toList(growable: false);
     final slivers = <Widget>[];
     if (partialError != null) {
       slivers.add(
@@ -719,7 +745,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
             itemCount: videos.length,
             itemBuilder: (context, index) => Padding(
               key: ValueKey(videos[index].id),
-              padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+              padding: EdgeInsets.zero,
               child: VideoCard.compact(
                 video: videos[index],
                 onTap: () => openWatchPanel(ref, videos[index].id),
@@ -752,13 +778,41 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
                 crossAxisCount: 3,
                 crossAxisSpacing: AppSpacing.xs,
                 mainAxisSpacing: AppSpacing.xs,
-                childAspectRatio: AppSpacing.homeShortRatio,
+                childAspectRatio: AppSpacing.shortRatio,
               ),
               itemBuilder: (context, index) => _ShortTile(
                 item: shorts[index],
                 onTap: () => _openShorts(shorts, index),
               ),
             ),
+          ),
+        );
+      }
+    } else if (tab == 'Live') {
+      if (streams.isEmpty) {
+        slivers.add(
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: LucideIcons.video,
+              title: 'No live streams',
+            ),
+          ),
+        );
+      } else {
+        slivers.add(
+          SliverList.builder(
+            itemCount: streams.length,
+            itemBuilder: (context, index) {
+              final stream = streams[index];
+              return VideoCard.compact(
+                key: ValueKey(stream.video.id),
+                video: stream.video,
+                thumbnailBadge: stream.badge.isEmpty ? null : stream.badge,
+                onTap: () => openWatchPanel(ref, stream.video.id),
+                trailing: _videoOptionsButton(context, stream.video),
+              );
+            },
           ),
         );
       }
@@ -772,16 +826,94 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
           ),
         ),
       );
-    } else if (tab == 'Playlists' && !_loadingTabs.contains(tab)) {
-      slivers.add(
-        const SliverFillRemaining(
-          hasScrollBody: false,
-          child: EmptyState(
-            icon: LucideIcons.listVideo,
-            title: 'No playlists available',
+    } else if (tab == 'Playlists') {
+      if (playlists.isEmpty) {
+        slivers.add(
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: LucideIcons.listVideo,
+              title: 'No playlists available',
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        slivers.add(
+          SliverList.builder(
+            itemCount: playlists.length,
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              return InkWell(
+                key: ValueKey(playlist.id),
+                onTap: () => context.push(
+                  '/playlist/${Uri.encodeComponent(playlist.id)}',
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: AppSizes.compactThumbW,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              top: -AppSpacing.xxs,
+                              left: AppSpacing.xs,
+                              right: -AppSpacing.xs,
+                              bottom: AppSpacing.xxs,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  borderRadius: AppRadius.smBorder,
+                                ),
+                              ),
+                            ),
+                            ThumbnailWithDuration(
+                              url: playlist.thumbUrl,
+                              borderRadius: AppRadius.smBorder,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              playlist.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.videoTitle,
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              [
+                                playlist.videoCountText,
+                                playlist.updatedText,
+                              ].where((text) => text.isNotEmpty).join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.meta,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
     }
 
     if (loadingMore && _selectedTab == tab) {
@@ -880,7 +1012,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
 
   Widget _channelVideoRow(BuildContext context, VideoItem video) => Padding(
     key: ValueKey(video.id),
-    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+    padding: EdgeInsets.zero,
     child: VideoCard.compact(
       video: video,
       onTap: () => openWatchPanel(ref, video.id),
@@ -933,9 +1065,8 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     ),
   );
 
-  Widget _bottomInset(BuildContext context) => SliverBottomInset(
-    extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
-  );
+  Widget _bottomInset(BuildContext context) =>
+      SliverBottomInset(extra: MediaQuery.paddingOf(context).bottom);
 }
 
 class _ShortTile extends StatelessWidget {
@@ -1014,10 +1145,13 @@ class _ChannelTabBarDelegate extends SliverPersistentHeaderDelegate {
       child: TabBar(
         controller: controller,
         isScrollable: true,
-        padding: const EdgeInsets.only(left: AppSpacing.md),
+        tabAlignment: TabAlignment.start,
         labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        labelStyle: AppTextStyles.videoTitle,
+        labelStyle: AppTextStyles.videoTitle.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
         unselectedLabelStyle: AppTextStyles.videoTitle,
+        indicatorSize: TabBarIndicatorSize.tab,
         labelColor: colors.onSurface,
         unselectedLabelColor: colors.onSurfaceVariant,
         indicatorColor: colors.onSurface,

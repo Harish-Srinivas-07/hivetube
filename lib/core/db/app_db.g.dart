@@ -4468,6 +4468,76 @@ class $DownloadsTable extends Downloads
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _videoDoneMeta = const VerificationMeta(
+    'videoDone',
+  );
+  @override
+  late final GeneratedColumn<int> videoDone = GeneratedColumn<int>(
+    'video_done',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _audioDoneMeta = const VerificationMeta(
+    'audioDone',
+  );
+  @override
+  late final GeneratedColumn<int> audioDone = GeneratedColumn<int>(
+    'audio_done',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _videoTotalMeta = const VerificationMeta(
+    'videoTotal',
+  );
+  @override
+  late final GeneratedColumn<int> videoTotal = GeneratedColumn<int>(
+    'video_total',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _audioTotalMeta = const VerificationMeta(
+    'audioTotal',
+  );
+  @override
+  late final GeneratedColumn<int> audioTotal = GeneratedColumn<int>(
+    'audio_total',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _videoEtagMeta = const VerificationMeta(
+    'videoEtag',
+  );
+  @override
+  late final GeneratedColumn<String> videoEtag = GeneratedColumn<String>(
+    'video_etag',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _audioEtagMeta = const VerificationMeta(
+    'audioEtag',
+  );
+  @override
+  late final GeneratedColumn<String> audioEtag = GeneratedColumn<String>(
+    'audio_etag',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _statusMeta = const VerificationMeta('status');
   @override
   late final GeneratedColumn<String> status = GeneratedColumn<String>(
@@ -4510,6 +4580,12 @@ class $DownloadsTable extends Downloads
     path,
     total,
     done,
+    videoDone,
+    audioDone,
+    videoTotal,
+    audioTotal,
+    videoEtag,
+    audioEtag,
     status,
     error,
     createdAt,
@@ -4587,6 +4663,42 @@ class $DownloadsTable extends Downloads
         done.isAcceptableOrUnknown(data['done']!, _doneMeta),
       );
     }
+    if (data.containsKey('video_done')) {
+      context.handle(
+        _videoDoneMeta,
+        videoDone.isAcceptableOrUnknown(data['video_done']!, _videoDoneMeta),
+      );
+    }
+    if (data.containsKey('audio_done')) {
+      context.handle(
+        _audioDoneMeta,
+        audioDone.isAcceptableOrUnknown(data['audio_done']!, _audioDoneMeta),
+      );
+    }
+    if (data.containsKey('video_total')) {
+      context.handle(
+        _videoTotalMeta,
+        videoTotal.isAcceptableOrUnknown(data['video_total']!, _videoTotalMeta),
+      );
+    }
+    if (data.containsKey('audio_total')) {
+      context.handle(
+        _audioTotalMeta,
+        audioTotal.isAcceptableOrUnknown(data['audio_total']!, _audioTotalMeta),
+      );
+    }
+    if (data.containsKey('video_etag')) {
+      context.handle(
+        _videoEtagMeta,
+        videoEtag.isAcceptableOrUnknown(data['video_etag']!, _videoEtagMeta),
+      );
+    }
+    if (data.containsKey('audio_etag')) {
+      context.handle(
+        _audioEtagMeta,
+        audioEtag.isAcceptableOrUnknown(data['audio_etag']!, _audioEtagMeta),
+      );
+    }
     if (data.containsKey('status')) {
       context.handle(
         _statusMeta,
@@ -4656,6 +4768,30 @@ class $DownloadsTable extends Downloads
         DriftSqlType.int,
         data['${effectivePrefix}done'],
       )!,
+      videoDone: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}video_done'],
+      )!,
+      audioDone: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}audio_done'],
+      )!,
+      videoTotal: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}video_total'],
+      )!,
+      audioTotal: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}audio_total'],
+      )!,
+      videoEtag: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_etag'],
+      ),
+      audioEtag: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}audio_etag'],
+      ),
       status: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}status'],
@@ -4688,6 +4824,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
   final String? path;
   final int total;
   final int done;
+  final int videoDone;
+  final int audioDone;
+  final int videoTotal;
+  final int audioTotal;
+  final String? videoEtag;
+  final String? audioEtag;
   final String status;
   final String? error;
   final int createdAt;
@@ -4702,6 +4844,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
     this.path,
     required this.total,
     required this.done,
+    required this.videoDone,
+    required this.audioDone,
+    required this.videoTotal,
+    required this.audioTotal,
+    this.videoEtag,
+    this.audioEtag,
     required this.status,
     this.error,
     required this.createdAt,
@@ -4729,6 +4877,16 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
     }
     map['total'] = Variable<int>(total);
     map['done'] = Variable<int>(done);
+    map['video_done'] = Variable<int>(videoDone);
+    map['audio_done'] = Variable<int>(audioDone);
+    map['video_total'] = Variable<int>(videoTotal);
+    map['audio_total'] = Variable<int>(audioTotal);
+    if (!nullToAbsent || videoEtag != null) {
+      map['video_etag'] = Variable<String>(videoEtag);
+    }
+    if (!nullToAbsent || audioEtag != null) {
+      map['audio_etag'] = Variable<String>(audioEtag);
+    }
     map['status'] = Variable<String>(status);
     if (!nullToAbsent || error != null) {
       map['error'] = Variable<String>(error);
@@ -4757,6 +4915,16 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
       path: path == null && nullToAbsent ? const Value.absent() : Value(path),
       total: Value(total),
       done: Value(done),
+      videoDone: Value(videoDone),
+      audioDone: Value(audioDone),
+      videoTotal: Value(videoTotal),
+      audioTotal: Value(audioTotal),
+      videoEtag: videoEtag == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoEtag),
+      audioEtag: audioEtag == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioEtag),
       status: Value(status),
       error: error == null && nullToAbsent
           ? const Value.absent()
@@ -4781,6 +4949,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
       path: serializer.fromJson<String?>(json['path']),
       total: serializer.fromJson<int>(json['total']),
       done: serializer.fromJson<int>(json['done']),
+      videoDone: serializer.fromJson<int>(json['videoDone']),
+      audioDone: serializer.fromJson<int>(json['audioDone']),
+      videoTotal: serializer.fromJson<int>(json['videoTotal']),
+      audioTotal: serializer.fromJson<int>(json['audioTotal']),
+      videoEtag: serializer.fromJson<String?>(json['videoEtag']),
+      audioEtag: serializer.fromJson<String?>(json['audioEtag']),
       status: serializer.fromJson<String>(json['status']),
       error: serializer.fromJson<String?>(json['error']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -4800,6 +4974,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
       'path': serializer.toJson<String?>(path),
       'total': serializer.toJson<int>(total),
       'done': serializer.toJson<int>(done),
+      'videoDone': serializer.toJson<int>(videoDone),
+      'audioDone': serializer.toJson<int>(audioDone),
+      'videoTotal': serializer.toJson<int>(videoTotal),
+      'audioTotal': serializer.toJson<int>(audioTotal),
+      'videoEtag': serializer.toJson<String?>(videoEtag),
+      'audioEtag': serializer.toJson<String?>(audioEtag),
       'status': serializer.toJson<String>(status),
       'error': serializer.toJson<String?>(error),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -4817,6 +4997,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
     Value<String?> path = const Value.absent(),
     int? total,
     int? done,
+    int? videoDone,
+    int? audioDone,
+    int? videoTotal,
+    int? audioTotal,
+    Value<String?> videoEtag = const Value.absent(),
+    Value<String?> audioEtag = const Value.absent(),
     String? status,
     Value<String?> error = const Value.absent(),
     int? createdAt,
@@ -4831,6 +5017,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
     path: path.present ? path.value : this.path,
     total: total ?? this.total,
     done: done ?? this.done,
+    videoDone: videoDone ?? this.videoDone,
+    audioDone: audioDone ?? this.audioDone,
+    videoTotal: videoTotal ?? this.videoTotal,
+    audioTotal: audioTotal ?? this.audioTotal,
+    videoEtag: videoEtag.present ? videoEtag.value : this.videoEtag,
+    audioEtag: audioEtag.present ? audioEtag.value : this.audioEtag,
     status: status ?? this.status,
     error: error.present ? error.value : this.error,
     createdAt: createdAt ?? this.createdAt,
@@ -4847,6 +5039,16 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
       path: data.path.present ? data.path.value : this.path,
       total: data.total.present ? data.total.value : this.total,
       done: data.done.present ? data.done.value : this.done,
+      videoDone: data.videoDone.present ? data.videoDone.value : this.videoDone,
+      audioDone: data.audioDone.present ? data.audioDone.value : this.audioDone,
+      videoTotal: data.videoTotal.present
+          ? data.videoTotal.value
+          : this.videoTotal,
+      audioTotal: data.audioTotal.present
+          ? data.audioTotal.value
+          : this.audioTotal,
+      videoEtag: data.videoEtag.present ? data.videoEtag.value : this.videoEtag,
+      audioEtag: data.audioEtag.present ? data.audioEtag.value : this.audioEtag,
       status: data.status.present ? data.status.value : this.status,
       error: data.error.present ? data.error.value : this.error,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -4866,6 +5068,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
           ..write('path: $path, ')
           ..write('total: $total, ')
           ..write('done: $done, ')
+          ..write('videoDone: $videoDone, ')
+          ..write('audioDone: $audioDone, ')
+          ..write('videoTotal: $videoTotal, ')
+          ..write('audioTotal: $audioTotal, ')
+          ..write('videoEtag: $videoEtag, ')
+          ..write('audioEtag: $audioEtag, ')
           ..write('status: $status, ')
           ..write('error: $error, ')
           ..write('createdAt: $createdAt')
@@ -4885,6 +5093,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
     path,
     total,
     done,
+    videoDone,
+    audioDone,
+    videoTotal,
+    audioTotal,
+    videoEtag,
+    audioEtag,
     status,
     error,
     createdAt,
@@ -4903,6 +5117,12 @@ class DownloadRow extends DataClass implements Insertable<DownloadRow> {
           other.path == this.path &&
           other.total == this.total &&
           other.done == this.done &&
+          other.videoDone == this.videoDone &&
+          other.audioDone == this.audioDone &&
+          other.videoTotal == this.videoTotal &&
+          other.audioTotal == this.audioTotal &&
+          other.videoEtag == this.videoEtag &&
+          other.audioEtag == this.audioEtag &&
           other.status == this.status &&
           other.error == this.error &&
           other.createdAt == this.createdAt);
@@ -4919,6 +5139,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
   final Value<String?> path;
   final Value<int> total;
   final Value<int> done;
+  final Value<int> videoDone;
+  final Value<int> audioDone;
+  final Value<int> videoTotal;
+  final Value<int> audioTotal;
+  final Value<String?> videoEtag;
+  final Value<String?> audioEtag;
   final Value<String> status;
   final Value<String?> error;
   final Value<int> createdAt;
@@ -4933,6 +5159,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
     this.path = const Value.absent(),
     this.total = const Value.absent(),
     this.done = const Value.absent(),
+    this.videoDone = const Value.absent(),
+    this.audioDone = const Value.absent(),
+    this.videoTotal = const Value.absent(),
+    this.audioTotal = const Value.absent(),
+    this.videoEtag = const Value.absent(),
+    this.audioEtag = const Value.absent(),
     this.status = const Value.absent(),
     this.error = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -4948,6 +5180,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
     this.path = const Value.absent(),
     this.total = const Value.absent(),
     this.done = const Value.absent(),
+    this.videoDone = const Value.absent(),
+    this.audioDone = const Value.absent(),
+    this.videoTotal = const Value.absent(),
+    this.audioTotal = const Value.absent(),
+    this.videoEtag = const Value.absent(),
+    this.audioEtag = const Value.absent(),
     this.status = const Value.absent(),
     this.error = const Value.absent(),
     required int createdAt,
@@ -4965,6 +5203,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
     Expression<String>? path,
     Expression<int>? total,
     Expression<int>? done,
+    Expression<int>? videoDone,
+    Expression<int>? audioDone,
+    Expression<int>? videoTotal,
+    Expression<int>? audioTotal,
+    Expression<String>? videoEtag,
+    Expression<String>? audioEtag,
     Expression<String>? status,
     Expression<String>? error,
     Expression<int>? createdAt,
@@ -4980,6 +5224,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
       if (path != null) 'path': path,
       if (total != null) 'total': total,
       if (done != null) 'done': done,
+      if (videoDone != null) 'video_done': videoDone,
+      if (audioDone != null) 'audio_done': audioDone,
+      if (videoTotal != null) 'video_total': videoTotal,
+      if (audioTotal != null) 'audio_total': audioTotal,
+      if (videoEtag != null) 'video_etag': videoEtag,
+      if (audioEtag != null) 'audio_etag': audioEtag,
       if (status != null) 'status': status,
       if (error != null) 'error': error,
       if (createdAt != null) 'created_at': createdAt,
@@ -4997,6 +5247,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
     Value<String?>? path,
     Value<int>? total,
     Value<int>? done,
+    Value<int>? videoDone,
+    Value<int>? audioDone,
+    Value<int>? videoTotal,
+    Value<int>? audioTotal,
+    Value<String?>? videoEtag,
+    Value<String?>? audioEtag,
     Value<String>? status,
     Value<String?>? error,
     Value<int>? createdAt,
@@ -5012,6 +5268,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
       path: path ?? this.path,
       total: total ?? this.total,
       done: done ?? this.done,
+      videoDone: videoDone ?? this.videoDone,
+      audioDone: audioDone ?? this.audioDone,
+      videoTotal: videoTotal ?? this.videoTotal,
+      audioTotal: audioTotal ?? this.audioTotal,
+      videoEtag: videoEtag ?? this.videoEtag,
+      audioEtag: audioEtag ?? this.audioEtag,
       status: status ?? this.status,
       error: error ?? this.error,
       createdAt: createdAt ?? this.createdAt,
@@ -5051,6 +5313,24 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
     if (done.present) {
       map['done'] = Variable<int>(done.value);
     }
+    if (videoDone.present) {
+      map['video_done'] = Variable<int>(videoDone.value);
+    }
+    if (audioDone.present) {
+      map['audio_done'] = Variable<int>(audioDone.value);
+    }
+    if (videoTotal.present) {
+      map['video_total'] = Variable<int>(videoTotal.value);
+    }
+    if (audioTotal.present) {
+      map['audio_total'] = Variable<int>(audioTotal.value);
+    }
+    if (videoEtag.present) {
+      map['video_etag'] = Variable<String>(videoEtag.value);
+    }
+    if (audioEtag.present) {
+      map['audio_etag'] = Variable<String>(audioEtag.value);
+    }
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
@@ -5076,6 +5356,12 @@ class DownloadsCompanion extends UpdateCompanion<DownloadRow> {
           ..write('path: $path, ')
           ..write('total: $total, ')
           ..write('done: $done, ')
+          ..write('videoDone: $videoDone, ')
+          ..write('audioDone: $audioDone, ')
+          ..write('videoTotal: $videoTotal, ')
+          ..write('audioTotal: $audioTotal, ')
+          ..write('videoEtag: $videoEtag, ')
+          ..write('audioEtag: $audioEtag, ')
           ..write('status: $status, ')
           ..write('error: $error, ')
           ..write('createdAt: $createdAt')
@@ -10391,6 +10677,12 @@ typedef $$DownloadsTableCreateCompanionBuilder =
       Value<String?> path,
       Value<int> total,
       Value<int> done,
+      Value<int> videoDone,
+      Value<int> audioDone,
+      Value<int> videoTotal,
+      Value<int> audioTotal,
+      Value<String?> videoEtag,
+      Value<String?> audioEtag,
       Value<String> status,
       Value<String?> error,
       required int createdAt,
@@ -10407,6 +10699,12 @@ typedef $$DownloadsTableUpdateCompanionBuilder =
       Value<String?> path,
       Value<int> total,
       Value<int> done,
+      Value<int> videoDone,
+      Value<int> audioDone,
+      Value<int> videoTotal,
+      Value<int> audioTotal,
+      Value<String?> videoEtag,
+      Value<String?> audioEtag,
       Value<String> status,
       Value<String?> error,
       Value<int> createdAt,
@@ -10468,6 +10766,36 @@ class $$DownloadsTableFilterComposer
 
   ColumnFilters<int> get done => $composableBuilder(
     column: $table.done,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get videoDone => $composableBuilder(
+    column: $table.videoDone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get audioDone => $composableBuilder(
+    column: $table.audioDone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get videoTotal => $composableBuilder(
+    column: $table.videoTotal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get audioTotal => $composableBuilder(
+    column: $table.audioTotal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get videoEtag => $composableBuilder(
+    column: $table.videoEtag,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get audioEtag => $composableBuilder(
+    column: $table.audioEtag,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10546,6 +10874,36 @@ class $$DownloadsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get videoDone => $composableBuilder(
+    column: $table.videoDone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get audioDone => $composableBuilder(
+    column: $table.audioDone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get videoTotal => $composableBuilder(
+    column: $table.videoTotal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get audioTotal => $composableBuilder(
+    column: $table.audioTotal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get videoEtag => $composableBuilder(
+    column: $table.videoEtag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get audioEtag => $composableBuilder(
+    column: $table.audioEtag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get status => $composableBuilder(
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
@@ -10601,6 +10959,28 @@ class $$DownloadsTableAnnotationComposer
   GeneratedColumn<int> get done =>
       $composableBuilder(column: $table.done, builder: (column) => column);
 
+  GeneratedColumn<int> get videoDone =>
+      $composableBuilder(column: $table.videoDone, builder: (column) => column);
+
+  GeneratedColumn<int> get audioDone =>
+      $composableBuilder(column: $table.audioDone, builder: (column) => column);
+
+  GeneratedColumn<int> get videoTotal => $composableBuilder(
+    column: $table.videoTotal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get audioTotal => $composableBuilder(
+    column: $table.audioTotal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get videoEtag =>
+      $composableBuilder(column: $table.videoEtag, builder: (column) => column);
+
+  GeneratedColumn<String> get audioEtag =>
+      $composableBuilder(column: $table.audioEtag, builder: (column) => column);
+
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
@@ -10649,6 +11029,12 @@ class $$DownloadsTableTableManager
                 Value<String?> path = const Value.absent(),
                 Value<int> total = const Value.absent(),
                 Value<int> done = const Value.absent(),
+                Value<int> videoDone = const Value.absent(),
+                Value<int> audioDone = const Value.absent(),
+                Value<int> videoTotal = const Value.absent(),
+                Value<int> audioTotal = const Value.absent(),
+                Value<String?> videoEtag = const Value.absent(),
+                Value<String?> audioEtag = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -10663,6 +11049,12 @@ class $$DownloadsTableTableManager
                 path: path,
                 total: total,
                 done: done,
+                videoDone: videoDone,
+                audioDone: audioDone,
+                videoTotal: videoTotal,
+                audioTotal: audioTotal,
+                videoEtag: videoEtag,
+                audioEtag: audioEtag,
                 status: status,
                 error: error,
                 createdAt: createdAt,
@@ -10679,6 +11071,12 @@ class $$DownloadsTableTableManager
                 Value<String?> path = const Value.absent(),
                 Value<int> total = const Value.absent(),
                 Value<int> done = const Value.absent(),
+                Value<int> videoDone = const Value.absent(),
+                Value<int> audioDone = const Value.absent(),
+                Value<int> videoTotal = const Value.absent(),
+                Value<int> audioTotal = const Value.absent(),
+                Value<String?> videoEtag = const Value.absent(),
+                Value<String?> audioEtag = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String?> error = const Value.absent(),
                 required int createdAt,
@@ -10693,6 +11091,12 @@ class $$DownloadsTableTableManager
                 path: path,
                 total: total,
                 done: done,
+                videoDone: videoDone,
+                audioDone: audioDone,
+                videoTotal: videoTotal,
+                audioTotal: audioTotal,
+                videoEtag: videoEtag,
+                audioEtag: audioEtag,
                 status: status,
                 error: error,
                 createdAt: createdAt,

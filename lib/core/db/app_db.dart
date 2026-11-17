@@ -53,7 +53,7 @@ class AppDb extends _$AppDb {
   AppDb([QueryExecutor? executor]) : super(executor ?? defaultAppDbExecutor());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -102,6 +102,14 @@ class AppDb extends _$AppDb {
       }
       if (from >= 2 && from < 4) {
         await m.addColumn(subscriptions, subscriptions.handle);
+      }
+      if (from >= 2 && from < 5) {
+        await m.addColumn(downloads, downloads.videoDone);
+        await m.addColumn(downloads, downloads.audioDone);
+        await m.addColumn(downloads, downloads.videoTotal);
+        await m.addColumn(downloads, downloads.audioTotal);
+        await m.addColumn(downloads, downloads.videoEtag);
+        await m.addColumn(downloads, downloads.audioEtag);
       }
       await customStatement('''
         DELETE FROM history

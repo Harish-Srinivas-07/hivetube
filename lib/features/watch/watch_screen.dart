@@ -284,7 +284,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   Future<void> _back() async {
     if (_contentSheetOpen) {
-      await Navigator.of(_routerContext, rootNavigator: true).maybePop();
+      await Navigator.of(context).maybePop();
       return;
     }
     final ui = ref.read(playerUiProvider);
@@ -643,7 +643,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   void _showChapters(List<WatchChapter> chapters) {
     showAppSheet<void>(
-      _routerContext,
+      context,
       title: 'Chapters',
       builder: (context, scrollController) => ListView.builder(
         controller: scrollController,
@@ -679,7 +679,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     try {
       final maxFraction = _watchVideoAreaFraction();
       await showAppSheet<void>(
-        _routerContext,
+        context,
         title: 'Description',
         initialFraction: maxFraction,
         minFraction: min(0.25, maxFraction),
@@ -739,7 +739,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     try {
       final maxFraction = _watchVideoAreaFraction();
       await showAppSheet<void>(
-        _routerContext,
+        context,
         title: 'Comments',
         initialFraction: maxFraction,
         minFraction: min(0.25, maxFraction),
@@ -946,7 +946,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       LucideIcons.bookmark,
                       'Save',
                       () => showSaveToPlaylistSheet(
-                        _routerContext,
+                        context,
                         videoId: id,
                         media: MediaCompanion.insert(
                           videoId: id,
@@ -1001,7 +1001,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                       LucideIcons.listVideo,
                       'Queue',
                       () => showQueueSheet(
-                        _routerContext,
+                        context,
                         current: VideoItem(
                           id: info.id,
                           title: info.title,
@@ -1264,7 +1264,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     tooltip: 'More options',
     icon: const Icon(LucideIcons.ellipsisVertical),
     onPressed: () => showVideoOptionsMenu(
-      _routerContext,
+      context,
       videoId: item.id,
       ref: ref,
       video: item,

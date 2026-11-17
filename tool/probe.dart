@@ -22,6 +22,19 @@ import 'package:hivetube/core/yt/yt_rss.dart';
 import 'package:hivetube/core/yt/yt_search.dart';
 
 Future<void> main(List<String> args) async {
+  if (args.isNotEmpty && args.first == 'channel') {
+    if (args.length != 3 ||
+        !args[1].startsWith('UC') ||
+        !const {'playlists', 'live'}.contains(args[2].toLowerCase())) {
+      stderr.writeln(
+        'Usage: dart run tool/probe.dart channel <channel-id> playlists|live',
+      );
+      exitCode = 64;
+      return;
+    }
+    await _probeChannel(args[1], args[2].toLowerCase());
+    return;
+  }
   stdout.writeln('=== HIVETUBE LIVE TRAFFIC PROBE ===');
 
   // Load language profiles
@@ -488,4 +501,81 @@ Future<void> main(List<String> args) async {
   }
 
   exit(0);
+}
+
+Future<void> _probeChannel(String channelId, String mode) async {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+    ),
+  );
+  try {
+    final clientsRaw = await File(
+      'assets/innertube_clients.json',
+    ).readAsString();
+    final http = InnertubeHttp(
+      dio,
+      InnertubeClients(jsonDecode(clientsRaw)),
+      hl: 'en',
+      gl: 'IN',
+    );
+    final browse = YtBrowse(http);
+    final title = mode == 'live' ? 'Live' : 'Playlists';
+    final params = mode == 'live'
+        ? YtBrowse.tabParamsLive
+        : YtBrowse.tabParamsPlaylists;
+    stdout.writeln('Channel: $channelId | tab: $title | client: WEB');
+    final channel = await browse.channelPage(channelId);
+    final exposed = channel.tabs.contains(title);
+    stdout.writeln('Tab exposed: ${exposed ? 'yes' : 'no'}');
+    if (!exposed) {
+      stdout.writeln('Items: 0 | continuation: not available');
+      return;
+    }
+    final page = await browse.channelPage(channelId, params: params);
+    stdout.writeln('Items: ${page.currentTabItems.length}');
+    void printItem(dynamic item, {String prefix = '  '}) {
+      if (item is ChannelPlaylistItem) {
+        stdout.writeln(
+          '$prefix${item.id} | ${item.title} | count=${item.videoCountText} | updated=${item.updatedText}',
+        );
+      } else if (item is ChannelLiveItem) {
+        final video = item.video;
+        stdout.writeln(
+          '$prefix${video.id} | ${video.title} | ${item.badge} | views=${video.viewsText} | date=${video.publishedText}',
+        );
+      }
+    }
+
+    for (final item in page.currentTabItems.take(3)) {
+      printItem(item);
+    }
+    void printUpcoming(Iterable<dynamic> items) {
+      for (final item in items.whereType<ChannelLiveItem>().where(
+        (item) => item.badge == 'UPCOMING',
+      )) {
+        printItem(item, prefix: '  UPCOMING: ');
+      }
+    }
+
+    if (mode == 'live') printUpcoming(page.currentTabItems);
+    final token = page.continuation;
+    if (token == null) {
+      stdout.writeln('Continuation: none');
+    } else {
+      final next = await browse.channelPage(
+        channelId,
+        params: params,
+        continuation: token,
+      );
+      stdout.writeln('Continuation: ${next.currentTabItems.length} items');
+      if (mode == 'live') printUpcoming(next.currentTabItems);
+    }
+  } catch (error, stack) {
+    stderr.writeln('Channel probe failed: $error\n$stack');
+    exitCode = 1;
+  } finally {
+    dio.close(force: true);
+  }
 }

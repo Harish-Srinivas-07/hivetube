@@ -101,7 +101,7 @@ class _PlayerSettingsViewState extends State<_PlayerSettingsView> {
           unawaited(
             Future<void>.delayed(AppMotion.imageFade, () {
               if (mounted) {
-                Navigator.of(context, rootNavigator: true).pop();
+                Navigator.of(context).pop();
               }
             }),
           );

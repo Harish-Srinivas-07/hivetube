@@ -15,6 +15,7 @@ import '../../theme/app_text_styles.dart';
 import '../watch/mini_player_inset.dart';
 import '../../widgets/ui/ui.dart';
 import 'content_debug_screen.dart';
+import 'about_screen.dart';
 import '../../widgets/update_dialog.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -409,6 +410,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onTap: clearDatabase,
             ),
             section('About'),
+            settingTile(
+              icon: LucideIcons.info,
+              title: 'About',
+              subtitle: 'App information and credits',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
+              ),
+            ),
             if (Platform.isAndroid)
               settingTile(
                 icon: LucideIcons.refreshCw,

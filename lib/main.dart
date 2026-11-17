@@ -153,6 +153,8 @@ Future<void> main() async {
   );
 }
 
+final _playerNavigatorKey = GlobalKey<NavigatorState>();
+
 class HiveTubeApp extends ConsumerWidget {
   const HiveTubeApp({super.key});
 
@@ -160,6 +162,11 @@ class HiveTubeApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     playerBackButtonDispatcher.onPlayerBack = () async {
       if (ref.read(watchPanelProvider) == null) return false;
+      final playerNavigator = _playerNavigatorKey.currentState;
+      if (playerNavigator != null && playerNavigator.canPop()) {
+        await playerNavigator.maybePop();
+        return true;
+      }
       final ui = ref.read(playerUiProvider);
       if (ui.locked) {
         ref.read(playerUiProvider.notifier).setOverlayVisible(true);
@@ -170,7 +177,7 @@ class HiveTubeApp extends ConsumerWidget {
         await setPlayerFullscreenOrientation(false);
         return true;
       }
-      if (ui.panelMode == PlayerPanelMode.expanded) {
+      if (ui.panelMode != PlayerPanelMode.mini) {
         ref.read(watchPanelExpandProvider.notifier).minimize();
         return true;
       }
@@ -223,16 +230,19 @@ class _RootPlayerOverlay extends ConsumerWidget {
               child: Overlay(
                 initialEntries: [
                   OverlayEntry(
-                    builder: (context) => Navigator(
-                      onGenerateRoute: (_) => PageRouteBuilder<void>(
-                        opaque: false,
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
-                        pageBuilder: (context, _, _) => Material(
-                          type: MaterialType.transparency,
-                          child: WatchPanel(
-                            navigatorContext: () =>
-                                rootNavigatorKey.currentContext,
+                    builder: (context) => PlayerNavigatorScope(
+                      child: Navigator(
+                        key: _playerNavigatorKey,
+                        onGenerateRoute: (_) => PageRouteBuilder<void>(
+                          opaque: false,
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                          pageBuilder: (context, _, _) => Material(
+                            type: MaterialType.transparency,
+                            child: WatchPanel(
+                              navigatorContext: () =>
+                                  rootNavigatorKey.currentContext,
+                            ),
                           ),
                         ),
                       ),

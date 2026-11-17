@@ -276,7 +276,8 @@ Future<T?> showAppSheet<T>(
 
   return showModalBottomSheet<T>(
     context: context,
-    useRootNavigator: useRootNavigator,
+    useRootNavigator:
+        useRootNavigator && !PlayerNavigatorScope.contains(context),
     isScrollControlled: true,
     useSafeArea: false,
     isDismissible: floatingInset || isDismissible,

@@ -142,14 +142,27 @@ class PlaylistItem {
   final String id, title, channelName, channelId, thumbUrl, videoCountText;
 }
 
-enum SearchFilterType {
-  all,
-  videos,
-  shorts,
-  channels,
-  playlists,
-  live,
+class ChannelPlaylistItem extends PlaylistItem {
+  const ChannelPlaylistItem({
+    required super.id,
+    required super.title,
+    super.channelName,
+    super.channelId,
+    super.thumbUrl,
+    super.videoCountText,
+    this.updatedText = '',
+  });
+
+  final String updatedText;
 }
+
+class ChannelLiveItem {
+  const ChannelLiveItem({required this.video, this.badge = ''});
+  final VideoItem video;
+  final String badge;
+}
+
+enum SearchFilterType { all, videos, shorts, channels, playlists, live }
 
 class SearchFilterChip {
   const SearchFilterChip({

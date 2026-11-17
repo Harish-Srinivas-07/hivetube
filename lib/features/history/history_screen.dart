@@ -397,11 +397,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       title: title,
       channelId: media?.channelId ?? '',
       channelName: media?.channelName ?? '',
-      thumbUrl:
-          media?.thumbUrl ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
-      durationText: AppFormatters.formatDurationSeconds(
-        item.history.durationMs ~/ 1000,
-      ),
+      thumbUrl: media?.thumbUrl.isNotEmpty == true
+          ? media!.thumbUrl
+          : 'https://i.ytimg.com/vi/$videoId/mqdefault.jpg',
+      durationText: item.history.durationMs > 0
+          ? AppFormatters.formatDurationSeconds(item.history.durationMs ~/ 1000)
+          : '',
       publishedText: MaterialLocalizations.of(context).formatShortMonthDay(
         DateTime.fromMillisecondsSinceEpoch(item.history.at),
       ),
@@ -442,7 +443,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 width: AppSizes.buttonIcon,
                 height: AppSizes.buttonIcon,
               ),
-              icon: const Icon(LucideIcons.ellipsis, size: AppSizes.iconSm),
+              icon: const Icon(
+                LucideIcons.ellipsisVertical,
+                size: AppSizes.iconSm,
+              ),
               onPressed: () => _showItemMenu(item),
             ),
           ),
@@ -577,9 +581,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                               }
                               return Padding(
                                 padding: const EdgeInsets.fromLTRB(
-                                  AppSpacing.md,
                                   AppSpacing.lg,
-                                  AppSpacing.md,
+                                  AppSpacing.lg,
+                                  AppSpacing.lg,
                                   AppSpacing.sm,
                                 ),
                                 child: Text(

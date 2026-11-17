@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/db/app_db.dart';
 import '../../core/providers.dart';
+import '../watch/mini_player_inset.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
@@ -124,6 +125,7 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
+      useRootNavigator: !PlayerNavigatorScope.contains(context),
       builder: (dialogContext) => AppDialog(
         title: 'New playlist',
         content: ClipRRect(
