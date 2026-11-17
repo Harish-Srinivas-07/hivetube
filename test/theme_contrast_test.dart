@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,10 +24,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
+    final profileController = StreamController<ProfileRow?>();
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 1));
+      await profileController.close();
     });
 
     const screens = <({String route, String title, bool searchField})>[
@@ -49,7 +53,9 @@ void main() {
             feedItemsStreamProvider.overrideWith(
               (ref) => Stream.value(const []),
             ),
-            profileStreamProvider.overrideWith((ref) => Stream.value(null)),
+            profileStreamProvider.overrideWith(
+              (ref) => profileController.stream,
+            ),
             historyStreamProvider.overrideWith((ref) => Stream.value(const [])),
             playlistsStreamProvider.overrideWith(
               (ref) => Stream.value(const []),
