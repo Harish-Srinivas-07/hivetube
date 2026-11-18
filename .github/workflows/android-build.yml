@@ -100,24 +100,38 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
+
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -n "$APKSIGNER"
-          EXPECTED="$(keytool -list -v -keystore android/hivetube-upload.jks -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          test -n "$EXPECTED"
-          for APK in dist/*.apk; do
-            CERTS="$($APKSIGNER verify --print-certs "$APK")"
-            printf '%s\n' "$CERTS"
-            ACTUAL="$(printf '%s\n' "$CERTS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-            test "$ACTUAL" = "$EXPECTED"
-          done
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: HiveTube ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
-          files: dist/*.apk
-          fail_on_unmatched_files: true
-          make_latest: true
+          EXPECTED="$(keytool -list -v \
+            -keystore android/hivetube-upload.jks \
+            -storepass:env STORE_PASSWORD \
+            -alias "$KEY_ALIAS" |
+            sed -n 's/^[[:space:]]*SHA256: //p' |
+            tr -d ':' |
+            tr '[:upper:]' '[:lower:]')"
+
+          test -n "$EXPECTED"
+
+          for APK in dist/*.apk; do
+            echo "Verifying $APK"
+
+            CERTS="$("$APKSIGNER" verify --print-certs "$APK")"
+            printf '%s\n' "$CERTS"
+
+            ACTUAL="$(printf '%s\n' "$CERTS" |
+              sed -nE 's/^(V[0-9]+ Signer|Signer #[0-9]+): certificate SHA-256 digest: //p' |
+              head -1 |
+              tr '[:upper:]' '[:lower:]')"
+
+            if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+              echo "Signature mismatch for $APK" >&2
+              echo "Expected: $EXPECTED" >&2
+              echo "Actual:   $ACTUAL" >&2
+              exit 1
+            fi
+
+            echo "Signature verified successfully: $APK"
+          done
+          
