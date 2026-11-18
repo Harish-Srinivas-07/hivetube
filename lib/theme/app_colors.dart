@@ -17,6 +17,7 @@ class AppColors {
   static const transparent = Colors.transparent;
   static const white = Color(0xFFFFFFFF);
   static const black = Color(0xFF000000);
+  static const captionShadow = Color(0xDD000000);
   static const maskOpaque = Color(0xFF000000);
   static const scrim50 = Color(0x80000000);
   static const videoSheet = Color(0xFF212121);

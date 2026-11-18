@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -8,6 +10,8 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_motion.dart';
 import 'preview_card_visibility.dart';
+import '../../core/providers.dart';
+import 'formatters.dart';
 
 String _posterForAnimatedThumbnail(String url, String videoId) {
   final uri = Uri.tryParse(url);
@@ -31,11 +35,12 @@ String _posterForAnimatedThumbnail(String url, String videoId) {
 }
 
 /// Unified YouTube-style video thumbnail with duration badge and watched progress bar.
-class ThumbnailWithDuration extends StatelessWidget {
+class ThumbnailWithDuration extends ConsumerWidget {
   const ThumbnailWithDuration({
     super.key,
     required this.url,
     this.duration = '',
+    this.videoId,
     this.progress,
     this.borderRadius,
     this.thumbnailKey,
@@ -45,6 +50,7 @@ class ThumbnailWithDuration extends StatelessWidget {
 
   final String url;
   final String duration;
+  final String? videoId;
   final double? progress;
   final BorderRadius? borderRadius;
   final Key? thumbnailKey;
@@ -52,10 +58,18 @@ class ThumbnailWithDuration extends StatelessWidget {
   final double aspectRatio;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final radius = borderRadius ?? BorderRadius.zero;
     final preview = PreviewCardScope.maybeOf(context);
+    final seconds = duration.isEmpty && videoId != null
+        ? ref.watch(videoDurationProvider(videoId!)).value
+        : null;
+    final displayedDuration = duration.isNotEmpty
+        ? duration
+        : (seconds != null && seconds > 0
+              ? AppFormatters.formatDurationSeconds(seconds)
+              : '');
     final imageUrl = preview == null || preview.isActive
         ? url
         : _posterForAnimatedThumbnail(url, preview.videoId);
@@ -68,7 +82,14 @@ class ThumbnailWithDuration extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (imageUrl.isNotEmpty)
+            if (imageUrl.startsWith('file:'))
+              Image.file(
+                File.fromUri(Uri.parse(imageUrl)),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    Container(color: theme.colorScheme.surfaceContainerHigh),
+              )
+            else if (imageUrl.isNotEmpty)
               LayoutBuilder(
                 builder: (context, constraints) => CachedNetworkImage(
                   imageUrl: imageUrl,
@@ -107,7 +128,7 @@ class ThumbnailWithDuration extends StatelessWidget {
                   ),
                 ),
               ),
-            if (duration.isNotEmpty)
+            if (displayedDuration.isNotEmpty)
               Positioned(
                 right: AppSpacing.xs,
                 bottom: AppSpacing.xs,
@@ -121,10 +142,9 @@ class ThumbnailWithDuration extends StatelessWidget {
                     borderRadius: AppRadius.xsBorder,
                   ),
                   child: Text(
-                    duration,
-                    style: AppTextStyles.label.copyWith(
+                    displayedDuration,
+                    style: AppTextStyles.badge.copyWith(
                       color: AppColors.thumbnailBadgeText,
-                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

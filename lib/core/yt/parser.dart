@@ -21,6 +21,31 @@ String _text(dynamic value) {
   return '';
 }
 
+String _videoDuration(Map value) {
+  final explicit = _text(value['lengthText']).trim();
+  if (explicit.isNotEmpty) return explicit;
+
+  final badges = [
+    ...findAll(
+      value['thumbnailOverlays'],
+      'thumbnailOverlayTimeStatusRenderer',
+    ),
+    ...findAll(value['contentImage'], 'thumbnailBadgeViewModel'),
+  ];
+  for (final badge in badges) {
+    final text = _text(badge is Map ? badge['text'] : null).trim();
+    if (RegExp(r'^\d+:\d{2}(?::\d{2})?$').hasMatch(text)) return text;
+  }
+  final seconds = int.tryParse('${value['lengthSeconds'] ?? ''}');
+  if (seconds == null || seconds <= 0) return '';
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds ~/ 60) % 60;
+  final remainder = (seconds % 60).toString().padLeft(2, '0');
+  return hours > 0
+      ? '$hours:${minutes.toString().padLeft(2, '0')}:$remainder'
+      : '$minutes:$remainder';
+}
+
 String _thumbnail(dynamic v, String id) {
   final urls = findAll(
     v,
@@ -259,11 +284,7 @@ VideoPage parseVideos(dynamic json) {
           channelName: channel,
           channelAvatarUrl: avatar,
           thumbUrl: _thumbnail(value['thumbnail'] ?? value['contentImage'], id),
-          durationText: _text(value['lengthText']).isNotEmpty
-              ? _text(value['lengthText'])
-              : (value['lengthSeconds'] != null
-                    ? '${(int.tryParse(value['lengthSeconds'].toString()) ?? 0) ~/ 60}:${((int.tryParse(value['lengthSeconds'].toString()) ?? 0) % 60).toString().padLeft(2, '0')}'
-                    : ''),
+          durationText: _videoDuration(value),
           viewsText: _text(value['viewCountText']),
           publishedText: _text(value['publishedTimeText']),
           isShort: findAll(

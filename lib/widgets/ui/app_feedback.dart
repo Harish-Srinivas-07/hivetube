@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_colors.dart';
@@ -16,12 +17,17 @@ abstract final class AppSnackbar {
     VoidCallback? onAction,
     bool isError = false,
     Duration duration = AppMotion.snackbar,
+    double extraBottom = 0,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final snackbarBg = isDark
         ? AppColors.snackbarDark
         : AppColors.snackbarLight;
     final snackbarFg = isDark ? AppColors.black : AppColors.white;
+    final horizontalMargin = math.max(
+      AppSpacing.md,
+      (MediaQuery.sizeOf(context).width - AppSizes.snackbarMaxWidth) / 2,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -31,15 +37,14 @@ abstract final class AppSnackbar {
         duration: duration,
         behavior: SnackBarBehavior.floating,
         margin: EdgeInsets.fromLTRB(
+          horizontalMargin,
           AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md + MiniPlayerInset.of(context),
+          horizontalMargin,
+          AppSpacing.md + MiniPlayerInset.of(context) + extraBottom,
         ),
         shape: const RoundedRectangleBorder(borderRadius: AppRadius.smBorder),
         backgroundColor: snackbarBg,
         elevation: 0,
-        width: AppSizes.snackbarMaxWidth,
         action: (actionLabel != null && onAction != null)
             ? SnackBarAction(
                 label: actionLabel,

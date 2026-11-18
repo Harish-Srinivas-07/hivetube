@@ -402,6 +402,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           : 'https://i.ytimg.com/vi/$videoId/mqdefault.jpg',
       durationText: item.history.durationMs > 0
           ? AppFormatters.formatDurationSeconds(item.history.durationMs ~/ 1000)
+          : (media?.durationSec ?? 0) > 0
+          ? AppFormatters.formatDurationSeconds(media!.durationSec!)
           : '',
       publishedText: MaterialLocalizations.of(context).formatShortMonthDay(
         DateTime.fromMillisecondsSinceEpoch(item.history.at),

@@ -112,7 +112,7 @@ Future<void> showVideoOptionsMenu(
             thumbUrl: video.thumbUrl,
             updatedAt: DateTime.now().millisecondsSinceEpoch,
           );
-      await showDownloadChoices(context, ref!, item);
+      await showDownloadChoices(context, ref!, item, video: video);
     case 'share':
       unawaited(
         SharePlus.instance.share(

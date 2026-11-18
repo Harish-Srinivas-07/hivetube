@@ -13,6 +13,7 @@ import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
 import 'package:hivetube/widgets/player/player_seek_bar.dart';
 import 'package:hivetube/theme/app_spacing.dart';
+import 'package:hivetube/theme/app_text_styles.dart';
 
 class _FakeMediaPlayerState extends Fake implements PlayerState {
   _FakeMediaPlayerState(this.width, this.height);
@@ -126,6 +127,39 @@ class _FullscreenMovingUi extends PlayerUiController {
 }
 
 void main() {
+  testWidgets('watch captions use fullscreen styling near the bottom', (
+    tester,
+  ) async {
+    final service = _FakePlayback()
+      ..state.selectedCaption = 0
+      ..state.subtitleText = 'A lyric line';
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_FakeUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                height: 203,
+                child: SharedPlayer(
+                  service: service,
+                  videoOverride: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final caption = find.text('A lyric line');
+    expect(caption, findsOneWidget);
+    expect(tester.widget<Text>(caption).style, AppTextStyles.playerCaption);
+    expect(tester.widget<Text>(caption).style!.backgroundColor, isNull);
+    final player = tester.getRect(find.byType(SharedPlayer));
+    expect(tester.getCenter(caption).dy, greaterThan(player.center.dy));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   testWidgets('full controls are absent while panel is moving', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

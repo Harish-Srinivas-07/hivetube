@@ -2,6 +2,68 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/yt/parser.dart';
 
 void main() {
+  test('parses video durations from thumbnail badges and seconds', () {
+    final items = parseVideos({
+      'items': [
+        {
+          'lockupViewModel': {
+            'contentId': 'a',
+            'metadata': {
+              'lockupMetadataViewModel': {
+                'title': {'content': 'Lockup'},
+              },
+            },
+            'contentImage': {
+              'thumbnailViewModel': {
+                'overlays': [
+                  {
+                    'thumbnailOverlayBadgeViewModel': {
+                      'thumbnailBadges': [
+                        {
+                          'thumbnailBadgeViewModel': {'text': '1:04:22'},
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          'videoRenderer': {
+            'videoId': 'b',
+            'title': {'simpleText': 'Legacy'},
+            'thumbnailOverlays': [
+              {
+                'thumbnailOverlayTimeStatusRenderer': {
+                  'text': {'simpleText': '12:34'},
+                },
+              },
+            ],
+          },
+        },
+        {
+          'videoRenderer': {
+            'videoId': 'c',
+            'title': {'simpleText': 'Seconds'},
+            'lengthSeconds': '3862',
+          },
+        },
+        {
+          'videoRenderer': {
+            'videoId': 'd',
+            'title': {'simpleText': 'Invalid'},
+            'lengthSeconds': 'invalid',
+          },
+        },
+      ],
+    }).items;
+    expect(
+      {for (final item in items) item.id: item.durationText},
+      {'a': '1:04:22', 'b': '12:34', 'c': '1:04:22', 'd': ''},
+    );
+  });
   test('parses channel and separate images from a home lockup', () {
     final page = parseVideos({
       'lockupViewModel': {

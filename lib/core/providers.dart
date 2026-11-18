@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'streams/net_family.dart';
+import 'streams/player_client.dart';
 import 'streams/bandwidth_estimator.dart';
 import 'settings/app_settings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -124,6 +125,44 @@ final channelAvatarCacheProvider = Provider<ChannelAvatarCache>((ref) {
   ChannelAvatarCache.instance = cache;
   Future<void>(() => cache.load());
   return cache;
+});
+final _durationCoordinatorProvider = Provider<AvatarBackfillCoordinator>(
+  (ref) => AvatarBackfillCoordinator(),
+);
+final videoDurationProvider = FutureProvider.family<int?, String>((
+  ref,
+  id,
+) async {
+  if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id)) return null;
+  final db = ref.read(dbProvider);
+  final media = await (db.select(
+    db.media,
+  )..where((row) => row.videoId.equals(id))).getSingleOrNull();
+  if ((media?.durationSec ?? 0) > 0) return media!.durationSec;
+  final result = await ref.read(_durationCoordinatorProvider).resolve(
+    id,
+    () async {
+      final http = await ref.read(innertubeProvider.future);
+      await ref.read(visitorDataProvider.future);
+      final network = await ref.read(networkFamilyProvider.future);
+      final client = PlayerClient(
+        network,
+        http.clients,
+        () => http.visitorData,
+        () async => http.refreshVisitor?.call(),
+        gl: http.gl,
+      );
+      final response = await client
+          .request(id, 'VISIONOS')
+          .timeout(const Duration(seconds: 8));
+      final details = response['videoDetails'];
+      final seconds = details is Map
+          ? int.tryParse('${details['lengthSeconds'] ?? ''}')
+          : null;
+      return seconds != null && seconds > 0 ? '$seconds' : '';
+    },
+  );
+  return int.tryParse(result ?? '');
 });
 final networkFamilyProvider = FutureProvider<NetworkFamily>((ref) async {
   final db = ref.watch(dbProvider);

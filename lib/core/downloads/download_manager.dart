@@ -12,7 +12,9 @@ import '../providers.dart';
 import '../streams/player_client.dart';
 import '../streams/stream_cache.dart';
 import '../streams/stream_selector.dart';
+import '../yt/watch_info.dart';
 import 'chunked_download.dart';
+import 'download_metadata.dart';
 import 'download_muxer.dart';
 import 'download_notifications.dart';
 
@@ -75,6 +77,8 @@ class DownloadManager {
     MediaCompanion media, {
     bool audioOnly = false,
     int? height,
+    WatchInfo? info,
+    void Function()? onQueued,
   }) async {
     await start();
     final id = media.videoId.value;
@@ -88,15 +92,21 @@ class DownloadManager {
                     t.kind.equals(audioOnly ? 'audio' : 'video'),
               ))
               .get();
+      final saved = await (db.select(
+        db.media,
+      )..where((t) => t.videoId.equals(id))).getSingleOrNull();
+      if (saved == null) {
+        await db.into(db.media).insert(media);
+      } else {
+        await (db.update(
+          db.media,
+        )..where((t) => t.videoId.equals(id))).write(media);
+      }
       if (existing.isNotEmpty) {
         existingId = existing.last.id;
         existingStatus = existing.last.status;
         return;
       }
-      final saved = await (db.select(
-        db.media,
-      )..where((t) => t.videoId.equals(id))).getSingleOrNull();
-      if (saved == null) await db.into(db.media).insert(media);
       await db
           .into(db.downloads)
           .insert(
@@ -109,6 +119,12 @@ class DownloadManager {
             ),
           );
     });
+    if (existingId == null) onQueued?.call();
+    if (info != null) {
+      try {
+        await metadata.save(info, thumbnailFallback: media.thumbUrl.value);
+      } catch (_) {}
+    }
     if (existingId != null) {
       if (existingStatus == 'failed' || existingStatus == 'paused') {
         await retry(existingId!);
@@ -163,6 +179,10 @@ class DownloadManager {
       if (await file.exists()) await file.delete();
     }
     await (db.delete(db.downloads)..where((t) => t.id.equals(row.id))).go();
+    final remaining = await (db.select(
+      db.downloads,
+    )..where((t) => t.videoId.equals(row.videoId))).get();
+    if (remaining.isEmpty) await metadata.remove(row.videoId);
     await notifications.cancel(row.id);
   }
 
@@ -171,6 +191,8 @@ class DownloadManager {
         await (directory?.call() ?? getApplicationDocumentsDirectory());
     return Directory('${root.path}/downloads')..createSync(recursive: true);
   }
+
+  DownloadMetadata get metadata => DownloadMetadata(_directory);
 
   void _drain() {
     _wakeGeneration++;

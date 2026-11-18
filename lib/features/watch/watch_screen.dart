@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:share_plus/share_plus.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../core/playback/playback_service.dart';
+import '../../core/downloads/download_manager.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/session_queue.dart';
@@ -55,23 +57,36 @@ final watchInfoProvider = FutureProvider.family<WatchInfo, String>((
       db.media,
     )..where((row) => row.videoId.equals(id))).getSingleOrNull();
     if (media == null) rethrow;
+    final metadata = await ref.read(downloadManagerProvider).metadata.read(id);
+    String saved(String key) => metadata[key] as String? ?? '';
     return WatchInfo(
       id: id,
       title: media.title,
       channelName: media.channelName,
       channelId: media.channelId,
-      thumbnail: media.thumbUrl,
-      durationSec: media.durationSec ?? 0,
-      avatar: '',
-      subscribers: '',
-      description: '',
-      likes: '',
-      views: '',
-      date: '',
-      handle: '',
+      thumbnail: saved('thumbnail').isNotEmpty
+          ? saved('thumbnail')
+          : media.thumbUrl,
+      durationSec: metadata['durationSec'] as int? ?? media.durationSec ?? 0,
+      avatar: saved('avatar'),
+      subscribers: saved('subscribers'),
+      description: saved('description'),
+      likes: saved('likes'),
+      views: saved('views'),
+      date: saved('date'),
+      handle: saved('handle'),
       commentsToken: null,
       related: const VideoPage([], null),
-      chapters: const [],
+      chapters: (metadata['chapters'] as List? ?? [])
+          .whereType<List>()
+          .where((c) => c.length == 2 && c[0] is String && c[1] is int)
+          .map(
+            (c) => WatchChapter(
+              c[0] as String,
+              Duration(milliseconds: c[1] as int),
+            ),
+          )
+          .toList(),
       chips: const {},
     );
   }
@@ -597,81 +612,85 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         },
         child: AnnotatedRegion<SystemUiOverlayStyle>(
           value: _playerOverlayStyle,
-          child: Scaffold(
-            backgroundColor: ui.isFullscreen
-                ? AppColors.shortsBackground
-                : Theme.of(context).scaffoldBackgroundColor,
-            body: ui.isFullscreen
-                ? Center(
-                    child: AspectRatio(
-                      aspectRatio:
-                          videoAspectRatio ?? AppSpacing.thumbnailRatio,
-                      child: player,
-                    ),
-                  )
-                : SafeArea(
-                    top: false,
-                    child: Column(
-                      children: [
-                        ColoredBox(
-                          color: AppColors.shortsBackground,
-                          child: SizedBox(
-                            height: MediaQuery.paddingOf(context).top,
-                            width: double.infinity,
-                          ),
-                        ),
-                        if (wide)
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: width * .64,
-                                  child: Column(
-                                    children: [
-                                      player,
-                                      Expanded(child: details),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  child: heavyContentReady
-                                      ? _relatedList(related)
-                                      : const SizedBox.shrink(),
-                                ),
-                              ],
+          child: ScaffoldMessenger(
+            child: Scaffold(
+              backgroundColor: ui.isFullscreen
+                  ? AppColors.shortsBackground
+                  : Theme.of(context).scaffoldBackgroundColor,
+              body: ui.isFullscreen
+                  ? Center(
+                      child: AspectRatio(
+                        aspectRatio:
+                            videoAspectRatio ?? AppSpacing.thumbnailRatio,
+                        child: player,
+                      ),
+                    )
+                  : SafeArea(
+                      top: false,
+                      child: Column(
+                        children: [
+                          ColoredBox(
+                            color: AppColors.shortsBackground,
+                            child: SizedBox(
+                              height: MediaQuery.paddingOf(context).top,
+                              width: double.infinity,
                             ),
-                          )
-                        else ...[
-                          player,
-                          if (countdownFor == id && seconds > 0 && next != null)
-                            ListTile(
-                              title: Text('Up next in $seconds'),
-                              subtitle: Text(next.title, maxLines: 1),
-                              trailing: Wrap(
+                          ),
+                          if (wide)
+                            Expanded(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      countdown?.cancel();
-                                      setState(() {
-                                        cancelledFor = id;
-                                        countdownFor = null;
-                                      });
-                                    },
-                                    child: const Text('Cancel'),
+                                  SizedBox(
+                                    width: width * .64,
+                                    child: Column(
+                                      children: [
+                                        player,
+                                        Expanded(child: details),
+                                      ],
+                                    ),
                                   ),
-                                  TextButton(
-                                    onPressed: () => _open(next.id),
-                                    child: const Text('Play now'),
+                                  Expanded(
+                                    child: heavyContentReady
+                                        ? _relatedList(related)
+                                        : const SizedBox.shrink(),
                                   ),
                                 ],
                               ),
-                            ),
-                          Expanded(child: details),
+                            )
+                          else ...[
+                            player,
+                            if (countdownFor == id &&
+                                seconds > 0 &&
+                                next != null)
+                              ListTile(
+                                title: Text('Up next in $seconds'),
+                                subtitle: Text(next.title, maxLines: 1),
+                                trailing: Wrap(
+                                  children: [
+                                    TextButton(
+                                      onPressed: () {
+                                        countdown?.cancel();
+                                        setState(() {
+                                          cancelledFor = id;
+                                          countdownFor = null;
+                                        });
+                                      },
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _open(next.id),
+                                      child: const Text('Play now'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Expanded(child: details),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
       ),
@@ -981,21 +1000,23 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         ),
                       ),
                     ),
-                    _action(
-                      LucideIcons.download,
-                      'Download',
-                      () => showDownloadChoices(
-                        context,
-                        ref,
-                        MediaCompanion.insert(
-                          videoId: id,
-                          title: info.title,
-                          channelId: info.channelId,
-                          channelName: info.channelName,
-                          thumbUrl: info.thumbnail.isNotEmpty
-                              ? info.thumbnail
-                              : 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-                          updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    Builder(
+                      builder: (actionContext) => _downloadAction(
+                        () => showDownloadChoices(
+                          actionContext,
+                          ref,
+                          MediaCompanion.insert(
+                            videoId: id,
+                            title: info.title,
+                            channelId: info.channelId,
+                            channelName: info.channelName,
+                            thumbUrl: info.thumbnail.isNotEmpty
+                                ? info.thumbnail
+                                : 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                            updatedAt: DateTime.now().millisecondsSinceEpoch,
+                            durationSec: Value(info.durationSec),
+                          ),
+                          info: info,
                         ),
                       ),
                     ),
@@ -1299,6 +1320,34 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         variant: AppButtonVariant.tonal,
         onPressed: action,
       ),
+    );
+  }
+
+  Widget _downloadAction(VoidCallback action) {
+    final db = ref.read(dbProvider);
+    return StreamBuilder<List<DownloadRow>>(
+      stream: (db.select(
+        db.downloads,
+      )..where((row) => row.videoId.equals(id))).watch(),
+      builder: (context, snapshot) {
+        final rows = snapshot.data ?? const <DownloadRow>[];
+        final statuses = rows.map((row) => row.status).toSet();
+        final label = statuses.contains('downloading')
+            ? 'Downloading'
+            : statuses.contains('queued')
+            ? 'Queued'
+            : statuses.contains('paused')
+            ? 'Paused'
+            : statuses.contains('failed')
+            ? 'Download failed'
+            : statuses.contains('completed')
+            ? 'Downloaded'
+            : 'Download';
+        final icon = label == 'Downloaded'
+            ? LucideIcons.check
+            : LucideIcons.download;
+        return _action(icon, label, action);
+      },
     );
   }
 

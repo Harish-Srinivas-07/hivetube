@@ -56,6 +56,7 @@ class VideoCard extends ConsumerWidget {
     this.progress,
     this.trailing,
     this.thumbnailBadge,
+    this.thumbnailOverlay,
     this.enabled = true,
     this.showAvatar = true,
     this.compact,
@@ -73,6 +74,7 @@ class VideoCard extends ConsumerWidget {
   }) : mode = VideoCardMode.feed,
        enabled = true,
        thumbnailBadge = null,
+       thumbnailOverlay = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -84,6 +86,7 @@ class VideoCard extends ConsumerWidget {
     this.progress,
     this.trailing,
     this.thumbnailBadge,
+    this.thumbnailOverlay,
     this.enabled = true,
   }) : mode = VideoCardMode.compact,
        showAvatar = false,
@@ -101,6 +104,7 @@ class VideoCard extends ConsumerWidget {
   }) : mode = VideoCardMode.grid,
        enabled = true,
        thumbnailBadge = null,
+       thumbnailOverlay = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -115,6 +119,7 @@ class VideoCard extends ConsumerWidget {
        progress = null,
        trailing = null,
        thumbnailBadge = null,
+       thumbnailOverlay = null,
        enabled = true,
        showAvatar = true;
 
@@ -127,6 +132,7 @@ class VideoCard extends ConsumerWidget {
        showAvatar = false,
        trailing = null,
        thumbnailBadge = null,
+       thumbnailOverlay = null,
        enabled = true,
        compact = null,
        roundedThumbnail = null;
@@ -137,6 +143,7 @@ class VideoCard extends ConsumerWidget {
   final double? progress;
   final Widget? trailing;
   final String? thumbnailBadge;
+  final Widget? thumbnailOverlay;
   final bool enabled;
   final bool showAvatar;
 
@@ -164,6 +171,7 @@ class VideoCard extends ConsumerWidget {
               children: [
                 ThumbnailWithDuration(
                   url: video.thumbUrl,
+                  videoId: video.isLive || video.isShort ? null : video.id,
                   duration: video.durationText,
                   progress: progress,
                   borderRadius: AppRadius.mdBorder,
@@ -195,6 +203,7 @@ class VideoCard extends ConsumerWidget {
           progress: progress,
           trailing: trailing,
           thumbnailBadge: thumbnailBadge,
+          thumbnailOverlay: thumbnailOverlay,
           enabled: enabled,
         );
         break;
@@ -270,6 +279,7 @@ class _FeedCard extends StatelessWidget {
                 ? video.thumbUrl
                 : _feedThumbnail(video.thumbUrl),
             duration: video.durationText,
+            videoId: video.isLive || video.isShort ? null : video.id,
             progress: progress,
             borderRadius: roundedThumbnail ? AppRadius.mdBorder : null,
           ),
@@ -370,6 +380,7 @@ class _CompactCard extends StatelessWidget {
     this.progress,
     this.trailing,
     this.thumbnailBadge,
+    this.thumbnailOverlay,
     required this.enabled,
   });
 
@@ -378,6 +389,7 @@ class _CompactCard extends StatelessWidget {
   final double? progress;
   final Widget? trailing;
   final String? thumbnailBadge;
+  final Widget? thumbnailOverlay;
   final bool enabled;
 
   @override
@@ -406,6 +418,9 @@ class _CompactCard extends StatelessWidget {
                         thumbnailKey: ValueKey('compactThumbnail:${video.id}'),
                         progressKey: ValueKey('watchedProgress:${video.id}'),
                         url: video.thumbUrl,
+                        videoId: video.isLive || video.isShort
+                            ? null
+                            : video.id,
                         duration: video.durationText,
                         progress: progress,
                         borderRadius: AppRadius.smBorder,
@@ -435,6 +450,11 @@ class _CompactCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                      ),
+                    if (thumbnailOverlay != null)
+                      ClipRRect(
+                        borderRadius: AppRadius.smBorder,
+                        child: IgnorePointer(child: thumbnailOverlay!),
                       ),
                   ],
                 ),
@@ -510,6 +530,7 @@ class _SearchResultCard extends StatelessWidget {
               thumbnailKey: ValueKey('searchThumbnail:${video.id}'),
               progressKey: ValueKey('watchedProgress:${video.id}'),
               url: video.thumbUrl,
+              videoId: video.isLive || video.isShort ? null : video.id,
               duration: video.durationText,
               borderRadius: AppRadius.mdBorder,
             ),

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hivetube/core/playback/player_ui_state.dart';
+import 'package:hivetube/features/watch/watch_panel.dart';
+import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:hivetube/theme/app_sizes.dart';
 import 'package:hivetube/theme/app_theme.dart';
@@ -10,7 +14,90 @@ import 'package:hivetube/widgets/home_top_bar.dart';
 import 'package:hivetube/widgets/ui/app_controls.dart';
 import 'package:hivetube/widgets/ui/app_sheet.dart';
 
+class _LinkPlayerUi extends PlayerUiController {
+  @override
+  PlayerUiState build() => const PlayerUiState();
+}
+
 void main() {
+  test('YouTube links accept supported forms and reject unrelated hosts', () {
+    expect(
+      parseYouTubeLink('https://www.youtube.com/watch?v=abcdefghijk&t=1')?.id,
+      'abcdefghijk',
+    );
+    expect(
+      parseYouTubeLink('https://youtu.be/abcdefghijk?si=abc')?.id,
+      'abcdefghijk',
+    );
+    expect(
+      parseYouTubeLink('https://m.youtube.com/shorts/abcdefghijk')?.isShort,
+      isTrue,
+    );
+    expect(
+      parseYouTubeLink('https://youtube.com.evil.test/watch?v=abcdefghijk'),
+      isNull,
+    );
+    expect(parseYouTubeLink('https://youtube.com/watch?v=bad'), isNull);
+  });
+
+  testWidgets('link dialog validates and opens videos and Shorts', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [playerUiProvider.overrideWith(_LinkPlayerUi.new)],
+    );
+    addTearDown(container.dispose);
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => const Scaffold(body: HomeTopBar()),
+        ),
+        GoRoute(
+          path: '/shorts',
+          builder: (_, _) => const Scaffold(body: Text('Shorts route')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.tap(find.byTooltip('Open YouTube link'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://example.com/watch?v=abcdefghijk',
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    expect(find.text('Enter a valid YouTube video link'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField),
+      'https://youtu.be/abcdefghijk',
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(container.read(watchPanelProvider), 'abcdefghijk');
+    await tester.tap(find.byTooltip('Open YouTube link'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://youtube.com/shorts/12345678901',
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(shortsSelectionProvider).items.single.id,
+      '12345678901',
+    );
+    expect(container.read(watchPanelProvider), isNull);
+    expect(find.text('Shorts route'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   Widget buildApp(Widget child, {ThemeData? theme}) {
     return MaterialApp(
       theme: theme ?? AppTheme.dark,

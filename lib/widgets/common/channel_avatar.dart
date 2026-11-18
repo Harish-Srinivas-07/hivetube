@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
@@ -61,19 +62,29 @@ class ChannelAvatar extends StatelessWidget {
       child: normalizedUrl.isEmpty
           ? fallback()
           : ClipOval(
-              child: CachedNetworkImage(
-                imageUrl: normalizedUrl,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                memCacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
-                    .ceil(),
-                maxWidthDiskCache:
-                    (size * MediaQuery.devicePixelRatioOf(context)).ceil(),
-                fadeInDuration: AppMotion.fast,
-                placeholder: (_, _) => fallback(),
-                errorWidget: (_, _, _) => fallback(),
-              ),
+              child: normalizedUrl.startsWith('file:')
+                  ? Image.file(
+                      File.fromUri(Uri.parse(normalizedUrl)),
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => fallback(),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: normalizedUrl,
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                      memCacheWidth:
+                          (size * MediaQuery.devicePixelRatioOf(context))
+                              .ceil(),
+                      maxWidthDiskCache:
+                          (size * MediaQuery.devicePixelRatioOf(context))
+                              .ceil(),
+                      fadeInDuration: AppMotion.fast,
+                      placeholder: (_, _) => fallback(),
+                      errorWidget: (_, _, _) => fallback(),
+                    ),
             ),
     );
 

@@ -1,6 +1,19 @@
 import 'package:flutter/material.dart';
+import 'app_colors.dart';
 
 abstract final class AppTextStyles {
+  static const playerCaption = TextStyle(
+    color: AppColors.white,
+    fontSize: 20,
+    fontWeight: FontWeight.w500,
+    shadows: [
+      Shadow(
+        color: AppColors.captionShadow,
+        blurRadius: 8,
+        offset: Offset(0, 1),
+      ),
+    ],
+  );
   static const watchTitle = TextStyle(
     fontSize: 16,
     height: 22 / 16,

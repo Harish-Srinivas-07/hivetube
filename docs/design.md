@@ -123,7 +123,7 @@ Format: USE-WHEN | ANATOMY/SPEC | STATES | MOTION | DON'T
 ### 4.1 AppTopBar
 USE-WHEN: root screens using the shared GlassAppBar. Height AppSizes.appBarHeight plus top inset; Home side pad AppSpacing.md. No elevation.
 When a scroll controller is provided, the bar starts transparent and progressively applies the shared GlassSurface blur, theme fill and bottom border over AppSpacing.glassScrollRange. Without a controller it stays transparent. Status-bar icons follow theme brightness.
-Home: logo (left) | plain language button | search icon. Reuse HomeTopBar and GlassAppBar; do not duplicate the glass styling.
+Home: logo (left) | plain language button | open YouTube link icon | search icon. The link dialog validates YouTube video URLs and can open a video or Short. Reuse HomeTopBar and GlassAppBar; do not duplicate the glass styling.
 Subs/History/Playlist/Settings: leading back (if pushed) or title pageTitle; trailing icons 48.
 Channel: leading back | spacer | search | more (3-dot). Transparent at top, NOT overlaying the banner (banner sits below the bar). On scroll past the header, channel name (pageTitle) fades in after the back arrow (200ms) and the bar takes the glass fill.
 Library: leading ProfileChip (4.26) | spacer | search | settings gear.
@@ -349,6 +349,7 @@ Layout top->bottom:
  6. Chip row (AppChipBar, pad L16): AppChip.dropdown "Recent" (sort sheet: Recent, A–Z, Recently added) | "Downloaded" | "Playlists" (filter chips, toggle; none selected = show all).
  7. PlaylistRow list (4.23): built-ins first (Liked videos, Watch later, Downloads when files exist), then user playlists per sort. Each row has a 3-dot menu (Play all, Share, Delete for user playlists). Empty (no user playlists): one PlaylistRow-style row "New playlist" with plus icon in the cover slot.
 States: loading=header skeleton + shelf/list skeletons | each section has its own empty (never one global empty).
+Downloads: completed videos can be copied to Gallery and Downloads; completed audio can be copied to Downloads. Export retains the original format and adds the `_HiveTibe` suffix.
 Behavior: Backup opens bottom sheet: Export to file / Import from file (+ Takeout import). Edit profile opens bottom sheet with avatar picker + name field (text field style: surfaceVariant fill, radius 12, no border). Stats lives in ProfileSheet. Pull-to-refresh refreshes shelves.
 
 ### 5.7 SETTINGS (pushed from Library gear)
@@ -358,7 +359,7 @@ Groups (header style 4.12): General | Playback | Privacy & data | Integrations |
  Playback: Max video quality (value "1080p") -> radio sheet; Autoplay (Switch); Background play (Switch); Playback speed default -> radio sheet; Audio only by default (Switch).
  Privacy & data: Pause watch history (Switch); Clear watch history (confirm dialog); Clear search history (confirm dialog); Backup & restore -> sheet; Clear cache (value size).
  Integrations: SponsorBlock (Switch + subtitle categories -> sheet); Return YouTube Dislike (Switch); Captions default language -> sheet.
- About: Version, Check for updates, Licenses, Source/Feedback links.
+ About: Version, Check for updates, Licenses, Source/Feedback links with topic icons, reference credits, legal notice, and custom software contact linking to TheHiveMinds.
 Row: min 56; leading 24 icon; Switch = native, themed (selected track primary@50%, thumb primary).
 Selecting radio option = apply immediately, sheet auto-closes 150ms after tap.
 Destructive confirm: dialog title "Clear watch history?" body one line, actions Cancel (text) / Clear (text, primary color allowed).

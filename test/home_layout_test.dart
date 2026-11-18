@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,8 @@ import 'package:hivetube/features/home/home_controller.dart';
 import 'package:hivetube/features/shorts/shorts_feed_provider.dart';
 import 'package:hivetube/main.dart';
 import 'package:hivetube/theme/app_radius.dart';
+import 'package:hivetube/widgets/common/video_card.dart';
+import 'package:hivetube/widgets/common/thumbnail_with_duration.dart';
 
 class _FailedHome extends HomeController {
   @override
@@ -39,6 +42,74 @@ class _History implements HistoryRepo {
 }
 
 void main() {
+  test('saved duration is available without network access', () async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db
+        .into(db.media)
+        .insert(
+          MediaCompanion.insert(
+            videoId: 'abcdefghijk',
+            title: 'Video',
+            channelId: '',
+            channelName: '',
+            thumbUrl: '',
+            durationSec: const Value(3862),
+            updatedAt: 1,
+          ),
+        );
+    final container = ProviderContainer(
+      overrides: [
+        dbProvider.overrideWithValue(db),
+        innertubeProvider.overrideWith(
+          (ref) async => throw StateError('offline'),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    expect(
+      await container.read(videoDurationProvider('abcdefghijk').future),
+      3862,
+    );
+  });
+  testWidgets('missing video durations appear across card layouts', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+    const video = VideoItem(id: 'abcdefghijk', title: 'Video');
+    final cards = <Widget>[
+      VideoCard.feed(video: video, onTap: () {}),
+      VideoCard.grid(video: video, onTap: () {}),
+      VideoCard.compact(video: video, onTap: () {}),
+      VideoCard.searchResult(video: video, onTap: () {}),
+      VideoCard.shelf(video: video, onTap: () {}),
+      const ThumbnailWithDuration(url: '', videoId: 'abcdefghijk'),
+    ];
+    for (final card in cards) {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            dbProvider.overrideWithValue(db),
+            videoDurationProvider(
+              'abcdefghijk',
+            ).overrideWith((ref) async => 3862),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(child: SizedBox(width: 360, child: card)),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('1:04:22'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
   for (final size in [
     const Size(400, 800),
     const Size(1200, 800),

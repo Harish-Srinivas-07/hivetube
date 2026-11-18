@@ -868,7 +868,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                   : BoxFit.contain,
                               subtitleViewConfiguration:
                                   SubtitleViewConfiguration(
-                                    visible: !ui.isFullscreen,
+                                    visible: widget.short && !ui.isFullscreen,
                                     style: AppTextStyles.body.copyWith(
                                       color: AppColors.shortsForeground,
                                       backgroundColor: AppColors.shortsScrim,
@@ -903,34 +903,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 state: state,
                 autoplay: autoplay,
                 notifier: notifier,
-              ),
-            if (ui.isFullscreen &&
-                state.selectedCaption != null &&
-                state.subtitleText.trim().isNotEmpty)
-              Positioned(
-                left: 40,
-                right: 40,
-                bottom: 150,
-                child: IgnorePointer(
-                  child: Text(
-                    state.subtitleText.trim(),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black87,
-                          blurRadius: 8,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ),
             if (!ui.isFullscreen &&
                 (widget.short || ui.panelMode == PlayerPanelMode.expanded))
@@ -1402,6 +1374,31 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                       ),
                     ),
                 ],
+              ),
+            if ((ui.isFullscreen ||
+                    (!widget.short &&
+                        ui.panelMode == PlayerPanelMode.expanded)) &&
+                state.selectedCaption != null &&
+                state.subtitleText.trim().isNotEmpty)
+              Positioned(
+                left: ui.isFullscreen
+                    ? AppSizes.fullscreenCaptionInset
+                    : AppSpacing.lg,
+                right: ui.isFullscreen
+                    ? AppSizes.fullscreenCaptionInset
+                    : AppSpacing.lg,
+                bottom: ui.isFullscreen
+                    ? AppSizes.fullscreenCaptionBottom
+                    : (ui.overlayVisible ? AppSpacing.xxxl : AppSpacing.lg),
+                child: IgnorePointer(
+                  child: Text(
+                    state.subtitleText.trim(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.playerCaption,
+                  ),
+                ),
               ),
             if (seekTotal != 0)
               IgnorePointer(

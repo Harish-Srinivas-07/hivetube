@@ -1027,6 +1027,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
             children: [
               ThumbnailWithDuration(
                 url: video.thumbUrl,
+                videoId: video.isLive || video.isShort ? null : video.id,
                 duration: video.durationText,
               ),
               Padding(

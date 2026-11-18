@@ -493,6 +493,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             onTap: () => context.push('/watch/$id'),
             child: ThumbnailWithDuration(
               url: video.thumbUrl,
+              videoId: id,
               duration: video.durationText,
               progress: progress,
               borderRadius: AppRadius.mdBorder,

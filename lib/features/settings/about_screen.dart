@@ -141,19 +141,113 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                 ),
               ],
               const SectionHeader(title: 'Project'),
-              _link('HiveTube repository', repo),
-              _link('Latest release', githubLatestReleasePage),
+              _link('HiveTube repository', repo, LucideIcons.codeXml),
+              _link(
+                'Latest release',
+                githubLatestReleasePage,
+                LucideIcons.download,
+              ),
               const SectionHeader(title: 'Credits'),
-              _link('TheHiveMinds', 'https://thehiveminds.in/'),
-              _link('Contact', 'mailto:info@thehiveminds.in'),
-              _link('GitHub', 'https://github.com/Harish-Srinivas-07'),
+              _link(
+                'TheHiveMinds',
+                'https://thehiveminds.in/',
+                LucideIcons.globe,
+              ),
+              _link('Contact', 'mailto:info@thehiveminds.in', LucideIcons.mail),
+              _link(
+                'GitHub',
+                'https://github.com/Harish-Srinivas-07',
+                LucideIcons.codeXml,
+              ),
               _link(
                 'LinkedIn',
                 'https://www.linkedin.com/in/harishsrinivas-sr/',
+                LucideIcons.briefcaseBusiness,
               ),
-              _link('Portfolio', 'https://harishsrinivas.netlify.app/'),
-              _link('Instagram', 'https://www.instagram.com/being_exception'),
-              _link('Medium', 'https://medium.com/@sr.harishsrinivas'),
+              _link(
+                'Portfolio',
+                'https://harishsrinivas.netlify.app/',
+                LucideIcons.userRound,
+              ),
+              _link(
+                'Instagram',
+                'https://www.instagram.com/being_exception',
+                LucideIcons.camera,
+              ),
+              _link(
+                'Medium',
+                'https://medium.com/@sr.harishsrinivas',
+                LucideIcons.bookOpenText,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Text(
+                  'Thanks to InnerTube, YouPipe, and the Flow app for references.',
+                  style: AppTextStyles.body.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SectionHeader(title: 'Disclaimer & Legal Notice'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          const TextSpan(
+                            text:
+                                'Hivefy is an independent music player. It is ',
+                          ),
+                          TextSpan(
+                            text:
+                                'not affiliated with, endorsed by, or connected to YouTube or Google',
+                            style: AppTextStyles.bodyStrong.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          const TextSpan(text: '.'),
+                        ],
+                      ),
+                      style: AppTextStyles.body.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _noticeLine(
+                      'Media and downloads:',
+                      'Hivefy does not host or upload music. It accesses third-party services and stores user-requested downloads on the device for offline playback.',
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _noticeLine(
+                      'Third-party services:',
+                      'Availability, content, and service behavior may change. Hivefy cannot guarantee uninterrupted access.',
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    _noticeLine(
+                      'User responsibility:',
+                      'Users are responsible for following applicable laws and the terms of services they use.',
+                    ),
+                  ],
+                ),
+              ),
+              const SectionHeader(title: 'Need custom software?'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Text(
+                  'Need software built? Contact us. We build applications, web apps, and more.',
+                  style: AppTextStyles.body.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              _link(
+                'Contact us',
+                'https://thehiveminds.in/',
+                LucideIcons.globe,
+              ),
             ],
           );
         },
@@ -161,9 +255,27 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
     );
   }
 
-  Widget _link(String title, String url) => AppListTile(
+  Widget _link(String title, String url, IconData icon) => AppListTile(
+    leading: Icon(icon),
     title: title,
     trailing: const Icon(LucideIcons.externalLink),
     onTap: () => _openLink(url),
   );
+
+  Widget _noticeLine(String heading, String text) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Text.rich(
+      TextSpan(
+        children: [
+          const TextSpan(text: '• '),
+          TextSpan(
+            text: heading,
+            style: AppTextStyles.bodyStrong.copyWith(color: color),
+          ),
+          TextSpan(text: ' $text'),
+        ],
+      ),
+      style: AppTextStyles.body.copyWith(color: color),
+    );
+  }
 }
