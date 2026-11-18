@@ -134,4 +134,14 @@ jobs:
 
             echo "Signature verified successfully: $APK"
           done
-          
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: HiveTube ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*.apk
+          fail_on_unmatched_files: true
+          make_latest: true
