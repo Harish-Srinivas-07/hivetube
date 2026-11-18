@@ -21,6 +21,7 @@ class AppSheetHeader extends StatelessWidget {
     this.onBack,
     this.showClose = true,
     this.isScrolledUnder = false,
+    this.compact = false,
   });
 
   final String? title;
@@ -28,6 +29,7 @@ class AppSheetHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final bool showClose;
   final bool isScrolledUnder;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -39,9 +41,9 @@ class AppSheetHeader extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.only(
+          padding: EdgeInsets.only(
             top: AppSpacing.sm,
-            bottom: AppSpacing.sm,
+            bottom: compact ? AppSpacing.xs : AppSpacing.sm,
           ),
           child: Center(
             child: Container(
@@ -56,9 +58,9 @@ class AppSheetHeader extends StatelessWidget {
         ),
         if (hasHeaderRow) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               AppSpacing.lg,
-              AppSpacing.sm,
+              compact ? AppSpacing.none : AppSpacing.sm,
               AppSpacing.lg,
               AppSpacing.sm,
             ),
@@ -238,6 +240,7 @@ Future<T?> showAppSheet<T>(
   Widget? headerAction,
   VoidCallback? onBack,
   bool showClose = true,
+  bool compactHeader = false,
   bool fit = false,
   double? fraction,
   double initialFraction = 0.6,
@@ -329,6 +332,7 @@ Future<T?> showAppSheet<T>(
                       action: headerAction,
                       onBack: onBack,
                       showClose: showClose,
+                      compact: compactHeader,
                     ),
                     Flexible(
                       child: SingleChildScrollView(
@@ -366,6 +370,7 @@ Future<T?> showAppSheet<T>(
                   headerAction: headerAction,
                   onBack: onBack,
                   showClose: showClose,
+                  compactHeader: compactHeader,
                   scrollController: scrollController,
                   builder: builder,
                 ),
@@ -424,6 +429,7 @@ class _DraggableSheetBody extends StatefulWidget {
     required this.headerAction,
     required this.onBack,
     required this.showClose,
+    required this.compactHeader,
     required this.scrollController,
     required this.builder,
   });
@@ -432,6 +438,7 @@ class _DraggableSheetBody extends StatefulWidget {
   final Widget? headerAction;
   final VoidCallback? onBack;
   final bool showClose;
+  final bool compactHeader;
   final ScrollController scrollController;
   final Widget Function(BuildContext, ScrollController?) builder;
 
@@ -472,6 +479,7 @@ class _DraggableSheetBodyState extends State<_DraggableSheetBody> {
           action: widget.headerAction,
           onBack: widget.onBack,
           showClose: widget.showClose,
+          compact: widget.compactHeader,
           isScrolledUnder: _isScrolledUnder,
         ),
         Expanded(child: widget.builder(context, widget.scrollController)),

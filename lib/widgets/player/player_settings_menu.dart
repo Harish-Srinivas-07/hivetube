@@ -43,6 +43,7 @@ Future<void> showPlayerSettingsMenu(
   VoidCallback? onLock,
 }) => showAppMenuSheet<void>(
   context,
+  onVideo: false,
   builder: (_, _) => _PlayerSettingsView(session: session, onLock: onLock),
 );
 

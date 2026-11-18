@@ -127,11 +127,11 @@ WatchInfo parseWatchInfo(dynamic json, String id) {
             .map((s) => s.substring(1))
             .firstOrNull ??
         '',
-    description: watchText(
-      secondary is Map
-          ? (secondary['attributedDescription'] ?? secondary['description'])
-          : null,
-    ),
+    description: [
+      if (secondary is Map) watchText(secondary['attributedDescription']),
+      if (secondary is Map) watchText(secondary['description']),
+      if (videoDetails is Map) watchText(videoDetails['shortDescription']),
+    ].firstWhere((value) => value.isNotEmpty, orElse: () => ''),
     likes: likeButton?['title'] as String? ?? '',
     views: watchText(
       findAll(

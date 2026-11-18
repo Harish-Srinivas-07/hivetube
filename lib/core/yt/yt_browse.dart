@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import '../innertube/innertube_http.dart';
 import 'models.dart';
@@ -6,6 +8,28 @@ import 'parser.dart';
 class YtBrowse {
   YtBrowse(this.http);
   final InnertubeHttp http;
+
+  Future<ChannelAboutData> channelAbout(String channelId) async {
+    final response = await http.dio
+        .getUri<String>(
+          Uri.https('www.youtube.com', '/channel/$channelId/about', {
+            'hl': 'en',
+          }),
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: {'User-Agent': http.clients['WEB']['ua']},
+          ),
+        )
+        .timeout(const Duration(seconds: 8));
+    final html = response.data ?? '';
+    const marker = 'var ytInitialData = ';
+    final start = html.indexOf(marker);
+    if (start < 0) throw const FormatException('Channel About data not found');
+    final jsonStart = start + marker.length;
+    final end = html.indexOf(';</script>', jsonStart);
+    if (end < 0) throw const FormatException('Channel About data incomplete');
+    return parseChannelAbout(jsonDecode(html.substring(jsonStart, end)));
+  }
 
   static const tabParamsVideos = 'EgZ2aWRlb3PyBgQKAjoA';
   static const tabParamsShorts = 'EgZzaG9ydHPyBgUKA5oBAA%3D%3D';

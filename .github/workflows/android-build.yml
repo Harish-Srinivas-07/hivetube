@@ -39,6 +39,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Configure release signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || {
+            echo 'Missing Android release signing secrets.' >&2
+            exit 1
+          }
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/hivetube-upload.jks
+          printf 'storeFile=../hivetube-upload.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+
       - name: Read release version from pubspec.yaml
         id: version
         shell: bash
@@ -73,6 +91,24 @@ jobs:
             "dist/HiveTube_${{ steps.version.outputs.version }}_common.apk"
           for APK in dist/*.apk; do
             test -s "$APK"
+          done
+
+      - name: Verify release signatures
+        shell: bash
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          EXPECTED="$(keytool -list -v -keystore android/hivetube-upload.jks -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test -n "$EXPECTED"
+          for APK in dist/*.apk; do
+            CERTS="$($APKSIGNER verify --print-certs "$APK")"
+            printf '%s\n' "$CERTS"
+            ACTUAL="$(printf '%s\n' "$CERTS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+            test "$ACTUAL" = "$EXPECTED"
           done
 
       - name: Create GitHub release

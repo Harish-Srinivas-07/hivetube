@@ -338,6 +338,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             section('Playback'),
             switchTile(
+              icon: LucideIcons.headphones,
+              title: 'Background play',
+              subtitle: settings.backgroundPlay ? 'On' : 'Off',
+              value: settings.backgroundPlay,
+              onChanged: (value) => ref
+                  .read(contentPrefsProvider.notifier)
+                  .setBackgroundPlay(value),
+            ),
+            switchTile(
               icon: LucideIcons.play,
               title: 'Autoplay',
               subtitle: settings.autoplay ? 'On' : 'Off',

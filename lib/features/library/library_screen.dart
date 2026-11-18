@@ -12,6 +12,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_motion.dart';
 import 'library_skeleton.dart';
+import '../downloads/downloads_screen.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_colors.dart';
@@ -893,22 +894,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                             subtitle: '${snapshot.data!.length} items',
                             thumbnail: '',
                             badgeIcon: LucideIcons.download,
-                            onTap: () =>
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Downloads are not available yet',
-                                    ),
-                                  ),
-                                ),
-                            onMore: () => _showLibraryItemMenu(
-                              'Downloads',
-                              () => ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Downloads are not available yet',
-                                  ),
-                                ),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const DownloadsScreen(),
+                              ),
+                            ),
+                            onMore: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const DownloadsScreen(),
                               ),
                             ),
                           );

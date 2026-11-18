@@ -336,10 +336,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
           AppSheetRow(
             icon: LucideIcons.info,
             label: 'About',
-            onTap: () {
-              Navigator.pop(sheetContext, 'about');
-              _selectTab('About');
-            },
+            onTap: () => Navigator.pop(sheetContext, 'about'),
           ),
           if (isSubscribed)
             AppSheetRow(
@@ -356,19 +353,92 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
 
   Future<void> _showChannelDescription() async {
     final channel = data;
-    if (channel == null || channel.description.isEmpty) return;
+    if (channel == null) return;
+    final aboutFuture = ref
+        .read(ytApiProvider.future)
+        .then((api) => api.browse.channelAbout(channel.id));
     await showAppSheet<void>(
       context,
-      title: channel.name,
-      builder: (_, _) => Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Text(
-          channel.description,
-          style: AppTextStyles.body.copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
+      title: 'About',
+      showClose: false,
+      builder: (sheetContext, scrollController) =>
+          FutureBuilder<ChannelAboutData>(
+            future: aboutFuture,
+            builder: (context, snapshot) {
+              final about = snapshot.data;
+              final description = about?.description.isNotEmpty == true
+                  ? about!.description
+                  : channel.description;
+              final details = <String>[
+                if ((about?.subscribers ?? '').isNotEmpty)
+                  about!.subscribers
+                else
+                  channel.subscribersText,
+                if ((about?.videos ?? '').isNotEmpty)
+                  about!.videos
+                else
+                  channel.videosCountText,
+                if ((about?.views ?? '').isNotEmpty) about!.views,
+                if ((about?.joinedDate ?? '').isNotEmpty) about!.joinedDate,
+                if ((about?.country ?? '').isNotEmpty) about!.country,
+              ].where((value) => value.isNotEmpty).toList();
+              return ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                children: [
+                  Text(channel.name, style: AppTextStyles.sectionTitle),
+                  if (channel.handle.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      channel.handle,
+                      style: AppTextStyles.body.copyWith(
+                        color: Theme.of(
+                          sheetContext,
+                        ).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (details.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    for (final detail in details)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: Text(
+                          detail,
+                          style: AppTextStyles.body.copyWith(
+                            color: Theme.of(
+                              sheetContext,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
+                  const SizedBox(height: AppSpacing.lg),
+                  if (description.isNotEmpty ||
+                      snapshot.connectionState == ConnectionState.done)
+                    Text(
+                      description.isEmpty
+                          ? 'No description available.'
+                          : description,
+                      style: AppTextStyles.body,
+                    ),
+                  if (snapshot.connectionState != ConnectionState.done) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    const Text(
+                      'Loading channel details…',
+                      style: AppTextStyles.meta,
+                    ),
+                  ] else if (snapshot.hasError) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    const Text(
+                      'More channel details are unavailable.',
+                      style: AppTextStyles.meta,
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
-        ),
-      ),
     );
   }
 
@@ -573,7 +643,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
                 const SizedBox(height: AppSpacing.lg),
                 Row(
                   children: [
-                    Expanded(
+                    IntrinsicWidth(
                       child: AppSubscribedButton(
                         isSubscribed: isSubscribed,
                         size: AppButtonSize.large,
@@ -581,27 +651,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    OutlinedButton.icon(
-                      onPressed: null,
-                      icon: const Icon(
-                        LucideIcons.badgeCheck,
-                        size: AppSizes.iconSm,
+                    IntrinsicWidth(
+                      child: AppButton.tonal(
+                        label: 'About',
+                        icon: LucideIcons.info,
+                        size: AppButtonSize.large,
+                        onPressed: _showChannelDescription,
                       ),
-                      label: const Text('Join'),
-                      style: OutlinedButton.styleFrom(
-                        shape: const StadiumBorder(),
-                        minimumSize: const Size.fromHeight(
-                          AppSizes.buttonLarge,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    IconButton.filledTonal(
-                      tooltip: 'Community',
-                      onPressed: _tabs.contains('Posts')
-                          ? () => _selectTab('Posts')
-                          : null,
-                      icon: const Icon(LucideIcons.usersRound),
                     ),
                   ],
                 ),
@@ -772,18 +828,34 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
         slivers.add(
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-            sliver: SliverGrid.builder(
-              itemCount: shorts.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: AppSpacing.xs,
-                mainAxisSpacing: AppSpacing.xs,
-                childAspectRatio: AppSpacing.shortRatio,
-              ),
-              itemBuilder: (context, index) => _ShortTile(
-                item: shorts[index],
-                onTap: () => _openShorts(shorts, index),
-              ),
+            sliver: SliverLayoutBuilder(
+              builder: (context, constraints) {
+                final width =
+                    (constraints.crossAxisExtent - AppSpacing.xs * 2) / 3;
+                final textHeight = MediaQuery.textScalerOf(context).scale(
+                  AppTextStyles.caption.fontSize! *
+                      AppTextStyles.caption.height! *
+                      2,
+                );
+                return SliverGrid.builder(
+                  itemCount: shorts.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: AppSpacing.xs,
+                    mainAxisSpacing: AppSpacing.sm,
+                    mainAxisExtent:
+                        width / AppSpacing.homeShortRatio +
+                        textHeight +
+                        AppSpacing.md,
+                  ),
+                  itemBuilder: (context, index) => _ShortTile(
+                    key: ValueKey(shorts[index].id),
+                    item: shorts[index],
+                    showTitle: true,
+                    onTap: () => _openShorts(shorts, index),
+                  ),
+                );
+              },
             ),
           ),
         );
@@ -1069,15 +1141,21 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       SliverBottomInset(extra: MediaQuery.paddingOf(context).bottom);
 }
 
-class _ShortTile extends StatelessWidget {
-  const _ShortTile({required this.item, required this.onTap});
+class _ShortTile extends ConsumerWidget {
+  const _ShortTile({
+    super.key,
+    required this.item,
+    required this.onTap,
+    this.showTitle = false,
+  });
   final ShortItem item;
   final VoidCallback onTap;
+  final bool showTitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
-    return ClipRRect(
+    final thumbnail = ClipRRect(
       borderRadius: AppRadius.smBorder,
       child: Material(
         color: colors.surfaceContainerHighest,
@@ -1094,6 +1172,33 @@ class _ShortTile extends StatelessWidget {
                 errorWidget: (_, _, _) =>
                     ColoredBox(color: colors.surfaceContainerHighest),
               ),
+              if (showTitle)
+                Positioned(
+                  right: AppSpacing.xs,
+                  top: AppSpacing.xs,
+                  child: IconButton(
+                    tooltip: 'More options',
+                    onPressed: () => showVideoOptionsMenu(
+                      context,
+                      videoId: item.id,
+                      ref: ref,
+                      video: VideoItem(
+                        id: item.id,
+                        title: item.title ?? '',
+                        channelId: item.channelId ?? '',
+                        channelName: item.channelName ?? '',
+                        channelAvatarUrl: item.channelAvatarUrl ?? '',
+                        thumbUrl: item.thumbUrl,
+                        viewsText: item.viewsText ?? '',
+                        isShort: true,
+                      ),
+                    ),
+                    icon: const Icon(
+                      LucideIcons.ellipsisVertical,
+                      color: AppColors.shortsForeground,
+                    ),
+                  ),
+                ),
               Positioned(
                 left: 0,
                 right: 0,
@@ -1118,6 +1223,20 @@ class _ShortTile extends StatelessWidget {
         ),
       ),
     );
+    if (!showTitle) return thumbnail;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AspectRatio(aspectRatio: AppSpacing.homeShortRatio, child: thumbnail),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          item.title ?? '',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.caption,
+        ),
+      ],
+    );
   }
 }
 
@@ -1140,23 +1259,27 @@ class _ChannelTabBarDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.surface,
-      child: TabBar(
-        controller: controller,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        labelStyle: AppTextStyles.videoTitle.copyWith(
-          fontWeight: FontWeight.bold,
+    return SizedBox.expand(
+      child: Material(
+        color: colors.surface,
+        child: TabBar(
+          controller: controller,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          labelStyle: AppTextStyles.videoTitle.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+          unselectedLabelStyle: AppTextStyles.videoTitle,
+          indicatorSize: TabBarIndicatorSize.label,
+          labelColor: AppColors.primary,
+          unselectedLabelColor: colors.onSurfaceVariant,
+          indicatorColor: AppColors.primary,
+          indicatorWeight: AppSpacing.xs / 2,
+          dividerColor: AppColors.transparent,
+          dividerHeight: AppSpacing.none,
+          tabs: [for (final tab in tabs) Tab(text: tab)],
         ),
-        unselectedLabelStyle: AppTextStyles.videoTitle,
-        indicatorSize: TabBarIndicatorSize.tab,
-        labelColor: colors.onSurface,
-        unselectedLabelColor: colors.onSurfaceVariant,
-        indicatorColor: colors.onSurface,
-        indicatorWeight: AppSpacing.xs / 2,
-        tabs: [for (final tab in tabs) Tab(text: tab)],
       ),
     );
   }

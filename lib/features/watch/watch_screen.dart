@@ -32,6 +32,7 @@ import 'watch_panel.dart';
 import 'watch_rules.dart';
 import 'queue_sheet.dart';
 import '../home/home_variety.dart';
+import '../downloads/downloads_screen.dart';
 import '../playlist/save_to_playlist_sheet.dart';
 import '../../core/db/app_db.dart';
 
@@ -40,7 +41,40 @@ final watchInfoProvider = FutureProvider.family<WatchInfo, String>((
   id,
 ) async {
   ref.watch(contentPrefsProvider.select((prefs) => prefs.prefsVersion));
-  return (await ref.watch(ytApiProvider.future)).next.watch(id);
+  try {
+    return await (await ref.watch(ytApiProvider.future)).next.watch(id);
+  } catch (_) {
+    final db = ref.read(dbProvider);
+    final downloads =
+        await (db.select(db.downloads)
+              ..where((row) => row.videoId.equals(id))
+              ..where((row) => row.status.equals('completed')))
+            .get();
+    if (downloads.isEmpty) rethrow;
+    final media = await (db.select(
+      db.media,
+    )..where((row) => row.videoId.equals(id))).getSingleOrNull();
+    if (media == null) rethrow;
+    return WatchInfo(
+      id: id,
+      title: media.title,
+      channelName: media.channelName,
+      channelId: media.channelId,
+      thumbnail: media.thumbUrl,
+      durationSec: media.durationSec ?? 0,
+      avatar: '',
+      subscribers: '',
+      description: '',
+      likes: '',
+      views: '',
+      date: '',
+      handle: '',
+      commentsToken: null,
+      related: const VideoPage([], null),
+      chapters: const [],
+      chips: const {},
+    );
+  }
 });
 final watchCommentsProvider = FutureProvider.family<CommentPage, String>(
   (ref, token) async =>
@@ -452,7 +486,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final viewport = MediaQuery.sizeOf(context);
     final width = viewport.width;
     final wide = !ui.isFullscreen && (width >= 900 || width > viewport.height);
-    final videoAspectRatio = videoAspectRatioFromController(service);
+    final videoAspectRatio = videoAspectRatioFromController(
+      service,
+      videoId: id,
+    );
     final inlineAspectRatio = videoAspectRatio != null && videoAspectRatio < 1
         ? videoAspectRatio
         : AppSpacing.thumbnailRatio;
@@ -681,11 +718,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       await showAppSheet<void>(
         context,
         title: 'Description',
+        showClose: false,
         initialFraction: maxFraction,
         minFraction: min(0.25, maxFraction),
         maxFraction: maxFraction,
         snapSizes: [maxFraction],
-        onVideo: true,
         useRootNavigator: false,
         builder: (context, scrollController) => heavyContentReady
             ? ListView(
@@ -741,11 +778,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       await showAppSheet<void>(
         context,
         title: 'Comments',
+        showClose: false,
+        compactHeader: true,
         initialFraction: maxFraction,
         minFraction: min(0.25, maxFraction),
         maxFraction: maxFraction,
         snapSizes: [maxFraction],
-        onVideo: true,
         useRootNavigator: false,
         builder: (context, scrollController) {
           if (!heavyContentReady) {
@@ -772,6 +810,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final viewInsets = MediaQuery.viewInsetsOf(context);
     final videoAspectRatio = videoAspectRatioFromController(
       ref.read(playbackProvider),
+      videoId: id,
     );
     final aspectRatio = videoAspectRatio != null && videoAspectRatio < 1
         ? videoAspectRatio
@@ -939,6 +978,24 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                               'https://www.youtube.com/watch?v=$id',
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+                    _action(
+                      LucideIcons.download,
+                      'Download',
+                      () => showDownloadChoices(
+                        context,
+                        ref,
+                        MediaCompanion.insert(
+                          videoId: id,
+                          title: info.title,
+                          channelId: info.channelId,
+                          channelName: info.channelName,
+                          thumbUrl: info.thumbnail.isNotEmpty
+                              ? info.thumbnail
+                              : 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                          updatedAt: DateTime.now().millisecondsSinceEpoch,
                         ),
                       ),
                     ),
@@ -1529,6 +1586,7 @@ class _CommentsState extends ConsumerState<WatchComments> {
             ],
           ),
         ),
+        const SizedBox(height: AppSpacing.md),
         Expanded(
           child: ListView.builder(
             controller: controller,

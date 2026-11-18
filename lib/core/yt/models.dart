@@ -162,7 +162,7 @@ class ChannelLiveItem {
   final String badge;
 }
 
-enum SearchFilterType { all, videos, shorts, channels, playlists, live }
+enum SearchFilterType { all, videos, shorts, channels, playlists, live, other }
 
 class SearchFilterChip {
   const SearchFilterChip({
@@ -242,6 +242,19 @@ class ChannelPageData {
   final List<dynamic> currentTabItems;
   final String? continuation;
   final List<({String label, String params})> sortChips;
+}
+
+class ChannelAboutData {
+  const ChannelAboutData({
+    this.description = '',
+    this.joinedDate = '',
+    this.country = '',
+    this.views = '',
+    this.subscribers = '',
+    this.videos = '',
+  });
+
+  final String description, joinedDate, country, views, subscribers, videos;
 }
 
 class PlaylistPageData {

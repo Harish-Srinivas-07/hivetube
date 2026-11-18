@@ -11,12 +11,22 @@ import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/yt/watch_info.dart';
 import 'package:hivetube/core/yt/yt_comments.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
+import 'package:hivetube/features/shorts/shorts_feed_provider.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
 import 'package:hivetube/main.dart';
 
 class _NoPlayback extends PlaybackController {
   @override
   PlaybackService? build() => null;
+}
+
+class _NoFetchShortsFeed extends ShortsFeedController {
+  @override
+  Future<void> loadInitial({bool refresh = false}) async {}
+  @override
+  Future<void> refresh() async {}
+  @override
+  Future<void> loadMore() async {}
 }
 
 class _SelectedShorts extends ShortsSelectionController {
@@ -54,6 +64,84 @@ class _VideoApi extends Fake implements YtApi {
 }
 
 void main() {
+  test(
+    'watch metadata uses video description when secondary info is empty',
+    () {
+      final info = parseWatchInfo({
+        'videoSecondaryInfoRenderer': {
+          'attributedDescription': {'content': ''},
+        },
+        'videoDetails': {'shortDescription': 'Full Short description'},
+      }, 'current');
+      expect(info.description, 'Full Short description');
+    },
+  );
+
+  testWidgets('tapping a truncated Short title opens its description', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final info = Completer<WatchInfo>();
+    appRouter.go('/shorts');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          playbackProvider.overrideWith(_NoPlayback.new),
+          shortsFeedProvider.overrideWith(_NoFetchShortsFeed.new),
+          shortsSelectionProvider.overrideWith(
+            () => _SelectedShorts(
+              const ShortsSelection(
+                items: [
+                  ShortItem(
+                    id: 'current',
+                    thumbUrl: '',
+                    title:
+                        'A very long Short title that fills the available lines and hides the more link completely',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          shortMetadataProvider('current').overrideWith((ref) async => null),
+          watchInfoProvider('current').overrideWith((ref) => info.future),
+        ],
+        child: const HiveTubeApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byKey(const ValueKey('shortsDetailsTitle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Details'), findsOneWidget);
+    info.complete(
+      const WatchInfo(
+        id: 'current',
+        title: 'Current',
+        channelName: '',
+        channelId: '',
+        avatar: '',
+        subscribers: '',
+        description: 'Full Short description',
+        likes: '',
+        views: '',
+        date: '',
+        handle: '',
+        commentsToken: null,
+        related: VideoPage([], null),
+        chapters: [],
+        chips: {},
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Full Short description'), findsOneWidget);
+  });
   testWidgets('Shorts comments opens immediately and loads current comments', (
     tester,
   ) async {

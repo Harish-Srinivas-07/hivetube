@@ -11,6 +11,8 @@ import 'package:hivetube/core/yt/yt_comments.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
 import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/theme/app_spacing.dart';
+import 'package:hivetube/theme/app_colors.dart';
+import 'package:hivetube/widgets/sheets/app_sheet.dart';
 
 class _NoPlayer extends PlaybackController {
   @override
@@ -88,9 +90,7 @@ void main() {
             watchCommentsProvider(
               'token',
             ).overrideWith((ref) async => comments),
-            ytApiProvider.overrideWith(
-              (ref) async => _FixtureYtApi(comments),
-            ),
+            ytApiProvider.overrideWith((ref) async => _FixtureYtApi(comments)),
             dislikeCountProvider('video').overrideWith((ref) async => 123),
           ],
           child: MaterialApp(
@@ -114,9 +114,36 @@ void main() {
       expect(commentsItem.top - commentsHeader.bottom, AppSpacing.sm);
       expect(find.text('Subscribe'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      void expectSheetTheme() {
+        final surface = find.byKey(const ValueKey('appSheetSurface'));
+        expect(Theme.of(tester.element(surface)).brightness, theme.brightness);
+        expect(
+          tester.widget<Material>(surface).color,
+          theme.brightness == Brightness.dark
+              ? AppColors.videoSheet
+              : theme.colorScheme.surface,
+        );
+      }
+
+      await tester.tap(find.text('A real video title'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Description'), findsWidgets);
+      expectSheetTheme();
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('appSheetSurface'))),
+      ).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.text('Comments'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      expectSheetTheme();
+      final commentsHeaderWidget = tester.widget<AppSheetHeader>(
+        find.byType(AppSheetHeader),
+      );
+      expect(commentsHeaderWidget.showClose, isFalse);
+      expect(commentsHeaderWidget.compact, isTrue);
       expect(find.byTooltip('Comment guidelines'), findsNothing);
       expect(
         find.text(
@@ -129,7 +156,7 @@ void main() {
             tester
                 .getRect(find.byKey(const ValueKey('commentsSortRow')))
                 .bottom,
-        0,
+        AppSpacing.md,
       );
       expect(
         tester.getRect(find.byKey(const ValueKey('commentAvatar:c'))).top,

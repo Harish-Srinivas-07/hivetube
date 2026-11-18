@@ -13,6 +13,7 @@ import '../../core/playback/playback_service.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/audio_handler.dart';
 import '../../core/playback/watch_session.dart';
+import '../../core/playback/session_queue.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
@@ -124,10 +125,16 @@ class MiniPlayerCloseButton extends StatelessWidget {
 // ─────────────────────────── main panel ──────────────────────────────────────
 
 class WatchPanel extends ConsumerStatefulWidget {
-  const WatchPanel({super.key, this.videoOverride, this.navigatorContext});
+  const WatchPanel({
+    super.key,
+    this.videoOverride,
+    this.navigatorContext,
+    this.miniPlayerKey,
+  });
   @visibleForTesting
   final Widget? videoOverride;
   final BuildContext? Function()? navigatorContext;
+  final GlobalKey? miniPlayerKey;
   @override
   ConsumerState<WatchPanel> createState() => _WatchPanelState();
 }
@@ -150,6 +157,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   String? _started;
   PlaybackService? _active;
+  PlaybackController? _playbackController;
   Timer? _countdown;
   String? _countdownId;
   String? _cancelledAutoplayId;
@@ -186,6 +194,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   @override
   void dispose() {
     shellRouteVisible.removeListener(_onShellRouteChanged);
+    _playbackController?.setOnVideoChanged(null);
     _countdown?.cancel();
     animation.dispose();
     _snapCtrl.dispose();
@@ -227,13 +236,6 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     ref.read(watchPanelProvider.notifier).open(id);
     ref.read(playerUiProvider.notifier).setDismissed(false);
     _animate(1);
-  }
-
-  void _openMini(String id, {bool record = true}) {
-    _keepMini = true;
-    _skipHistory = !record;
-    ref.read(watchPanelProvider.notifier).open(id);
-    ref.read(playerUiProvider.notifier).setDismissed(false);
   }
 
   void _dismiss({bool stop = true}) {
@@ -287,16 +289,6 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     await service.play(
       PlayRequest(videoId: id, mode: PlaybackMode.video, startAt: start),
     );
-  }
-
-  void _previous(PlaybackService? service) {
-    if (service == null) return;
-    if (service.state.position > const Duration(seconds: 3)) {
-      unawaited(service.seek(Duration.zero));
-      return;
-    }
-    final previous = ref.read(watchSessionProvider.notifier).popPrevious();
-    if (previous != null) _openMini(previous, record: false);
   }
 
   void _syncAutoplay(
@@ -398,6 +390,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     final nextId = ref
         .read(watchSessionProvider.notifier)
         .firstUnplayed(related.map((v) => v.id));
+    final hasQueuedNext = ref.watch(sessionQueueProvider).isNotEmpty;
+    final playbackController = ref.read(playbackProvider.notifier);
+    _playbackController = playbackController;
+    playbackController.updateRelatedVideos(related);
     final unplayed = related.where((v) => v.id == nextId).toList();
     final autoplay = ref.watch(contentPrefsProvider.select((s) => s.autoplay));
 
@@ -406,13 +402,18 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
         unawaited(_start(id, service));
         _syncAutoplay(id, service, unplayed, autoplay);
         final handler = ref.read(audioHandlerProvider);
-        handler?.setMetadata(id, title, channelName);
-        handler?.onNext = () async {
-          if (mounted && nextId != null) _openExpanded(nextId);
-        };
-        handler?.onPrevious = () async {
-          if (mounted) _previous(service);
-        };
+        final thumbnail = metadata?.thumbUrl;
+        handler?.setMetadata(
+          id,
+          title,
+          channelName,
+          artUri: thumbnail == null || thumbnail.trim().isEmpty
+              ? null
+              : Uri.tryParse(thumbnail),
+        );
+        playbackController.setOnVideoChanged((changedId) async {
+          if (mounted) _openExpanded(changedId, record: false);
+        });
       }
     });
 
@@ -443,7 +444,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
           builder: (context, bounds) {
             final padding = MediaQuery.paddingOf(context);
             final wide = bounds.maxWidth >= 900;
-            final aspectRatio = videoAspectRatioFromController(service);
+            final aspectRatio = videoAspectRatioFromController(
+              service,
+              videoId: id,
+            );
             final portraitVideo = aspectRatio != null && aspectRatio < 1;
             final maxPlayerWidth = wide
                 ? bounds.maxWidth * .64
@@ -454,9 +458,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
             final fullHeight = ui.isFullscreen && !portraitVideo
                 ? bounds.maxHeight
                 : fullWidth /
-                      (portraitVideo
-                          ? aspectRatio
-                          : AppSpacing.thumbnailRatio);
+                      (portraitVideo ? aspectRatio : AppSpacing.thumbnailRatio);
             final miniWidth = wide
                 ? AppSpacing.videoMaxWidth
                 : bounds.maxWidth * .55;
@@ -470,7 +472,11 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                 ? AppSpacing.navHeight + AppSpacing.sm
                 : 0.0;
             final safeBottom = padding.bottom + shellNavInset + AppSpacing.md;
-            final left = AppSpacing.md;
+            final hasRail =
+                shellRouteVisible.value &&
+                MediaQuery.sizeOf(context).shortestSide >=
+                    AppSpacing.navigationBreakpoint;
+            final left = (hasRail ? AppSizes.railWidth : 0.0) + AppSpacing.md;
             final right = bounds.maxWidth - miniWidth - AppSpacing.md;
             final top = safeTop;
             final bottom = bounds.maxHeight - safeBottom - miniHeight;
@@ -509,8 +515,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                     topInsetAlreadyApplied: true,
                     videoOverride: widget.videoOverride,
                     onMinimize: () => _animate(0),
-                    onPrevious: () => _previous(service),
-                    onNext: nextId == null ? null : () => _openExpanded(nextId),
+                    onPrevious: playbackController.skipToPrevious,
+                    onNext: !hasQueuedNext && nextId == null
+                        ? null
+                        : playbackController.skipToNext,
                     onPanelDragUpdate: (dy) {
                       animation.stop();
                       animation.value =
@@ -594,6 +602,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                             ..translateByDouble(pos.dx, pos.dy, 0, 1)
                             ..scaleByDouble(scale, scale, 1, 1),
                           child: ClipRRect(
+                            key: widget.miniPlayerKey,
                             borderRadius: BorderRadius.circular(radius),
                             child: child,
                           ),

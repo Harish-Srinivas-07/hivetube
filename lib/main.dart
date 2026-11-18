@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'dart:io';
 
@@ -14,6 +15,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'app/router.dart';
 import 'core/playback/player_ui_state.dart';
 import 'core/providers.dart';
+import 'core/downloads/download_manager.dart';
 import 'core/content/language_profile.dart';
 import 'core/settings/app_settings.dart';
 import 'core/streams/adaptive_quality_policy.dart';
@@ -67,6 +69,7 @@ Future<void> main() async {
   final savedGl = await db.getValue('settings_gl');
   final savedLocal = await db.getValue('settings_local_content');
   final savedAutoplay = await db.getValue('settings_autoplay');
+  final savedBackgroundPlay = await db.getValue('settings_background_play');
   final savedPreviewsEnabled = await db.getValue('settings_previews_enabled');
   final savedPreviewsWifiOnly = await db.getValue(
     'settings_previews_wifi_only',
@@ -104,6 +107,7 @@ Future<void> main() async {
     gl: regions.containsKey(savedGl) ? savedGl : defaults.gl,
     localContent: savedLocal != 'false',
     autoplay: savedAutoplay == 'true',
+    backgroundPlay: savedBackgroundPlay != 'false',
     previewsEnabled: savedPreviewsEnabled != 'false',
     previewsWifiOnly: savedPreviewsWifiOnly != 'false',
     videoQualityPreference: VideoQualityPreference.values.firstWhere(
@@ -154,12 +158,14 @@ Future<void> main() async {
 }
 
 final _playerNavigatorKey = GlobalKey<NavigatorState>();
+final _miniPlayerKey = GlobalKey();
 
 class HiveTubeApp extends ConsumerWidget {
   const HiveTubeApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.read(downloadManagerProvider);
     playerBackButtonDispatcher.onPlayerBack = () async {
       if (ref.read(watchPanelProvider) == null) return false;
       final playerNavigator = _playerNavigatorKey.currentState;
@@ -225,8 +231,19 @@ class _RootPlayerOverlay extends ConsumerWidget {
         children: [
           PreviewScrollListener(child: child ?? const SizedBox.shrink()),
           Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !panelOpen,
+            child: _PlayerHitTestGate(
+              acceptsHit: (globalPosition) {
+                if (!panelOpen) return false;
+                if (ui.panelMode != PlayerPanelMode.mini ||
+                    (_playerNavigatorKey.currentState?.canPop() ?? false)) {
+                  return true;
+                }
+                final box = _miniPlayerKey.currentContext?.findRenderObject();
+                if (box is! RenderBox || !box.hasSize) return false;
+                return (Offset.zero & box.size).contains(
+                  box.globalToLocal(globalPosition),
+                );
+              },
               child: Overlay(
                 initialEntries: [
                   OverlayEntry(
@@ -240,6 +257,7 @@ class _RootPlayerOverlay extends ConsumerWidget {
                           pageBuilder: (context, _, _) => Material(
                             type: MaterialType.transparency,
                             child: WatchPanel(
+                              miniPlayerKey: _miniPlayerKey,
                               navigatorContext: () =>
                                   rootNavigatorKey.currentContext,
                             ),
@@ -256,4 +274,31 @@ class _RootPlayerOverlay extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _PlayerHitTestGate extends SingleChildRenderObjectWidget {
+  const _PlayerHitTestGate({required this.acceptsHit, required super.child});
+
+  final bool Function(Offset globalPosition) acceptsHit;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPlayerHitTestGate(acceptsHit);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPlayerHitTestGate renderObject,
+  ) => renderObject.acceptsHit = acceptsHit;
+}
+
+class _RenderPlayerHitTestGate extends RenderProxyBox {
+  _RenderPlayerHitTestGate(this.acceptsHit);
+
+  bool Function(Offset globalPosition) acceptsHit;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) =>
+      acceptsHit(localToGlobal(position)) &&
+      super.hitTest(result, position: position);
 }

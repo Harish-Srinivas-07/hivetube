@@ -44,6 +44,7 @@ class AppSettings {
     required this.gl,
     this.localContent = true,
     this.autoplay = false,
+    this.backgroundPlay = true,
     this.previewsEnabled = true,
     this.previewsWifiOnly = true,
     this.revision = 0,
@@ -57,6 +58,7 @@ class AppSettings {
   final String gl;
   final bool localContent;
   final bool autoplay;
+  final bool backgroundPlay;
   final bool previewsEnabled;
   final bool previewsWifiOnly;
   final int revision;
@@ -78,6 +80,7 @@ class AppSettings {
     String? gl,
     bool? localContent,
     bool? autoplay,
+    bool? backgroundPlay,
     bool? previewsEnabled,
     bool? previewsWifiOnly,
     int? revision,
@@ -90,6 +93,7 @@ class AppSettings {
     gl: gl ?? this.gl,
     localContent: localContent ?? this.localContent,
     autoplay: autoplay ?? this.autoplay,
+    backgroundPlay: backgroundPlay ?? this.backgroundPlay,
     previewsEnabled: previewsEnabled ?? this.previewsEnabled,
     previewsWifiOnly: previewsWifiOnly ?? this.previewsWifiOnly,
     revision: revision ?? this.revision,
@@ -135,6 +139,14 @@ class AppSettingsController extends Notifier<AppSettings> {
         .read(dbProvider)
         .setValue('settings_autoplay', enabled.toString());
     state = state.copyWith(autoplay: enabled);
+  }
+
+  Future<void> setBackgroundPlay(bool enabled) async {
+    if (state.backgroundPlay == enabled) return;
+    await ref
+        .read(dbProvider)
+        .setValue('settings_background_play', enabled.toString());
+    state = state.copyWith(backgroundPlay: enabled);
   }
 
   Future<void> setPreviewsEnabled(bool enabled) async {

@@ -28,9 +28,13 @@ import '../logger.dart';
 import 'player_seek_bar.dart';
 import 'player_settings_menu.dart';
 
-double? videoAspectRatioFromController(PlaybackService? service) {
+double? videoAspectRatioFromController(
+  PlaybackService? service, {
+  String? videoId,
+}) {
   if (service == null) return null;
   try {
+    if (videoId != null && service.state.frameReadyId != videoId) return null;
     final videoSize = service.controller.player.state;
     final width = videoSize.width;
     final height = videoSize.height;
@@ -150,10 +154,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final videoSize = service.controller.player.state;
     final width = videoSize.width;
     final height = videoSize.height;
-    if (width == null ||
-        height == null ||
-        width <= 0 ||
-        height <= 0) {
+    if (width == null || height == null || width <= 0 || height <= 0) {
       _lastLoggedVideoSize = null;
       return;
     }

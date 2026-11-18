@@ -163,9 +163,9 @@ Future<void> showContentLanguageSheet(
                     trailing: const Icon(LucideIcons.chevronRight),
                     onTap: chooseRegion,
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.lg),
                   Text('Mix', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
                       _MixChoice(
@@ -174,12 +174,14 @@ Future<void> showContentLanguageSheet(
                         selected: localRatio == .8,
                         onTap: () => setSheetState(() => localRatio = .8),
                       ),
+                      const SizedBox(width: AppSpacing.sm),
                       _MixChoice(
                         label: 'Balanced',
                         value: .6,
                         selected: localRatio == .6,
                         onTap: () => setSheetState(() => localRatio = .6),
                       ),
+                      const SizedBox(width: AppSpacing.sm),
                       _MixChoice(
                         label: 'More global',
                         value: .4,
@@ -189,7 +191,10 @@ Future<void> showContentLanguageSheet(
                     ],
                   ),
                   Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    padding: const EdgeInsets.only(
+                      top: AppSpacing.sm,
+                      bottom: AppSpacing.lg,
+                    ),
                     child: Text(
                       'Local topics ${(localRatio * 100).round()}% · Global ${(100 - localRatio * 100).round()}%',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -203,9 +208,9 @@ Future<void> showContentLanguageSheet(
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg,
-                AppSpacing.xs,
-                AppSpacing.lg,
                 AppSpacing.md,
+                AppSpacing.lg,
+                AppSpacing.lg,
               ),
               child: Row(
                 children: [
@@ -310,14 +315,11 @@ class _MixChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: AppChip(
-        key: ValueKey('contentMix_$value'),
-        label: label,
-        selected: selected,
-        onTap: onTap,
-      ),
+    child: AppChip(
+      key: ValueKey('contentMix_$value'),
+      label: label,
+      selected: selected,
+      onTap: onTap,
     ),
   );
 }

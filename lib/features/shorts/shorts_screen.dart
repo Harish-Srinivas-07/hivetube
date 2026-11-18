@@ -14,6 +14,7 @@ import '../../core/playback/audio_handler.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
+import '../../core/yt/watch_info.dart';
 import '../../features/watch/watch_screen.dart'
     show WatchComments, watchInfoProvider;
 import 'shorts_feed_provider.dart';
@@ -647,8 +648,6 @@ class _ShortPage extends ConsumerStatefulWidget {
 }
 
 class _ShortPageState extends ConsumerState<_ShortPage> {
-  late final TapGestureRecognizer _shortDetailsRecognizer =
-      TapGestureRecognizer()..onTap = () => unawaited(_openShortDetails());
   bool firstFrame = false;
   bool _scrubbing = false;
   bool _wasPlayingBeforeScrub = false;
@@ -816,6 +815,7 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
       context,
       title: 'Comments',
       showClose: false,
+      compactHeader: true,
       builder: (sheetContext, scrollController) {
         return Consumer(
           builder: (context, ref, _) => ref
@@ -837,53 +837,68 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
   }
 
   Future<void> _openShortDetails() async {
-    try {
-      final info = await ref.read(watchInfoProvider(widget.item.id).future);
-      if (!mounted) return;
-      await showAppSheet<void>(
-        context,
-        title: 'Details',
-        showClose: false,
-        fit: true,
-        builder: (sheetContext, _) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                info.title,
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                [
-                  info.views,
-                  info.date,
-                ].where((value) => value.isNotEmpty).join(' · '),
-                style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (info.channelName.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.md),
-                Text(info.channelName, style: AppTextStyles.bodyStrong),
-              ],
-              if (info.description.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.md),
+    final infoFuture = ref.read(watchInfoProvider(widget.item.id).future);
+    await showAppSheet<void>(
+      context,
+      title: 'Details',
+      showClose: false,
+      fit: true,
+      builder: (sheetContext, _) => FutureBuilder<WatchInfo>(
+        future: infoFuture,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Text('Could not load video details'),
+            );
+          }
+          final info = snapshot.data;
+          if (info == null) {
+            return const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  info.description,
-                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                  info.title.isNotEmpty
+                      ? info.title
+                      : (widget.metadata?.title ?? widget.item.title ?? ''),
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  [
+                    info.views,
+                    info.date,
+                  ].where((value) => value.isNotEmpty).join(' · '),
+                  style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (info.channelName.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(info.channelName, style: AppTextStyles.bodyStrong),
+                ],
+                if (info.description.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    info.description,
+                    style: Theme.of(sheetContext).textTheme.bodyMedium,
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
               ],
-              const SizedBox(height: AppSpacing.lg),
-            ],
-          ),
-        ),
-      );
-    } catch (_) {
-      if (mounted) AppSnackbar.show(context, 'Could not load video details');
-    }
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _openMoreOptions() {
@@ -899,7 +914,6 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
 
   @override
   void dispose() {
-    _shortDetailsRecognizer.dispose();
     feedbackTimer?.cancel();
     _watchedService?.removeListener(_serviceChanged);
     _settingsSession?.dispose();
@@ -1277,24 +1291,28 @@ class _ShortPageState extends ConsumerState<_ShortPage> {
                 if (title != null && title.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.sm),
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(text: title),
-                          TextSpan(
-                            text: ' …more',
-                            style: textTheme.labelMedium?.copyWith(
-                              color: AppColors.shortsForeground,
-                              fontWeight: FontWeight.w600,
+                    child: GestureDetector(
+                      key: const ValueKey('shortsDetailsTitle'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => unawaited(_openShortDetails()),
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: title),
+                            TextSpan(
+                              text: ' …more',
+                              style: textTheme.labelMedium?.copyWith(
+                                color: AppColors.shortsForeground,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            recognizer: _shortDetailsRecognizer,
-                          ),
-                        ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: AppColors.shortsForeground,
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: AppColors.shortsForeground,
+                        ),
                       ),
                     ),
                   ),

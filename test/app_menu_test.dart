@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/streams/adaptive_quality_policy.dart';
 import 'package:hivetube/theme/app_theme.dart';
+import 'package:hivetube/theme/app_colors.dart';
 import 'package:hivetube/widgets/player/player_settings_menu.dart';
 import 'package:hivetube/widgets/video_options_menu.dart';
+import 'package:hivetube/widgets/sheets/app_sheet.dart';
 
 class _Playback extends Fake implements PlaybackService {
   final snapshot = PlaybackSnapshot()..heights = [1080, 720];
@@ -44,6 +46,32 @@ class _Playback extends Fake implements PlaybackService {
 }
 
 void main() {
+  testWidgets('video menu follows the light app theme', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showVideoOptionsMenu(context, videoId: 'video'),
+              child: const Text('Open menu'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open menu'));
+    await tester.pumpAndSettle();
+    final surface = find.byKey(const ValueKey('appSheetSurface'));
+    expect(
+      tester.widget<Material>(surface).color,
+      AppTheme.light.colorScheme.surface,
+    );
+    expect(
+      Theme.of(tester.element(find.byType(AppSheetRow).first)).brightness,
+      Brightness.light,
+    );
+  });
   testWidgets('player sheet navigates and applies quality and speed', (
     tester,
   ) async {
@@ -66,10 +94,23 @@ void main() {
     );
     await tester.tap(find.text('Open settings'));
     await tester.pumpAndSettle();
+    final surface = find.byKey(const ValueKey('appSheetSurface'));
+    expect(
+      tester.widget<Material>(surface).color,
+      AppTheme.light.colorScheme.surface,
+    );
+    expect(
+      Theme.of(tester.element(find.byType(AppSheetRow).first)).brightness,
+      Brightness.light,
+    );
     expect(find.text('Quality'), findsOneWidget);
     expect(find.text('Playback speed'), findsOneWidget);
     await tester.tap(find.text('Quality'));
     await tester.pumpAndSettle();
+    expect(
+      Theme.of(tester.element(find.byType(AppSheetRow).first)).brightness,
+      Brightness.light,
+    );
     await tester.tap(find.text('720p'));
     await tester.pumpAndSettle();
     expect(service.qualityPreference, VideoQualityPreference.always720);
@@ -81,6 +122,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.state.rate, 1.5);
     expect(tester.takeException(), isNull);
+  });
+  testWidgets('player settings follow the dark app theme', (tester) async {
+    final session = PlayerSettingsSession(_Playback());
+    addTearDown(session.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () =>
+                  showPlayerSettingsMenu(context, session: session),
+              child: const Text('Open settings'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open settings'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Material>(find.byKey(const ValueKey('appSheetSurface')))
+          .color,
+      AppColors.videoSheet,
+    );
+    expect(
+      Theme.of(tester.element(find.byType(AppSheetRow).first)).brightness,
+      Brightness.dark,
+    );
   });
   testWidgets('video menu closes and runs only the selected action', (
     tester,

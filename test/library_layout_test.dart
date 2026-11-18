@@ -8,6 +8,7 @@ import 'package:hivetube/features/library/library_screen.dart';
 import 'package:hivetube/theme/app_sizes.dart';
 import 'package:hivetube/theme/app_spacing.dart';
 import 'package:hivetube/theme/app_theme.dart';
+import 'package:hivetube/theme/app_colors.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 void main() {
@@ -103,6 +104,40 @@ void main() {
       expect(
         tester.getSize(find.byKey(const ValueKey('libraryBottomInset'))).height,
         AppSizes.bottomNav + AppSpacing.xl,
+      );
+
+      Future<void> expectMenuTheme(Finder button) async {
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        final surface = find.byKey(const ValueKey('appSheetSurface'));
+        expect(surface, findsOneWidget);
+        expect(Theme.of(tester.element(surface)).brightness, brightness);
+        expect(
+          tester.widget<Material>(surface).color,
+          brightness == Brightness.dark
+              ? AppColors.videoSheet
+              : AppTheme.light.colorScheme.surface,
+        );
+        Navigator.of(tester.element(surface)).pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+
+      await expectMenuTheme(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('historyShelf')),
+              matching: find.byTooltip('More options'),
+            )
+            .first,
+      );
+      await expectMenuTheme(
+        find.descendant(
+          of: find.byKey(ValueKey('playlist-$playlistId')),
+          matching: find.byTooltip('More options'),
+        ),
       );
 
       await tester.pumpWidget(const SizedBox.shrink());

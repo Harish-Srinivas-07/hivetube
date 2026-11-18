@@ -46,6 +46,8 @@ app.*.map.json
 
 # Local configuration and native dependencies
 android/local.properties
+android/key.properties
+*.jks
 /android/build/
 *.dll
 ref/

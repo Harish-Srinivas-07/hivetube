@@ -160,6 +160,7 @@ class UpdateService {
       assets.map((asset) => asset.name),
       abis,
     );
+    if (selectedName == null) return null;
     return assets.firstWhere((asset) => asset.name == selectedName);
   }
 
@@ -201,13 +202,30 @@ class UpdateService {
       for (final name in apks) {
         if (name.toLowerCase().contains(abi.toLowerCase())) return name;
       }
+      if (abi.toLowerCase() == 'arm64-v8a') {
+        for (final name in apks) {
+          if (RegExp(
+            r'(^|[_-])common\.apk$',
+            caseSensitive: false,
+          ).hasMatch(name)) {
+            return name;
+          }
+        }
+      }
     }
     for (final name in apks) {
       if (RegExp(r'universal|\ball\b', caseSensitive: false).hasMatch(name)) {
         return name;
       }
     }
-    return apks.firstOrNull;
+    return apks
+        .where(
+          (name) => !RegExp(
+            r'(^|[_-])(common|arm64-v8a|armeabi-v7a|x86_64|x86)\.apk$',
+            caseSensitive: false,
+          ).hasMatch(name),
+        )
+        .firstOrNull;
   }
 
   static bool _isGitHub(Uri uri) =>

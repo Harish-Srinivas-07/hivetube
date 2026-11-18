@@ -14,6 +14,7 @@ import '../core/update/update_service.dart';
 import '../theme/app_sizes.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
+import '../theme/app_radius.dart';
 import 'ui/ui.dart';
 
 Future<void> showUpdateDialog(
@@ -284,7 +285,7 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
           .setFailed(
             const UpdateFailure(
               UpdateFailureKind.http,
-              'Installation was cancelled or not completed.',
+              'Installation was cancelled or failed. If Android reports a package conflict, the installed app and update may have different signing keys.',
             ),
             info: widget.info,
           );
@@ -333,6 +334,7 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
     final downloading = state is UpdateDownloading;
     final ready = state is UpdateReady;
     final failed = state is UpdateFailed ? state : null;
+    final available = !downloading && !ready && failed == null;
     final theme = Theme.of(context);
     return PopScope(
       canPop: !downloading,
@@ -344,7 +346,7 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
           UpdateDownloading() => 'Downloading update',
           UpdateReady() => 'Update ready',
           UpdateFailed() => 'Update failed',
-          _ => 'Update available',
+          _ => null,
         },
         content: switch (state) {
           UpdateDownloading(:final received, :final total, :final progress) =>
@@ -359,59 +361,130 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
           ),
           _ => _availableContent(theme),
         },
-        actions: [
-          if (failed != null) ...[
-            AppButton.text(label: 'Open GitHub', onPressed: _openGitHub),
-            AppButton.text(
-              label: 'Retry',
-              onPressed: failed.info?.apkUrl == null
-                  ? () => checkForUpdates(context, ref)
-                  : _download,
-            ),
-          ] else if (downloading) ...[
-            AppButton.text(label: 'Cancel', onPressed: _cancelDownload),
-          ] else if (ready) ...[
-            AppButton.text(label: 'Open GitHub', onPressed: _openGitHub),
-            AppButton.filled(label: 'Install now', onPressed: _launchInstaller),
-          ] else if (widget.info.apkUrl == null) ...[
-            AppButton.filled(label: 'Open GitHub', onPressed: _openGitHub),
-          ] else ...[
-            AppButton.text(
-              label: 'Later',
-              onPressed: () => Navigator.pop(context),
-            ),
-            AppButton.filled(label: 'Update', onPressed: _download),
-          ],
-        ],
+        actions: available
+            ? null
+            : [
+                if (failed != null) ...[
+                  AppButton.text(
+                    label: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  AppButton.text(
+                    label: 'Retry',
+                    onPressed: _readyPath != null
+                        ? _launchInstaller
+                        : failed.info?.apkUrl == null
+                        ? () => checkForUpdates(context, ref)
+                        : _download,
+                  ),
+                ] else if (downloading) ...[
+                  AppButton.text(label: 'Cancel', onPressed: _cancelDownload),
+                ] else if (ready) ...[
+                  AppButton.text(label: 'Open GitHub', onPressed: _openGitHub),
+                  AppButton.filled(
+                    label: 'Install now',
+                    onPressed: _launchInstaller,
+                  ),
+                ],
+              ],
       ),
     );
   }
 
-  Widget _availableContent(ThemeData theme) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        '${_currentVersion ?? 'Current'} → ${widget.info.version}',
-        style: AppTextStyles.bodyStrong,
-      ),
-      if (widget.info.changelog.isNotEmpty) ...[
-        const SizedBox(height: AppSpacing.md),
-        ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxHeight: AppSizes.updateChangelogMaxHeight,
-          ),
-          child: SingleChildScrollView(
-            child: Text(
-              widget.info.changelog,
-              style: AppTextStyles.body.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+  Widget _availableContent(ThemeData theme) => SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: AppRadius.xlBorder,
+            ),
+            child: Icon(
+              Icons.system_update_rounded,
+              size: AppSizes.iconLg,
+              color: theme.colorScheme.onSurface,
             ),
           ),
         ),
+        const SizedBox(height: AppSpacing.lg),
+        const Text(
+          'Update available',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.pageTitle,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'HiveTube ${widget.info.version} is ready',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.body.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'Version ${_currentVersion ?? 'installed'} → ${widget.info.version}',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.bodyStrong,
+        ),
+        if (widget.info.apkSize != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Download: ${(widget.info.apkSize! / (1024 * 1024)).toStringAsFixed(1)} MB',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.meta.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (widget.info.changelog.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: AppRadius.mdBorder,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('What’s new', style: AppTextStyles.bodyStrong),
+                const SizedBox(height: AppSpacing.xs),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxHeight: AppSizes.updateChangelogMaxHeight,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      widget.info.changelog,
+                      style: AppTextStyles.body.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.xl),
+        AppButton.filled(
+          label: widget.info.apkUrl == null ? 'Open GitHub' : 'Update',
+          size: AppButtonSize.large,
+          onPressed: widget.info.apkUrl == null ? _openGitHub : _download,
+        ),
+        if (widget.info.apkUrl != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          AppButton.text(
+            label: 'Later',
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
       ],
-    ],
+    ),
   );
 
   Widget _downloadContent(

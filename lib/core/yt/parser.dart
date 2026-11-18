@@ -438,7 +438,7 @@ List<SearchFilterChip> parseSearchFilterChips(dynamic json) {
       if (!seen.add(params)) continue;
 
       final lower = label.toLowerCase();
-      var type = SearchFilterType.all;
+      var type = SearchFilterType.other;
       if (lower.contains('video')) {
         type = SearchFilterType.videos;
       } else if (lower.contains('short')) {
@@ -697,6 +697,13 @@ ChannelPageData parseChannelPage(
   String videosCount = '';
   String desc = '';
 
+  for (final metadata in findAll(json, 'channelMetadataRenderer')) {
+    if (metadata is Map) {
+      desc = _text(metadata['description']);
+      if (desc.isNotEmpty) break;
+    }
+  }
+
   for (final header in [
     ...findAll(json, 'pageHeaderViewModel'),
     ...findAll(json, 'c4TabbedHeaderRenderer'),
@@ -792,6 +799,22 @@ ChannelPageData parseChannelPage(
     currentTabItems: currentItems,
     continuation: continuation,
     sortChips: sortChips,
+  );
+}
+
+ChannelAboutData parseChannelAbout(dynamic json) {
+  final about = findAll(
+    json,
+    'aboutChannelViewModel',
+  ).whereType<Map>().firstOrNull;
+  if (about == null) return const ChannelAboutData();
+  return ChannelAboutData(
+    description: _text(about['description']),
+    joinedDate: _text(about['joinedDateText']),
+    country: _text(about['country']),
+    views: _text(about['viewCountText']),
+    subscribers: _text(about['subscriberCountText']),
+    videos: _text(about['videoCountText']),
   );
 }
 

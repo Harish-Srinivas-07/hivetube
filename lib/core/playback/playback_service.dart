@@ -28,6 +28,10 @@ import '../streams/stream_selector.dart';
 import '../streams/net_family.dart';
 import '../innertube/innertube_http.dart';
 import '../yt/captions.dart';
+import '../yt/models.dart';
+import 'session_queue.dart';
+import 'watch_session.dart';
+import 'player_interactions.dart';
 
 enum PlayerStatus {
   idle,
@@ -106,6 +110,7 @@ class PlaybackService extends ChangeNotifier {
     this.bandwidthEstimator,
     this.onQualityPreferenceChanged,
     this.completedDownloadPath,
+    this.prepareStreaming,
   }) {
     _seekController = _createSeekController();
     _configurePlayer(player, shortBuffer: false);
@@ -192,6 +197,7 @@ class PlaybackService extends ChangeNotifier {
   final RelayServer relay;
   final HistoryRepo history;
   final Future<String?> Function(String videoId)? completedDownloadPath;
+  final Future<void> Function()? prepareStreaming;
   final BandwidthEstimator? bandwidthEstimator;
   final Future<void> Function(VideoQualityPreference)?
   onQualityPreferenceChanged;
@@ -222,6 +228,7 @@ class PlaybackService extends ChangeNotifier {
   Uri? _currentAudioUri;
   bool _playingLocalFile = false;
   String? _activeFrameVideoId;
+  PlayRequest? _backgroundVideoRequest;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
 
   VideoQualityPreference get qualityPreference => _qualityPreference;
@@ -632,6 +639,24 @@ class PlaybackService extends ChangeNotifier {
     await _load(value, newRequest: true, requestGeneration: generation);
   }
 
+  Future<void> playVideoRequest(PlayRequest value) async {
+    final backgroundVideo = _backgroundVideoRequest;
+    if (backgroundVideo == null || value.mode != PlaybackMode.video) {
+      await play(value);
+      return;
+    }
+    _backgroundVideoRequest = value;
+    await play(
+      PlayRequest(
+        videoId: value.videoId,
+        mode: PlaybackMode.audio,
+        startAt: value.startAt,
+        play: value.play,
+        saveHistory: value.saveHistory,
+      ),
+    );
+  }
+
   int beginShortPreloadCycle() => ++_shortPreloadGeneration;
 
   void cancelShortPreloads({bool disposePlayer = false}) {
@@ -782,6 +807,8 @@ class PlaybackService extends ChangeNotifier {
           if (!_loadGuard.isCurrent(generation)) return;
         }
       }
+      await prepareStreaming?.call();
+      if (!_loadGuard.isCurrent(generation)) return;
       _debugLog('_load: resolving streams for ${value.videoId}...');
       var requestedQuality =
           state.quality ?? adaptiveHeight ?? state.autoQualityHeight;
@@ -1101,6 +1128,40 @@ class PlaybackService extends ChangeNotifier {
     }
   }
 
+  Future<void> enterBackgroundAudioMode() async {
+    final current = request;
+    if (current == null || current.mode != PlaybackMode.video || _userPaused) {
+      return;
+    }
+    _backgroundVideoRequest = current;
+    await _load(
+      PlayRequest(
+        videoId: current.videoId,
+        mode: PlaybackMode.audio,
+        startAt: state.position,
+        play: _shouldResumeCurrent,
+        saveHistory: current.saveHistory,
+      ),
+      qualitySwitch: true,
+    );
+  }
+
+  Future<void> restoreBackgroundVideo() async {
+    final original = _backgroundVideoRequest;
+    if (original == null) return;
+    _backgroundVideoRequest = null;
+    await _load(
+      PlayRequest(
+        videoId: original.videoId,
+        mode: original.mode,
+        startAt: state.position,
+        play: !_userPaused && _shouldResumeCurrent,
+        saveHistory: original.saveHistory,
+      ),
+      qualitySwitch: true,
+    );
+  }
+
   Future<void> pause() async {
     _userPaused = true;
     _resumeAfterFocus = false;
@@ -1373,6 +1434,14 @@ class PlaybackService extends ChangeNotifier {
   }
 }
 
+final _hasCompletedDownloadProvider = FutureProvider<bool>((ref) async {
+  final db = ref.watch(dbProvider);
+  return (db.select(db.downloads)
+        ..where((row) => row.status.equals('completed')))
+      .get()
+      .then((rows) => rows.isNotEmpty);
+});
+
 final playbackProvider = NotifierProvider<PlaybackController, PlaybackService?>(
   PlaybackController.new,
 );
@@ -1383,6 +1452,8 @@ class PlaybackController extends Notifier<PlaybackService?> {
   NetworkFamily? _network;
   InnertubeHttp? _currentHttp;
   VoidCallback? _networkHook, _networkPrevious;
+  List<VideoItem> _relatedVideos = const [];
+  Future<void> Function(String videoId)? _onVideoChanged;
 
   @override
   bool updateShouldNotify(PlaybackService? previous, PlaybackService? next) =>
@@ -1393,6 +1464,7 @@ class PlaybackController extends Notifier<PlaybackService?> {
     ref.listen(innertubeProvider, (_, _) => _ensureService());
     ref.listen(networkFamilyProvider, (_, _) => _ensureService());
     ref.listen(visitorDataProvider, (_, _) => _ensureService());
+    ref.listen(_hasCompletedDownloadProvider, (_, _) => _ensureService());
     ref.listen(appSettingsProvider, (_, _) => _refreshQualityPolicy());
     ref.listen(connectivityProvider, (_, _) => _refreshQualityPolicy());
     ref.onDispose(() {
@@ -1402,6 +1474,8 @@ class PlaybackController extends Notifier<PlaybackService?> {
         _handler?.unbind(service);
         service.dispose();
       }
+      _handler?.onNext = null;
+      _handler?.onPrevious = null;
       final network = _network;
       if (network != null && identical(network.onChanged, _networkHook)) {
         network.onChanged = _networkPrevious;
@@ -1410,14 +1484,75 @@ class PlaybackController extends Notifier<PlaybackService?> {
     return _createService();
   }
 
+  void updateRelatedVideos(List<VideoItem> videos) {
+    _relatedVideos = List.unmodifiable(videos);
+  }
+
+  void setOnVideoChanged(Future<void> Function(String videoId)? callback) {
+    _onVideoChanged = callback;
+  }
+
+  Future<void> skipToNext() async {
+    final service = _service;
+    if (service == null) return;
+    final queued = ref.read(sessionQueueProvider.notifier).takeNext();
+    final nextVideo = queued?.video ?? _nextRelatedVideo();
+    if (nextVideo == null) return;
+    final currentId = service.request?.videoId;
+    ref.read(watchSessionProvider.notifier).opened(currentId, nextVideo.id);
+    await service.playVideoRequest(
+      PlayRequest(videoId: nextVideo.id, mode: PlaybackMode.video),
+    );
+    _handler?.setMetadata(
+      nextVideo.id,
+      nextVideo.title,
+      nextVideo.channelName,
+      artUri: Uri.tryParse(nextVideo.thumbUrl),
+    );
+    await _onVideoChanged?.call(nextVideo.id);
+  }
+
+  Future<void> skipToPrevious() async {
+    final service = _service;
+    if (service == null) return;
+    if (service.state.position > const Duration(seconds: 3)) {
+      await service.seek(Duration.zero);
+      return;
+    }
+    final previous = ref.read(watchSessionProvider.notifier).popPrevious();
+    if (previous == null) return;
+    ref
+        .read(watchSessionProvider.notifier)
+        .opened(service.request?.videoId, previous, record: false);
+    final history = await ref.read(historyRepoProvider).recent();
+    final saved = history
+        .where((entry) => entry.videoId == previous)
+        .firstOrNull;
+    await service.playVideoRequest(
+      PlayRequest(
+        videoId: previous,
+        mode: PlaybackMode.video,
+        startAt: resumePosition(saved),
+      ),
+    );
+    await _onVideoChanged?.call(previous);
+  }
+
+  VideoItem? _nextRelatedVideo() {
+    final watched = ref.read(watchSessionProvider).watched;
+    final currentId = _service?.request?.videoId;
+    for (final video in _relatedVideos) {
+      if (video.id != currentId && !watched.contains(video.id)) return video;
+    }
+    return null;
+  }
+
   void _changed() => state = _service;
 
   void _ensureService() {
     if (_service != null) {
       final http = ref.read(innertubeProvider).value;
-      if (http != null &&
-          ref.read(visitorDataProvider).value != null &&
-          !identical(_currentHttp, http)) {
+      if (http != null && !identical(_currentHttp, http)) {
         _currentHttp = http;
         _service!.cache.player.gl = http.gl;
         _service!.cache.clearCache();
@@ -1450,7 +1585,8 @@ class PlaybackController extends Notifier<PlaybackService?> {
     final network = ref.read(networkFamilyProvider).value;
     if (http == null ||
         network == null ||
-        ref.read(visitorDataProvider).value == null) {
+        (ref.read(visitorDataProvider).value == null &&
+            ref.read(_hasCompletedDownloadProvider).value != true)) {
       return null;
     }
     _currentHttp = http;
@@ -1479,6 +1615,9 @@ class PlaybackController extends Notifier<PlaybackService?> {
         bandwidthEstimator: estimator,
       ),
       ref.read(historyRepoProvider),
+      prepareStreaming: () async {
+        await ref.read(visitorDataProvider.future);
+      },
       completedDownloadPath: (videoId) async {
         final db = ref.read(dbProvider);
         final rows =
@@ -1503,6 +1642,8 @@ class PlaybackController extends Notifier<PlaybackService?> {
     final handler = ref.read(audioHandlerProvider);
     _handler = handler;
     handler?.bind(service);
+    handler?.onNext = skipToNext;
+    handler?.onPrevious = skipToPrevious;
     _service = service;
     _network = network;
     _installNetworkHook();

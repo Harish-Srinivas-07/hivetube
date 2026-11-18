@@ -38,7 +38,7 @@ void main() {
     });
   });
 
-  test('prefers matching ABI, then universal, then first APK', () {
+  test('selects compatible APKs, including common for ARM64', () {
     const names = [
       'hivetube-x86_64.apk',
       'HiveTube_1.4.0_common.apk',
@@ -51,11 +51,22 @@ void main() {
       'hivetube-arm64-v8a.apk',
     );
     expect(
+      UpdateService.selectAssetName(
+        ['HiveTube_1.4.0_common.apk', 'HiveTube_1.4.0_universal.apk'],
+        ['arm64-v8a', 'armeabi-v7a'],
+      ),
+      'HiveTube_1.4.0_common.apk',
+    );
+    expect(
       UpdateService.selectAssetName([
         'HiveTube_1.4.0_common.apk',
         'HiveTube_1.4.0_universal.apk',
       ], []),
       'HiveTube_1.4.0_universal.apk',
+    );
+    expect(
+      UpdateService.selectAssetName(['HiveTube_1.4.0_common.apk'], ['x86_64']),
+      isNull,
     );
     expect(
       UpdateService.selectAssetName(['notes.txt', 'hivetube.apk'], []),

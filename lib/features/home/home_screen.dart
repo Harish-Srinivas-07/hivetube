@@ -785,7 +785,6 @@ class _Shorts extends ConsumerWidget {
                           onPressed: () => showVideoOptionsMenu(
                             context,
                             videoId: items[index].id,
-                            onVideo: true,
                           ),
                           icon: const Icon(
                             LucideIcons.ellipsisVertical,

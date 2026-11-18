@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
 import 'package:hivetube/core/yt/models.dart';
@@ -21,6 +22,12 @@ import 'package:hivetube/features/watch/watch_screen.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
 
 class _FakeMediaPlayerState extends Fake implements PlayerState {
+  int? videoWidth;
+  int? videoHeight;
+  @override
+  int? get width => videoWidth;
+  @override
+  int? get height => videoHeight;
   @override
   List<String> get subtitle => const [];
 }
@@ -31,10 +38,17 @@ class _FakeMediaPlayerStream extends Fake implements PlayerStream {
 }
 
 class _FakeMediaPlayer extends Fake implements Player {
+  final _state = _FakeMediaPlayerState();
   @override
-  PlayerState get state => _FakeMediaPlayerState();
+  PlayerState get state => _state;
   @override
   PlayerStream get stream => _FakeMediaPlayerStream();
+}
+
+class _FakeVideoController extends Fake implements VideoController {
+  _FakeVideoController(this.player);
+  @override
+  final Player player;
 }
 
 class _MockPlaybackService extends Fake implements PlaybackService {
@@ -62,6 +76,9 @@ class _MockPlaybackService extends Fake implements PlaybackService {
 
   @override
   Player get player => _player;
+
+  @override
+  VideoController get controller => _FakeVideoController(_player);
 
   @override
   PlayRequest? get request => _request;
@@ -171,6 +188,7 @@ Widget _buildTestApp({
   required void Function(WidgetRef ref) onRef,
   Widget? child,
   bool listenPlayback = false,
+  GlobalKey? miniPlayerKey,
 }) {
   final db = AppDb(NativeDatabase.memory());
   addTearDown(db.close);
@@ -200,8 +218,11 @@ Widget _buildTestApp({
             body: Stack(
               children: [
                 child ?? const SizedBox.expand(),
-                const Positioned.fill(
-                  child: WatchPanel(videoOverride: SizedBox.expand()),
+                Positioned.fill(
+                  child: WatchPanel(
+                    videoOverride: const SizedBox.expand(),
+                    miniPlayerKey: miniPlayerKey,
+                  ),
                 ),
               ],
             ),
@@ -213,6 +234,35 @@ Widget _buildTestApp({
 }
 
 void main() {
+  testWidgets('watch panel ignores dimensions from the preceding Short', (
+    tester,
+  ) async {
+    final service = _MockPlaybackService();
+    final player = service.player as _FakeMediaPlayer;
+    player._state.videoWidth = 1080;
+    player._state.videoHeight = 1920;
+    service.state.frameReadyId = 'short';
+    late WidgetRef capturedRef;
+    final playerKey = GlobalKey();
+    await tester.pumpWidget(
+      _buildTestApp(
+        service: service,
+        onRef: (ref) => capturedRef = ref,
+        miniPlayerKey: playerKey,
+      ),
+    );
+    capturedRef.read(watchPanelProvider.notifier).open('vid1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final size = tester.getSize(find.byKey(playerKey));
+    expect(size.width / size.height, closeTo(16 / 9, .001));
+    expect(videoAspectRatioFromController(service, videoId: 'vid1'), isNull);
+    service.state.frameReadyId = 'vid1';
+    expect(
+      videoAspectRatioFromController(service, videoId: 'vid1'),
+      closeTo(9 / 16, .001),
+    );
+  });
   testWidgets('watch channel tap pushes a visible channel route', (
     tester,
   ) async {

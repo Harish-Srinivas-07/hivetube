@@ -9,6 +9,7 @@ import '../core/playback/session_queue.dart';
 import '../core/providers.dart';
 import '../core/yt/models.dart';
 import '../features/playlist/save_to_playlist_sheet.dart';
+import '../features/downloads/downloads_screen.dart';
 import 'sheets/app_sheet.dart';
 import 'ui/app_feedback.dart';
 
@@ -18,7 +19,7 @@ Future<void> showVideoOptionsMenu(
   required String videoId,
   VoidCallback? onPlayNext,
   VoidCallback? onAddToQueue,
-  bool onVideo = true,
+  bool onVideo = false,
   WidgetRef? ref,
   MediaCompanion? media,
   VideoItem? video,
@@ -69,6 +70,12 @@ Future<void> showVideoOptionsMenu(
           label: 'Save to Watch Later',
           onTap: () => Navigator.pop(sheetContext, 'watch_later'),
         ),
+        if (ref != null && (media != null || video != null))
+          AppSheetRow(
+            icon: LucideIcons.download,
+            label: 'Download',
+            onTap: () => Navigator.pop(sheetContext, 'download'),
+          ),
         AppSheetRow(
           icon: LucideIcons.share,
           label: 'Share',
@@ -94,6 +101,18 @@ Future<void> showVideoOptionsMenu(
           AppSnackbar.show(context, 'Saved to Watch Later');
         }
       }
+    case 'download':
+      final item =
+          media ??
+          MediaCompanion.insert(
+            videoId: videoId,
+            title: video!.title,
+            channelId: video.channelId,
+            channelName: video.channelName,
+            thumbUrl: video.thumbUrl,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          );
+      await showDownloadChoices(context, ref!, item);
     case 'share':
       unawaited(
         SharePlus.instance.share(

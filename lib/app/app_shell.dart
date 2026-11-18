@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/playback/playback_service.dart';
+import '../core/playback/lifecycle_policy.dart';
+import '../core/settings/app_settings.dart';
+import '../core/streams/stream_selector.dart';
 import '../core/playback/player_ui_state.dart';
 import '../features/watch/watch_panel.dart';
 import '../features/watch/mini_player_inset.dart';
@@ -14,6 +17,7 @@ import '../theme/app_sizes.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/floating_nav.dart';
+import '../widgets/logger.dart';
 import '../core/providers.dart';
 import '../core/orientation/orientation_policy.dart';
 
@@ -25,10 +29,46 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> with RouteAware {
+class _AppShellState extends ConsumerState<AppShell>
+    with RouteAware, WidgetsBindingObserver {
   ModalRoute<dynamic>? _route;
 
   StatefulNavigationShell get navigationShell => widget.navigationShell;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final enabled = ref.read(appSettingsProvider).backgroundPlay;
+    final action = lifecyclePlaybackAction(state, backgroundPlay: enabled);
+    final service = ref.read(playbackProvider);
+    final mode = switch (action) {
+      LifecyclePlaybackAction.audioOnly => 'audio',
+      LifecyclePlaybackAction.restoreVideo => 'video',
+      _ => service?.state.mode == PlaybackMode.audio ? 'audio' : 'video',
+    };
+    Logger.log(
+      'AppShell',
+      'BackgroundPlay enabled=$enabled state=${state.name} mode=$mode',
+    );
+    switch (action) {
+      case LifecyclePlaybackAction.pause:
+        unawaited(service?.pause());
+        break;
+      case LifecyclePlaybackAction.audioOnly:
+        unawaited(service?.enterBackgroundAudioMode());
+        break;
+      case LifecyclePlaybackAction.restoreVideo:
+        unawaited(service?.restoreBackgroundVideo());
+        break;
+      case LifecyclePlaybackAction.none:
+        break;
+    }
+  }
 
   static const _destinations = [
     (label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home),
@@ -94,6 +134,7 @@ class _AppShellState extends ConsumerState<AppShell> with RouteAware {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     appRouteObserver.unsubscribe(this);
     unawaited(setHomeScreenOrientationEnabled(false));
     super.dispose();

@@ -299,8 +299,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           padding: const EdgeInsets.only(
             left: AppSpacing.md,
             right: AppSpacing.xs,
-            top: AppSpacing.sm,
-            bottom: AppSpacing.xs,
           ),
           child: Row(
             children: [
@@ -314,6 +312,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               TextButton(
                 onPressed: _clearRecents,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(AppSpacing.none, AppSizes.buttonLarge),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('Clear all'),
               ),
             ],
@@ -329,24 +331,40 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       listenable: suggestionController,
       builder: (context, _) {
         if (suggestionController.isLoading) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.lg,
-            ),
-            child: SizedBox(
-              height: AppSizes.touchMin,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: AppSpacing.xxxl),
-                  child: SkeletonBox(
-                    height: AppSpacing.sm,
-                    borderRadius: AppRadius.xs,
+          return Column(
+            children: [
+              for (var index = 0; index < 4; index++)
+                SizedBox(
+                  height: AppSizes.touchMin,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          LucideIcons.search,
+                          size: AppSizes.iconSm,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: index.isEven ? .7 : .5,
+                              child: const SkeletonBox(
+                                height: AppSpacing.sm,
+                                borderRadius: AppRadius.xs,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ),
+            ],
           );
         }
         if (suggestionController.error != null) {
@@ -635,7 +653,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           SizedBox(
             height:
                 AppSizes.horizontalThumbCardHeight +
-                AppSpacing.xs +
+                AppSpacing.sm +
                 MediaQuery.textScalerOf(context).scale(
                   AppTextStyles.caption.fontSize! *
                       AppTextStyles.caption.height! *
@@ -665,11 +683,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          s.title ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.caption,
+                        Flexible(
+                          child: Text(
+                            s.title ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.caption,
+                          ),
                         ),
                       ],
                     ),

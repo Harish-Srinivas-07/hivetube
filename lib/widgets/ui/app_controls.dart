@@ -453,6 +453,7 @@ class AppSubscribedButton extends StatelessWidget {
 
     return AppButton(
       label: 'Unsubscribe',
+      icon: LucideIcons.userRoundMinus,
       variant: AppButtonVariant.tonal,
       size: size,
       onPressed: onPressed,
