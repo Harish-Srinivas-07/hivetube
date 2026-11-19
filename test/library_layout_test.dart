@@ -16,6 +16,30 @@ void main() {
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
+  testWidgets('offline downloads shortcut is above history', (tester) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          isOfflineProvider.overrideWithValue(true),
+        ],
+        child: const MaterialApp(home: LibraryScreen()),
+      ),
+    );
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final downloads = tester.getRect(
+      find.byKey(const ValueKey('downloadsShortcut')),
+    );
+    final history = tester.getRect(find.byKey(const ValueKey('historyHeader')));
+    expect(downloads.bottom, lessThanOrEqualTo(history.top));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
   for (final brightness in [Brightness.light, Brightness.dark]) {
     testWidgets('Library layout at 360 x 800 in $brightness theme', (
       tester,

@@ -2,7 +2,9 @@
 /// Nothing in lib/ outside lib/theme/ should use raw numeric sizes.
 abstract final class AppSizes {
   static const double fullscreenCaptionInset = 40;
-  static const double fullscreenCaptionBottom = 150;
+  static const double fullscreenCaptionBottom = 24;
+  static const double fullscreenCaptionControlsBottom = 96;
+  static const double fullscreenAutoplayWidth = 120;
   static const double topBar = 56,
       bottomNav = 56,
       thumbRatio = 16 / 9,

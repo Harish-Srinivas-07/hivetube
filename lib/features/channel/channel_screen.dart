@@ -622,7 +622,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
                         Expanded(
                           child: Text(
                             channel.description,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.meta.copyWith(
                               color: colors.onSurfaceVariant,

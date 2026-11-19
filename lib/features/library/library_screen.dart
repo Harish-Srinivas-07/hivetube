@@ -583,6 +583,41 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     },
   );
 
+  Widget _downloadsShortcut({bool showEmpty = false}) =>
+      StreamBuilder<List<DownloadRow>>(
+        stream: ref
+            .read(dbProvider)
+            .select(ref.read(dbProvider).downloads)
+            .watch(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return LibraryRowSkeleton(animation: _shimmer);
+          }
+          if (snapshot.data?.isNotEmpty != true && !showEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: EmptyState(
+                icon: LucideIcons.download,
+                title: 'No downloads',
+                compact: true,
+              ),
+            );
+          }
+          void openDownloads() => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const DownloadsScreen()),
+          );
+          return _LibraryEntryRow(
+            key: const ValueKey('downloadsShortcut'),
+            title: 'Downloads',
+            subtitle: '${snapshot.data?.length ?? 0} items',
+            thumbnail: '',
+            badgeIcon: LucideIcons.download,
+            onTap: openDownloads,
+            onMore: openDownloads,
+          );
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     ref.listen(tabRefreshProvider, (_, request) {
@@ -595,6 +630,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     });
     final profileAsync = ref.watch(profileStreamProvider);
     final historyAsync = ref.watch(historyStreamProvider);
+    final offline = ref.watch(isOfflineProvider);
     final playlistsAsync = ref.watch(playlistsStreamProvider);
     final likedVideosAsync = ref.watch(likedVideosStreamProvider);
     final playlists = playlistsAsync.asData?.value ?? const <PlaylistRow>[];
@@ -754,6 +790,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       error: (_, _) => const SizedBox(height: AppSpacing.lg),
                     ),
                     const SizedBox(height: AppSpacing.xl),
+                    if (offline) _downloadsShortcut(showEmpty: true),
                     if (!historyAsync.isLoading)
                       Padding(
                         padding: const EdgeInsets.symmetric(
@@ -870,44 +907,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       ],
                     ),
                     if (_libraryFilter == 'Downloaded')
-                      StreamBuilder<List<DownloadRow>>(
-                        stream: ref
-                            .read(dbProvider)
-                            .select(ref.read(dbProvider).downloads)
-                            .watch(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return LibraryRowSkeleton(animation: _shimmer);
-                          }
-                          if (snapshot.data?.isNotEmpty != true) {
-                            return const Padding(
-                              padding: EdgeInsets.all(AppSpacing.lg),
-                              child: EmptyState(
-                                icon: LucideIcons.download,
-                                title: 'No downloads',
-                                compact: true,
-                              ),
-                            );
-                          }
-                          return _LibraryEntryRow(
-                            title: 'Downloads',
-                            subtitle: '${snapshot.data!.length} items',
-                            thumbnail: '',
-                            badgeIcon: LucideIcons.download,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const DownloadsScreen(),
-                              ),
-                            ),
-                            onMore: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const DownloadsScreen(),
-                              ),
-                            ),
-                          );
-                        },
-                      )
+                      offline ? const SizedBox.shrink() : _downloadsShortcut()
                     else ...[
                       if (_libraryFilter == 'Recent')
                         likedVideosAsync.when(

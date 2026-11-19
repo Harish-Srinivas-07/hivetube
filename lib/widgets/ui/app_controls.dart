@@ -126,6 +126,7 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.filled,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   });
 
   const AppButton.filled({
@@ -137,6 +138,7 @@ class AppButton extends StatefulWidget {
     this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   }) : variant = AppButtonVariant.filled;
 
   const AppButton.tonal({
@@ -148,6 +150,7 @@ class AppButton extends StatefulWidget {
     this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   }) : variant = AppButtonVariant.tonal;
 
   const AppButton.destructive({
@@ -159,6 +162,7 @@ class AppButton extends StatefulWidget {
     this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   }) : variant = AppButtonVariant.destructive;
 
   const AppButton.text({
@@ -170,6 +174,7 @@ class AppButton extends StatefulWidget {
     this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   }) : variant = AppButtonVariant.text;
 
   const AppButton.outlined({
@@ -181,6 +186,7 @@ class AppButton extends StatefulWidget {
     this.horizontalPadding = AppSpacing.lg,
     this.size = AppButtonSize.standard,
     this.isLoading = false,
+    this.isSelected = false,
   }) : variant = AppButtonVariant.outlined;
 
   final String label;
@@ -191,6 +197,7 @@ class AppButton extends StatefulWidget {
   final AppButtonVariant variant;
   final AppButtonSize size;
   final bool isLoading;
+  final bool isSelected;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -221,7 +228,12 @@ class _AppButtonState extends State<AppButton> {
         bgColor = isDark ? cs.onSurface : cs.onSurface;
         fgColor = isDark ? cs.surface : cs.surface;
       case AppButtonVariant.tonal:
-        bgColor = cs.surfaceContainerHighest;
+        bgColor = widget.isSelected
+            ? Color.alphaBlend(
+                AppColors.activeButtonTint,
+                cs.surfaceContainerHighest,
+              )
+            : cs.surfaceContainerHighest;
         fgColor = cs.onSurface;
       case AppButtonVariant.destructive:
         bgColor = AppColors.primary;
@@ -355,6 +367,7 @@ class AppLikeDislikeSegment extends StatelessWidget {
         height: _height,
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
               onTap: onLike,
@@ -384,10 +397,12 @@ class AppLikeDislikeSegment extends StatelessWidget {
                 ),
               ),
             ),
-            Container(
-              width: AppSpacing.borderWidth,
-              height: _height * 0.55,
-              color: cs.outlineVariant.withValues(alpha: 0.4),
+            Center(
+              child: Container(
+                width: AppSpacing.borderWidth,
+                height: _height * 0.55,
+                color: cs.outlineVariant.withValues(alpha: 0.4),
+              ),
             ),
             InkWell(
               onTap: onDislike,

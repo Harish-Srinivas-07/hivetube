@@ -39,6 +39,7 @@ class AppColors {
   static const shortsScrim = Color(0xD9000000);
   static const playerControlGlass = Color(0x73000000);
   static const playerControlBorder = Color(0x33FFFFFF);
+  static const activeButtonTint = Color(0x26000000);
   static const shortsNavGlassFill = Color(0x33FFFFFF);
   static const shortsNavGlassBorder = Color(0x66FFFFFF);
   static const shortsProgressTrack = Color(0x33FFFFFF);

@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hivetube/core/yt/models.dart';
+import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
 import 'package:hivetube/features/home/home_controller.dart';
 import 'package:hivetube/features/home/home_screen.dart';
@@ -88,6 +90,7 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
   WidgetTester tester, {
   required HomeData data,
   void Function(String id)? onCardBuilt,
+  bool offline = false,
   Future<({String url, String channelId})> Function(
     ({String channelId, String videoId}) key,
   )?
@@ -96,6 +99,7 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
   final container = ProviderContainer(
     overrides: [
       homeProvider.overrideWith(() => _RecordingHome(data)),
+      isOfflineProvider.overrideWithValue(offline),
       playerUiProvider.overrideWith(_TestPlayerUi.new),
       homeHistoryByIdProvider.overrideWithValue({}),
       channelAvatarProvider.overrideWith(
@@ -133,6 +137,27 @@ Future<({ProviderContainer container, GoRouter router})> _mount(
 }
 
 void main() {
+  test('offline state requires an explicit disconnected result', () async {
+    final changes = StreamController<List<ConnectivityResult>>();
+    final container = ProviderContainer(
+      overrides: [connectivityProvider.overrideWith((ref) => changes.stream)],
+    );
+    final subscription = container.listen(isOfflineProvider, (_, _) {});
+    expect(container.read(isOfflineProvider), isFalse);
+    changes.add([ConnectivityResult.none]);
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(isOfflineProvider), isTrue);
+    changes.add([ConnectivityResult.wifi]);
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(isOfflineProvider), isFalse);
+    subscription.close();
+    container.dispose();
+    await changes.close();
+  });
+  testWidgets('offline Home shows the downloads shortcut', (tester) async {
+    await _mount(tester, data: _data(videos: []), offline: true);
+    expect(find.text('Go to downloads'), findsOneWidget);
+  });
   setUpAll(() {
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });

@@ -3,8 +3,10 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/downloads/download_manager.dart';
+import 'package:hivetube/core/downloads/download_export.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/models.dart';
@@ -16,6 +18,7 @@ import 'package:hivetube/theme/app_theme.dart';
 import 'package:hivetube/theme/app_spacing.dart';
 import 'package:hivetube/theme/app_colors.dart';
 import 'package:hivetube/widgets/sheets/app_sheet.dart';
+import 'package:hivetube/widgets/ui/app_controls.dart';
 
 class _NoPlayer extends PlaybackController {
   @override
@@ -46,6 +49,21 @@ class _DownloadManager extends DownloadManager {
         );
     onQueued?.call();
   }
+
+  @override
+  Future<void> remove(DownloadRow row) async {
+    await (db.delete(
+      db.downloads,
+    )..where((item) => item.id.equals(row.id))).go();
+  }
+}
+
+class _DownloadExporter extends DownloadExportService {
+  DownloadRow? exported;
+  @override
+  Future<void> export(DownloadRow row, String title) async {
+    exported = row;
+  }
 }
 
 class _FixtureComments extends Fake implements YtComments {
@@ -66,7 +84,7 @@ class _FixtureYtApi extends Fake implements YtApi {
 
 void main() {
   testWidgets(
-    'offline video download reports quality failure and recognizes existing downloads',
+    'downloaded video offers export and removal from the watch screen',
     (tester) async {
       tester.view.physicalSize = const Size(400, 840);
       tester.view.devicePixelRatio = 1;
@@ -77,6 +95,7 @@ void main() {
       final db = AppDb(NativeDatabase.memory());
       addTearDown(db.close);
       final manager = _DownloadManager(db);
+      final exporter = _DownloadExporter();
       addTearDown(manager.dispose);
       const info = WatchInfo(
         id: 'video',
@@ -100,6 +119,7 @@ void main() {
           overrides: [
             dbProvider.overrideWithValue(db),
             downloadManagerProvider.overrideWithValue(manager),
+            downloadExportProvider.overrideWithValue(exporter),
             playbackProvider.overrideWith(_NoPlayer.new),
             watchInfoProvider('video').overrideWith((ref) async => info),
           ],
@@ -133,6 +153,7 @@ void main() {
                 videoId: 'video',
                 kind: 'video',
                 status: const Value('completed'),
+                path: const Value('/saved/video.mp4'),
                 createdAt: 1,
               ),
             ),
@@ -143,10 +164,18 @@ void main() {
       await tester.tap(find.text('Downloaded'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.text('Video').last);
+      expect(find.text('Remove download'), findsOneWidget);
+      await tester.tap(find.text('Save to Gallery and Downloads'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Already downloaded'), findsOneWidget);
+      expect(exporter.exported?.videoId, 'video');
+      await tester.tap(find.text('Downloaded'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Remove download'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(await db.select(db.downloads).get(), isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 100));
@@ -196,6 +225,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.ensureVisible(find.text('Download'));
+    final initialButton = find.widgetWithText(AppButton, 'Download');
+    final initialColor = tester
+        .widget<Material>(
+          find
+              .descendant(of: initialButton, matching: find.byType(Material))
+              .first,
+        )
+        .color!;
     await tester.tap(find.text('Download'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -203,6 +240,25 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Downloading'), findsOneWidget);
+    final downloadingButton = find.widgetWithText(AppButton, 'Downloading');
+    expect(
+      tester.widget<AppButton>(downloadingButton).icon,
+      LucideIcons.loaderCircle,
+    );
+    final downloadingColor = tester
+        .widget<Material>(
+          find
+              .descendant(
+                of: downloadingButton,
+                matching: find.byType(Material),
+              )
+              .first,
+        )
+        .color!;
+    expect(
+      downloadingColor.computeLuminance(),
+      lessThan(initialColor.computeLuminance()),
+    );
     expect(find.text('Added to downloads'), findsOneWidget);
     final snack = tester.getRect(find.text('Added to downloads'));
     expect(snack.bottom, lessThanOrEqualTo(840 - AppSpacing.navHeight));

@@ -257,6 +257,12 @@ void main() {
   ) async {
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
+    final directory = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('download_size_'),
+    ))!;
+    addTearDown(() => directory.delete(recursive: true));
+    final savedFile = File('${directory.path}/video.mp4');
+    await tester.runAsync(() => savedFile.writeAsBytes(List.filled(2048, 0)));
     await db
         .into(db.media)
         .insert(
@@ -276,7 +282,8 @@ void main() {
             videoId: 'one',
             kind: 'video',
             status: const Value('completed'),
-            path: const Value('one.mp4'),
+            height: const Value(720),
+            path: Value(savedFile.path),
             createdAt: 1,
           ),
         );
@@ -293,6 +300,7 @@ void main() {
           playbackProvider.overrideWith(_NoPlayback.new),
           downloadManagerProvider.overrideWithValue(manager),
           downloadExportProvider.overrideWithValue(exporter),
+          downloadFileSizeProvider.overrideWith((ref, path) async => 2048),
         ],
         child: const MaterialApp(home: DownloadsScreen()),
       ),
@@ -300,6 +308,14 @@ void main() {
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
+    final thumbnail = tester.getRect(
+      find.byKey(const ValueKey('compactThumbnail:one')),
+    );
+    final metadata = tester.getRect(find.text('720p · Downloaded'));
+    expect(metadata.left, greaterThanOrEqualTo(thumbnail.right));
+    expect(metadata.top, lessThan(thumbnail.bottom));
+    expect(metadata.top, greaterThan(tester.getRect(find.text('Channel')).top));
+    expect(find.text('2.0 KB'), findsOneWidget);
     await tester.tap(find.byType(IconButton).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save to Gallery and Downloads'));
@@ -346,6 +362,8 @@ void main() {
             status: const Value('downloading'),
             total: const Value(100),
             done: const Value(25),
+            videoTotal: const Value(60),
+            audioTotal: const Value(40),
             createdAt: 1,
           ),
         );
@@ -366,6 +384,7 @@ void main() {
       find.byKey(const ValueKey('compactThumbnail:progress')),
     );
     expect(thumb.contains(tester.getCenter(find.text('25%'))), isTrue);
+    expect(find.text('25 B downloaded\n~75 B remaining'), findsOneWidget);
     expect(
       tester
           .widget<CircularProgressIndicator>(
@@ -383,6 +402,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('75%'), findsOneWidget);
+    expect(find.text('75 B downloaded\n~25 B remaining'), findsOneWidget);
     await tester.runAsync(
       () => (db.update(db.downloads)..where((row) => row.id.equals(id))).write(
         const DownloadsCompanion(status: Value('completed')),

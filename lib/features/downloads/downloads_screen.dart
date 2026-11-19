@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +18,29 @@ import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
 import '../watch/watch_panel.dart';
 import '../watch/mini_player_inset.dart';
+
+String _formatDownloadSize(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return '${unit == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1)} ${units[unit]}';
+}
+
+Future<int?> _downloadedFileSize(String? path) async {
+  if (path == null) return null;
+  try {
+    return await File(path).length();
+  } on FileSystemException {
+    return null;
+  }
+}
+
+final downloadFileSizeProvider = FutureProvider.autoDispose
+    .family<int?, String>((ref, path) => _downloadedFileSize(path));
 
 void _downloadFeedback(BuildContext context, String message) {
   final hasBottomNav =
@@ -281,41 +306,56 @@ class _DownloadItem extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                VideoCard.compact(
-                  video: video,
-                  thumbnailOverlay:
-                      row.status == 'downloading' ||
-                          (row.status == 'paused' && progress != null)
-                      ? _DownloadProgressOverlay(progress: progress)
-                      : null,
-                  onTap: () {
-                    if (row.status == 'completed') {
-                      Navigator.pop(context);
-                      openWatchPanel(ref, row.videoId);
-                    } else {
-                      _showActions(context, ref, media?.title ?? row.videoId);
-                    }
+                Consumer(
+                  builder: (context, sizeRef, _) {
+                    final size = row.status == 'completed' && row.path != null
+                        ? sizeRef
+                              .watch(downloadFileSizeProvider(row.path!))
+                              .value
+                        : null;
+                    return VideoCard.compact(
+                      video: video,
+                      additionalMetadata:
+                          '${row.kind == 'audio'
+                              ? 'Audio · '
+                              : row.height == null
+                              ? ''
+                              : '${row.height}p · '}$status',
+                      detailMetadata: row.status == 'completed'
+                          ? (size == null ? null : _formatDownloadSize(size))
+                          : row.status == 'downloading' ||
+                                row.status == 'paused'
+                          ? '${_formatDownloadSize(row.done)} downloaded\n${row.total > 0 && row.audioTotal > 0 && (row.kind == 'audio' || row.videoTotal > 0) ? '~${_formatDownloadSize((row.total - row.done).clamp(0, row.total))} remaining' : 'Remaining size unavailable'}'
+                          : null,
+                      thumbnailOverlay:
+                          row.status == 'downloading' ||
+                              (row.status == 'paused' && progress != null)
+                          ? _DownloadProgressOverlay(progress: progress)
+                          : null,
+                      onTap: () {
+                        if (row.status == 'completed') {
+                          Navigator.pop(context);
+                          openWatchPanel(ref, row.videoId);
+                        } else {
+                          showDownloadActions(
+                            context,
+                            ref,
+                            row,
+                            media?.title ?? row.videoId,
+                          );
+                        }
+                      },
+                      trailing: IconButton(
+                        icon: const Icon(LucideIcons.ellipsisVertical),
+                        onPressed: () => showDownloadActions(
+                          context,
+                          ref,
+                          row,
+                          media?.title ?? row.videoId,
+                        ),
+                      ),
+                    );
                   },
-                  trailing: IconButton(
-                    icon: const Icon(LucideIcons.ellipsisVertical),
-                    onPressed: () =>
-                        _showActions(context, ref, media?.title ?? row.videoId),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                  ),
-                  child: Text(
-                    '${row.kind == 'audio'
-                        ? 'Audio · '
-                        : row.height == null
-                        ? ''
-                        : '${row.height}p · '}$status',
-                    style: AppTextStyles.meta.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
@@ -325,85 +365,90 @@ class _DownloadItem extends ConsumerWidget {
       },
     );
   }
+}
 
-  void _showActions(BuildContext context, WidgetRef ref, String title) {
-    final manager = ref.read(downloadManagerProvider);
-    showAppSheet<void>(
-      context,
-      title: 'Download',
-      fit: true,
-      builder: (ctx, _) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (row.status == 'completed' && row.path != null)
-            AppSheetRow(
-              icon: LucideIcons.save,
-              label: row.kind == 'video'
-                  ? 'Save to Gallery and Downloads'
-                  : 'Save to Downloads',
-              onTap: () async {
-                Navigator.pop(ctx);
-                try {
-                  await ref.read(downloadExportProvider).export(row, title);
-                  if (context.mounted) {
-                    _downloadFeedback(
-                      context,
-                      row.kind == 'video'
-                          ? 'Saved to Gallery and Downloads'
-                          : 'Saved to Downloads',
-                    );
-                  }
-                } on GalleryExportException {
-                  if (context.mounted) {
-                    _downloadFeedback(
-                      context,
-                      'Saved to Downloads, but Gallery save failed',
-                    );
-                  }
-                } on UnsupportedError catch (error) {
-                  if (context.mounted) {
-                    _downloadFeedback(
-                      context,
-                      error.message ?? 'Unable to save this file',
-                    );
-                  }
-                } catch (_) {
-                  if (context.mounted) {
-                    _downloadFeedback(context, 'Could not save download');
-                  }
-                }
-              },
-            ),
-          if (row.status == 'failed' || row.status == 'paused')
-            AppSheetRow(
-              icon: LucideIcons.refreshCw,
-              label: 'Retry',
-              onTap: () {
-                Navigator.pop(ctx);
-                manager.retry(row.id);
-              },
-            ),
-          if (row.status == 'downloading' || row.status == 'queued')
-            AppSheetRow(
-              icon: LucideIcons.pause,
-              label: 'Pause',
-              onTap: () {
-                Navigator.pop(ctx);
-                manager.pause(row.id);
-              },
-            ),
+void showDownloadActions(
+  BuildContext context,
+  WidgetRef ref,
+  DownloadRow row,
+  String title,
+) {
+  final manager = ref.read(downloadManagerProvider);
+  showAppSheet<void>(
+    context,
+    title: 'Download',
+    fit: true,
+    builder: (ctx, _) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (row.status == 'completed' && row.path != null)
           AppSheetRow(
-            icon: LucideIcons.trash2,
-            label: 'Remove download',
-            onTap: () {
+            icon: LucideIcons.save,
+            label: row.kind == 'video'
+                ? 'Save to Gallery and Downloads'
+                : 'Save to Downloads',
+            onTap: () async {
               Navigator.pop(ctx);
-              manager.remove(row);
+              try {
+                await ref.read(downloadExportProvider).export(row, title);
+                if (context.mounted) {
+                  _downloadFeedback(
+                    context,
+                    row.kind == 'video'
+                        ? 'Saved to Gallery and Downloads'
+                        : 'Saved to Downloads',
+                  );
+                }
+              } on GalleryExportException {
+                if (context.mounted) {
+                  _downloadFeedback(
+                    context,
+                    'Saved to Downloads, but Gallery save failed',
+                  );
+                }
+              } on UnsupportedError catch (error) {
+                if (context.mounted) {
+                  _downloadFeedback(
+                    context,
+                    error.message ?? 'Unable to save this file',
+                  );
+                }
+              } catch (_) {
+                if (context.mounted) {
+                  _downloadFeedback(context, 'Could not save download');
+                }
+              }
             },
           ),
-        ],
-      ),
-    );
-  }
+        if (row.status == 'failed' || row.status == 'paused')
+          AppSheetRow(
+            icon: LucideIcons.refreshCw,
+            label: 'Retry',
+            onTap: () {
+              Navigator.pop(ctx);
+              manager.retry(row.id);
+            },
+          ),
+        if (row.status == 'downloading' || row.status == 'queued')
+          AppSheetRow(
+            icon: LucideIcons.pause,
+            label: 'Pause',
+            onTap: () {
+              Navigator.pop(ctx);
+              manager.pause(row.id);
+            },
+          ),
+        AppSheetRow(
+          icon: LucideIcons.trash2,
+          label: 'Remove download',
+          onTap: () {
+            Navigator.pop(ctx);
+            manager.remove(row);
+          },
+        ),
+      ],
+    ),
+  );
 }
 
 class _DownloadProgressOverlay extends StatelessWidget {

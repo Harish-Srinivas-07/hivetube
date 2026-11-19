@@ -2,7 +2,7 @@ name: hivetube
 description: "HiveTube is a Flutter client for browsing and watching YouTube videos and Shorts."
 publish_to: 'none'
 
-version: 1.7.0+18
+version: 1.8.0+19
 
 environment:
   sdk: ">3.12.0 < 4.0.0"
@@ -33,6 +33,7 @@ dependencies:
 
   # UI
   cached_network_image:
+  flutter_markdown_plus:
   lucide_icons_flutter:
   visibility_detector:
 

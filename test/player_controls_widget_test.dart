@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
+import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
@@ -107,6 +109,16 @@ class _FakeUi extends PlayerUiController {
   PlayerUiState build() => const PlayerUiState(playing: true, dismissed: false);
 }
 
+class _AutoplaySettings extends AppSettingsController {
+  @override
+  AppSettings build() => const AppSettings(gl: 'IN', autoplay: true);
+
+  @override
+  Future<void> setAutoplay(bool enabled) async {
+    state = state.copyWith(autoplay: enabled);
+  }
+}
+
 class _MovingUi extends PlayerUiController {
   @override
   PlayerUiState build() => const PlayerUiState(
@@ -126,7 +138,84 @@ class _FullscreenMovingUi extends PlayerUiController {
   );
 }
 
+class _FullscreenCaptionsUi extends PlayerUiController {
+  @override
+  PlayerUiState build() => const PlayerUiState(
+    playing: true,
+    dismissed: false,
+    isFullscreen: true,
+    overlayVisible: false,
+  );
+}
+
 void main() {
+  testWidgets('player top controls have evenly spaced centers', (tester) async {
+    final service = _FakePlayback()..state.captions = [{}];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_FakeUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 400,
+              height: 225,
+              child: SharedPlayer(
+                service: service,
+                videoOverride: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final autoplay = tester.getCenter(find.byTooltip('Autoplay off'));
+    final captions = tester.getCenter(find.byTooltip('Captions'));
+    final settings = tester.getCenter(find.byTooltip('Settings'));
+    expect(captions.dx - autoplay.dx, settings.dx - captions.dx);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('fullscreen captions sit near the bottom and clear controls', (
+    tester,
+  ) async {
+    final service = _FakePlayback()
+      ..state.selectedCaption = 0
+      ..state.subtitleText = 'A fullscreen lyric';
+    final container = ProviderContainer(
+      overrides: [playerUiProvider.overrideWith(_FullscreenCaptionsUi.new)],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 640,
+                height: 360,
+                child: SharedPlayer(
+                  service: service,
+                  videoOverride: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final player = tester.getRect(find.byType(SharedPlayer));
+    final caption = find.text('A fullscreen lyric');
+    final hiddenBottom = player.bottom - tester.getRect(caption).bottom;
+    expect(hiddenBottom, AppSpacing.xl);
+
+    container.read(playerUiProvider.notifier).setOverlayVisible(true);
+    await tester.pump();
+    final visibleBottom = player.bottom - tester.getRect(caption).bottom;
+    expect(visibleBottom, greaterThan(hiddenBottom));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('watch captions use fullscreen styling near the bottom', (
     tester,
   ) async {
@@ -185,9 +274,13 @@ void main() {
     tester,
   ) async {
     final service = _FakePlayback()..state.captions = [{}];
+    var nextCalls = 0;
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [playerUiProvider.overrideWith(_FullscreenMovingUi.new)],
+        overrides: [
+          playerUiProvider.overrideWith(_FullscreenMovingUi.new),
+          contentPrefsProvider.overrideWith(_AutoplaySettings.new),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: SizedBox(
@@ -195,6 +288,7 @@ void main() {
               height: 500,
               child: SharedPlayer(
                 service: service,
+                onNext: () => nextCalls++,
                 videoOverride: const SizedBox.expand(),
               ),
             ),
@@ -210,14 +304,32 @@ void main() {
       tester.getRect(find.byTooltip('Minimize player')).left,
       lessThan(tester.getRect(find.text('HiveTube')).left),
     );
-    final autoplay = find.ancestor(
-      of: find.text('Autoplay'),
-      matching: find.byType(Material),
+    final thumb = find.byKey(const ValueKey('fullscreenAutoplayThumb'));
+    final startX = tester.getCenter(thumb).dx;
+    expect(find.text('Autoplay'), findsOneWidget);
+    expect(startX, lessThan(tester.getCenter(find.text('Autoplay')).dx));
+    expect(find.byTooltip('Captions'), findsOneWidget);
+    expect(find.byIcon(LucideIcons.settings), findsOneWidget);
+    expect(find.text('More videos / Play next'), findsNothing);
+    await tester.tap(find.byTooltip('Next'));
+    expect(nextCalls, 1);
+    await tester.dragFrom(const Offset(400, 350), const Offset(0, -100));
+    await tester.pump();
+    expect(find.text('More videos'), findsNothing);
+    await tester.tap(find.text('Autoplay'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final middleX = tester.getCenter(thumb).dx;
+    await tester.pump(const Duration(milliseconds: 150));
+    final endX = tester.getCenter(thumb).dx;
+    expect(find.text('Paused'), findsOneWidget);
+    expect(endX, greaterThan(tester.getCenter(find.text('Paused')).dx));
+    expect(middleX, greaterThan(startX));
+    expect(middleX, lessThan(endX));
+    expect(
+      find.descendant(of: thumb, matching: find.byIcon(Icons.pause_rounded)),
+      findsOneWidget,
     );
-    final captions = tester.getRect(find.byTooltip('Captions'));
-    final settings = tester.getRect(find.byTooltip('Settings'));
-    expect(captions.left - tester.getRect(autoplay.first).right, AppSpacing.lg);
-    expect(settings.left - captions.right, AppSpacing.lg);
   });
 
   testWidgets('overlay hides after playing and returns on tap', (tester) async {

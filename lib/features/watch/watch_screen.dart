@@ -1018,6 +1018,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                           ),
                           info: info,
                         ),
+                        actionContext: actionContext,
+                        title: info.title,
                       ),
                     ),
                     _action(
@@ -1311,19 +1313,29 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
   }
 
-  Widget _action(IconData icon, String label, VoidCallback action) {
+  Widget _action(
+    IconData icon,
+    String label,
+    VoidCallback action, {
+    bool isSelected = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(left: AppSpacing.sm),
       child: AppButton(
         label: label,
         icon: icon,
         variant: AppButtonVariant.tonal,
+        isSelected: isSelected,
         onPressed: action,
       ),
     );
   }
 
-  Widget _downloadAction(VoidCallback action) {
+  Widget _downloadAction(
+    VoidCallback action, {
+    required BuildContext actionContext,
+    required String title,
+  }) {
     final db = ref.read(dbProvider);
     return StreamBuilder<List<DownloadRow>>(
       stream: (db.select(
@@ -1343,10 +1355,54 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             : statuses.contains('completed')
             ? 'Downloaded'
             : 'Download';
-        final icon = label == 'Downloaded'
+        final downloading = statuses.contains('downloading');
+        final icon = downloading
+            ? LucideIcons.loaderCircle
+            : label == 'Downloaded'
             ? LucideIcons.check
             : LucideIcons.download;
-        return _action(icon, label, action);
+        Future<void> openSavedDownloads() async {
+          final completed = rows
+              .where((row) => row.status == 'completed')
+              .toList();
+          if (completed.isEmpty) return;
+          final selected = completed.length == 1
+              ? completed.single
+              : await showAppSheet<DownloadRow>(
+                  actionContext,
+                  title: 'Downloads',
+                  fit: true,
+                  builder: (sheetContext, _) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final row in completed)
+                        AppSheetRow(
+                          icon: row.kind == 'audio'
+                              ? LucideIcons.music
+                              : LucideIcons.video,
+                          label: row.kind == 'audio'
+                              ? 'Audio only'
+                              : row.height == null
+                              ? 'Video'
+                              : 'Video · ${row.height}p',
+                          onTap: () => Navigator.pop(sheetContext, row),
+                        ),
+                    ],
+                  ),
+                );
+          if (selected != null && actionContext.mounted) {
+            showDownloadActions(actionContext, ref, selected, title);
+          }
+        }
+
+        return _action(
+          icon,
+          label,
+          label == 'Downloaded'
+              ? () => unawaited(openSavedDownloads())
+              : action,
+          isSelected: downloading,
+        );
       },
     );
   }

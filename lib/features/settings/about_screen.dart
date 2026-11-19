@@ -105,7 +105,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                   ],
                 ),
               ),
-              const SectionHeader(title: 'App information'),
+              _sectionDivider(),
+              _sectionHeader('App information'),
               AppListTile(title: 'Version', subtitle: version),
               AppListTile(
                 title: 'Package ID',
@@ -131,7 +132,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                     : installer,
               ),
               if (update case UpdateAvailable(:final info)) ...[
-                const SectionHeader(title: 'Update'),
+                _sectionDivider(),
+                _sectionHeader('Update'),
                 AppListTile(
                   leading: const Icon(LucideIcons.download),
                   title: 'Update available',
@@ -140,47 +142,71 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                   onTap: () => _openLink(info.releaseUrl.toString()),
                 ),
               ],
-              const SectionHeader(title: 'Project'),
-              _link('HiveTube repository', repo, LucideIcons.codeXml),
+              _sectionDivider(),
+              _sectionHeader('Project'),
+              _link(
+                'HiveTube repository',
+                'Harish-Srinivas-07/hivetube',
+                repo,
+                LucideIcons.codeXml,
+              ),
               _link(
                 'Latest release',
+                'HiveTube releases',
                 githubLatestReleasePage,
                 LucideIcons.download,
               ),
-              const SectionHeader(title: 'Credits'),
+              _sectionDivider(),
+              _sectionHeader('Credits'),
               _link(
                 'TheHiveMinds',
+                'thehiveminds.in',
                 'https://thehiveminds.in/',
                 LucideIcons.globe,
               ),
-              _link('Contact', 'mailto:info@thehiveminds.in', LucideIcons.mail),
+              _link(
+                'Contact',
+                'info@thehiveminds.in',
+                'mailto:info@thehiveminds.in',
+                LucideIcons.mail,
+              ),
               _link(
                 'GitHub',
+                'Harish-Srinivas-07',
                 'https://github.com/Harish-Srinivas-07',
                 LucideIcons.codeXml,
               ),
               _link(
                 'LinkedIn',
+                'harishsrinivas-sr',
                 'https://www.linkedin.com/in/harishsrinivas-sr/',
                 LucideIcons.briefcaseBusiness,
               ),
               _link(
                 'Portfolio',
+                'harishsrinivas.netlify.app',
                 'https://harishsrinivas.netlify.app/',
                 LucideIcons.userRound,
               ),
               _link(
                 'Instagram',
+                '@being_exception',
                 'https://www.instagram.com/being_exception',
                 LucideIcons.camera,
               ),
               _link(
                 'Medium',
+                '@sr.harishsrinivas',
                 'https://medium.com/@sr.harishsrinivas',
                 LucideIcons.bookOpenText,
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  AppSpacing.none,
+                ),
                 child: Text(
                   'Thanks to InnerTube, YouPipe, and the Flow app for references.',
                   style: AppTextStyles.body.copyWith(
@@ -188,7 +214,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                   ),
                 ),
               ),
-              const SectionHeader(title: 'Disclaimer & Legal Notice'),
+              _sectionDivider(),
+              _sectionHeader('Disclaimer & Legal Notice'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 child: Column(
@@ -199,7 +226,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                         children: [
                           const TextSpan(
                             text:
-                                'Hivefy is an independent music player. It is ',
+                                'HiveTube is an independent video player. It is ',
                           ),
                           TextSpan(
                             text:
@@ -218,14 +245,14 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                     const SizedBox(height: AppSpacing.md),
                     _noticeLine(
                       'Media and downloads:',
-                      'Hivefy does not host or upload music. It accesses third-party services and stores user-requested downloads on the device for offline playback.',
+                      'HiveTube does not host or upload videos. It accesses third party services and stores downloads requested by users on the device for offline playback.',
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    const SizedBox(height: AppSpacing.md),
                     _noticeLine(
-                      'Third-party services:',
-                      'Availability, content, and service behavior may change. Hivefy cannot guarantee uninterrupted access.',
+                      'Third party services:',
+                      'Availability, content, and service behavior may change. HiveTube cannot guarantee uninterrupted access.',
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    const SizedBox(height: AppSpacing.md),
                     _noticeLine(
                       'User responsibility:',
                       'Users are responsible for following applicable laws and the terms of services they use.',
@@ -233,7 +260,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                   ],
                 ),
               ),
-              const SectionHeader(title: 'Need custom software?'),
+              _sectionDivider(),
+              _sectionHeader('Need custom software?'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 child: Text(
@@ -245,6 +273,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
               ),
               _link(
                 'Contact us',
+                'thehiveminds.in',
                 'https://thehiveminds.in/',
                 LucideIcons.globe,
               ),
@@ -255,19 +284,39 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
     );
   }
 
-  Widget _link(String title, String url, IconData icon) => AppListTile(
-    leading: Icon(icon),
+  Widget _sectionHeader(String title) => SectionHeader(
     title: title,
-    trailing: const Icon(LucideIcons.externalLink),
-    onTap: () => _openLink(url),
+    padding: const EdgeInsets.fromLTRB(
+      AppSpacing.lg,
+      AppSpacing.none,
+      AppSpacing.lg,
+      AppSpacing.sm,
+    ),
   );
+
+  Widget _sectionDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+    child: SizedBox(
+      height: AppSpacing.borderWidth,
+      width: double.infinity,
+      child: ColoredBox(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+  );
+
+  Widget _link(String title, String subtitle, String url, IconData icon) =>
+      AppListTile(
+        leading: Icon(icon),
+        title: title,
+        subtitle: subtitle,
+        trailing: const Icon(LucideIcons.externalLink),
+        onTap: () => _openLink(url),
+      );
 
   Widget _noticeLine(String heading, String text) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Text.rich(
       TextSpan(
         children: [
-          const TextSpan(text: '• '),
           TextSpan(
             text: heading,
             style: AppTextStyles.bodyStrong.copyWith(color: color),

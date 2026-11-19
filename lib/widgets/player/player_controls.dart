@@ -23,7 +23,6 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../core/yt/watch_info.dart';
-import '../sheets/app_sheet.dart';
 import '../logger.dart';
 import 'player_seek_bar.dart';
 import 'player_settings_menu.dart';
@@ -335,8 +334,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       panelDragStarted = false;
     } else if (fullscreen && dragCenter && verticalDelta > 40) {
       unawaited(_fullscreen(false));
-    } else if (fullscreen && dragCenter && verticalDelta < -40) {
-      unawaited(_moreVideos());
     } else if (!fullscreen && verticalDelta < -40) {
       unawaited(_fullscreen(true));
     }
@@ -356,39 +353,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         onLock: ref.read(playerUiProvider).isFullscreen
             ? () => ref.read(playerUiProvider.notifier).setLocked(true)
             : null,
-      );
-    } finally {
-      sheetOpen = false;
-      if (mounted) _scheduleHide();
-    }
-  }
-
-  Future<void> _moreVideos() async {
-    hideTimer?.cancel();
-    sheetOpen = true;
-    try {
-      await showAppSheet<void>(
-        context,
-        fit: true,
-        title: 'More videos',
-        onVideo: true,
-        builder: (ctx, _) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppSheetRow(
-              icon: LucideIcons.skipForward,
-              label: 'Play next',
-              subtitle: 'Continue to the next video',
-              enabled: widget.onNext != null,
-              onTap: widget.onNext == null
-                  ? null
-                  : () {
-                      Navigator.pop(ctx);
-                      widget.onNext?.call();
-                    },
-            ),
-          ],
-        ),
       );
     } finally {
       sheetOpen = false;
@@ -432,6 +396,116 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
           : AppColors.white,
       disabledColor: AppColors.white.withValues(
         alpha: AppColors.disabledOpacity,
+      ),
+    ),
+  );
+
+  Widget _fullscreenAutoplayControl(bool autoplay) => SizedBox(
+    width: AppSizes.fullscreenAutoplayWidth,
+    height: AppSizes.touchMin,
+    child: Center(
+      child: Material(
+        color: AppColors.playerControlGlass,
+        borderRadius: AppRadius.pillBorder,
+        child: InkWell(
+          borderRadius: AppRadius.pillBorder,
+          onTap: () =>
+              ref.read(contentPrefsProvider.notifier).setAutoplay(!autoplay),
+          child: SizedBox(
+            width: AppSizes.fullscreenAutoplayWidth,
+            height: AppSizes.buttonLarge,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: Stack(
+                children: [
+                  AnimatedAlign(
+                    duration: AppMotion.base,
+                    curve: AppMotion.standard,
+                    alignment: autoplay
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    child: Container(
+                      key: const ValueKey('fullscreenAutoplayThumb'),
+                      width: AppSizes.iconLg,
+                      height: AppSizes.iconLg,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.playerControlBorder,
+                      ),
+                      child: Icon(
+                        autoplay
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
+                        size: AppSizes.iconSm,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ),
+                  AnimatedAlign(
+                    duration: AppMotion.base,
+                    curve: AppMotion.standard,
+                    alignment: autoplay
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                      ),
+                      child: Text(
+                        autoplay ? 'Autoplay' : 'Paused',
+                        style: AppTextStyles.meta.copyWith(
+                          color: AppColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _captionControl(PlaybackSnapshot state) => SizedBox.square(
+    dimension: AppSizes.touchMin,
+    child: InkWell(
+      onTap: () => unawaited(
+        widget.service.setCaption(state.selectedCaption == null ? 0 : null),
+      ),
+      borderRadius: AppRadius.xsBorder,
+      child: Center(
+        child: Tooltip(
+          message: 'Captions',
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs,
+              vertical: AppSpacing.xxs,
+            ),
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.xsBorder,
+              border: Border.all(
+                color: AppColors.shortsForeground.withValues(
+                  alpha: state.selectedCaption != null ? 1 : 0.5,
+                ),
+                width: AppSpacing.borderWidth,
+              ),
+              color: state.selectedCaption != null
+                  ? AppColors.shortsForeground.withValues(alpha: 0.25)
+                  : AppColors.transparent,
+            ),
+            child: Text(
+              'CC',
+              style: AppTextStyles.badge.copyWith(
+                color: AppColors.shortsForeground.withValues(
+                  alpha: state.selectedCaption != null ? 1 : 0.6,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     ),
   );
@@ -513,67 +587,10 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           ),
                         ),
                         if (!compactFullscreen)
-                          Material(
-                            color: AppColors.playerControlGlass,
-                            borderRadius: AppRadius.pillBorder,
-                            child: InkWell(
-                              borderRadius: AppRadius.pillBorder,
-                              onTap: () => ref
-                                  .read(contentPrefsProvider.notifier)
-                                  .setAutoplay(!autoplay),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.xs,
-                                  vertical: AppSpacing.xs,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: AppSizes.iconLg,
-                                      height: AppSizes.iconLg,
-                                      decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: AppColors.playerControlBorder,
-                                      ),
-                                      child: Icon(
-                                        autoplay
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        size: AppSizes.iconSm,
-                                        color: AppColors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.iconGap),
-                                    Text(
-                                      'Autoplay',
-                                      style: AppTextStyles.meta.copyWith(
-                                        color: AppColors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.sm),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (!compactFullscreen && state.captions.isNotEmpty)
-                          const SizedBox(width: AppSpacing.lg),
-                        if (state.captions.isNotEmpty)
-                          _roundControl(
-                            icon: Icons.closed_caption_rounded,
-                            tooltip: 'Captions',
-                            showBackground: false,
-                            onPressed: () => unawaited(
-                              service.setCaption(
-                                state.selectedCaption == null ? 0 : null,
-                              ),
-                            ),
-                          ),
-                        if (state.captions.isNotEmpty || !compactFullscreen)
-                          const SizedBox(width: AppSpacing.lg),
+                          _fullscreenAutoplayControl(autoplay),
+                        if (state.captions.isNotEmpty) _captionControl(state),
                         _roundControl(
-                          icon: Icons.settings_rounded,
+                          icon: LucideIcons.settings,
                           tooltip: 'Settings',
                           showBackground: false,
                           onPressed: _settings,
@@ -698,19 +715,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                 ),
                               ),
                             ),
-                            if (widget.onNext != null) ...[
-                              const Spacer(),
-                              TextButton(
-                                onPressed: _moreVideos,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: AppColors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.sm,
-                                  ),
-                                ),
-                                child: const Text('More videos / Play next'),
-                              ),
-                            ],
                             const Spacer(),
                             _roundControl(
                               icon: Icons.fullscreen_exit_rounded,
@@ -959,137 +963,80 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                           onPressed: widget.onMinimize,
                                         ),
                                         const Spacer(),
-                                        InkWell(
-                                          onTap: () => ref
-                                              .read(
-                                                contentPrefsProvider.notifier,
-                                              )
-                                              .setAutoplay(!autoplay),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          child: Tooltip(
-                                            message: autoplay
-                                                ? 'Autoplay on'
-                                                : 'Autoplay off',
-                                            child: Container(
-                                              width: 36,
-                                              height: 20,
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: autoplay
-                                                      ? AppColors
-                                                            .shortsForeground
-                                                      : AppColors
-                                                            .shortsForeground
-                                                            .withValues(
-                                                              alpha: 0.5,
-                                                            ),
-                                                  width: 1.5,
-                                                ),
-                                              ),
-                                              padding: const EdgeInsets.all(2),
-                                              alignment: autoplay
-                                                  ? Alignment.centerRight
-                                                  : Alignment.centerLeft,
-                                              child: Container(
-                                                width: 12,
-                                                height: 12,
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: autoplay
-                                                      ? AppColors
-                                                            .shortsForeground
-                                                      : AppColors
-                                                            .shortsForeground
-                                                            .withValues(
-                                                              alpha: 0.7,
-                                                            ),
-                                                ),
-                                                child: Icon(
-                                                  autoplay
-                                                      ? Icons.play_arrow_rounded
-                                                      : Icons.pause_rounded,
-                                                  size: 9,
-                                                  color: autoplay
-                                                      ? Colors.black
-                                                      : Colors.black87,
+                                        SizedBox.square(
+                                          dimension: AppSizes.touchMin,
+                                          child: InkWell(
+                                            onTap: () => ref
+                                                .read(
+                                                  contentPrefsProvider.notifier,
+                                                )
+                                                .setAutoplay(!autoplay),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            child: Center(
+                                              child: Tooltip(
+                                                message: autoplay
+                                                    ? 'Autoplay on'
+                                                    : 'Autoplay off',
+                                                child: Container(
+                                                  width: 36,
+                                                  height: 20,
+                                                  decoration: BoxDecoration(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: autoplay
+                                                          ? AppColors
+                                                                .shortsForeground
+                                                          : AppColors
+                                                                .shortsForeground
+                                                                .withValues(
+                                                                  alpha: 0.5,
+                                                                ),
+                                                      width: 1.5,
+                                                    ),
+                                                  ),
+                                                  padding: const EdgeInsets.all(
+                                                    2,
+                                                  ),
+                                                  alignment: autoplay
+                                                      ? Alignment.centerRight
+                                                      : Alignment.centerLeft,
+                                                  child: Container(
+                                                    width: 12,
+                                                    height: 12,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: autoplay
+                                                          ? AppColors
+                                                                .shortsForeground
+                                                          : AppColors
+                                                                .shortsForeground
+                                                                .withValues(
+                                                                  alpha: 0.7,
+                                                                ),
+                                                    ),
+                                                    child: Icon(
+                                                      autoplay
+                                                          ? Icons
+                                                                .play_arrow_rounded
+                                                          : Icons.pause_rounded,
+                                                      size: 9,
+                                                      color: autoplay
+                                                          ? Colors.black
+                                                          : Colors.black87,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                        if (state.captions.isNotEmpty) ...[
-                                          const SizedBox(width: AppSpacing.lg),
-                                          InkWell(
-                                            onTap: () => unawaited(
-                                              service.setCaption(
-                                                state.selectedCaption == null
-                                                    ? 0
-                                                    : null,
-                                              ),
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            child: Tooltip(
-                                              message: 'Captions',
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 5,
-                                                      vertical: 2,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  borderRadius:
-                                                      BorderRadius.circular(4),
-                                                  border: Border.all(
-                                                    color:
-                                                        state.selectedCaption !=
-                                                            null
-                                                        ? AppColors
-                                                              .shortsForeground
-                                                        : AppColors
-                                                              .shortsForeground
-                                                              .withValues(
-                                                                alpha: 0.5,
-                                                              ),
-                                                    width: 1.5,
-                                                  ),
-                                                  color:
-                                                      state.selectedCaption !=
-                                                          null
-                                                      ? AppColors
-                                                            .shortsForeground
-                                                            .withValues(
-                                                              alpha: 0.25,
-                                                            )
-                                                      : Colors.transparent,
-                                                ),
-                                                child: Text(
-                                                  'CC',
-                                                  style: TextStyle(
-                                                    color:
-                                                        state.selectedCaption !=
-                                                            null
-                                                        ? AppColors
-                                                              .shortsForeground
-                                                        : AppColors
-                                                              .shortsForeground
-                                                              .withValues(
-                                                                alpha: 0.6,
-                                                              ),
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: AppSpacing.lg),
-                                        ],
+                                        if (state.captions.isNotEmpty)
+                                          _captionControl(state),
                                         IconButton(
                                           icon: const Icon(
                                             LucideIcons.settings,
@@ -1388,7 +1335,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                     ? AppSizes.fullscreenCaptionInset
                     : AppSpacing.lg,
                 bottom: ui.isFullscreen
-                    ? AppSizes.fullscreenCaptionBottom
+                    ? (ui.overlayVisible
+                          ? AppSizes.fullscreenCaptionControlsBottom
+                          : AppSizes.fullscreenCaptionBottom)
                     : (ui.overlayVisible ? AppSpacing.xxxl : AppSpacing.lg),
                 child: IgnorePointer(
                   child: Text(

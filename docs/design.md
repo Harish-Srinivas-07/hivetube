@@ -2,7 +2,7 @@
 
 Audience: coding agents. Not for humans. Compact, normative.
 Scope: mobile portrait only (phone). NO wide/desktop/tablet layouts. Do not add breakpoints or grid branches.
-Exception: video fullscreen is landscape. It is a player mode, not a layout. Only player UI (4.20, 4.25) may be landscape.
+Exception: video fullscreen is landscape. It is a player mode, not a layout. Only player UI (4.20) may be landscape.
 Goal: pixel-feel parity with real YouTube mobile app (flat, content-first, quiet chrome).
 Precedence: this file > existing code style. If code conflicts, change the code.
 Keywords: MUST, MUST NOT, SHOULD.
@@ -130,7 +130,7 @@ Library: leading ProfileChip (4.26) | spacer | search | settings gear.
 DON'T: tonal circles behind top-bar icons, duplicated glass wrappers or non-token glass values.
 
 ### 4.2 AppChipBar + AppChip
-USE-WHEN: filter row (Home categories, Subscriptions channel filter, History filters, Library filters, channel Videos, fullscreen More videos).
+USE-WHEN: filter row (Home categories, Subscriptions channel filter, History filters, Library filters, channel Videos).
 Spec: bar height 48 (chip 32 + vert pad 8), side pad = screen gutter, gap 8, horizontal scroll, no scrollbar, no edge fade/ShaderMask.
 Chip: height 32, radius 8, horizontal pad 12, chipLabel. Selected = chipSelectedBg/Fg. Unselected = surfaceVariant bg + onSurface text.
 Optional leading icon 16 (e.g. Explore). First chip "All" selected by default.
@@ -238,7 +238,7 @@ Behavior: single tap toggles overlay. Auto-hide 3s after last interaction when p
 Fullscreen controls (landscape):
 - Top: title and channel, Autoplay, captions when available, and Settings.
 - Center: Previous, Play/Pause/Replay, Next; unavailable Previous/Next are dimmed.
-- Bottom: seek bar, time chip, fullscreen exit, and "More videos" / "Play next" action when Next exists. "More videos" opens MoreVideosPanel (4.25).
+- Bottom: seek bar, time chip, and fullscreen exit.
 - Keep the flat scrim, double-tap seek, long-press 2x, brightness/volume drag, lock, system-back exit, and swipe-down exit.
 Settings sheet rows: Quality (max 1080p), Playback speed, Captions, Audio only, Loop.
 
@@ -264,8 +264,8 @@ Order top to bottom (screen gutter 16):
 6. Tab bar: sticky under the top bar. Tabs: Home, Videos, Shorts, Playlists, Posts (Posts only if the channel has posts; About is reached via description tap or the more menu). tabLabel, horizontal scroll, tab horizontal pad 12, tab spacing 0, selected indicator 2px onSurface under the label (full tab width), indicator slide 200ms.
 Subscribe behavior: optimistic toggle; notification sheet when subscribed bell tapped.
 
-### 4.25 MoreVideosPanel (fullscreen landscape only)
-Opens from fullscreen controls. Overlay over the paused-dim player (panelScrim). Layout: header row pad L24 R24 T16: "More videos" (pageTitle, white) | spacer | close X 24 (touch 48). Below: AppChipBar (All, Comedy, Related, For you, Live, Recently uploaded, Watched; chips on dark: unselected white@12% bg, selected white bg black text). Below: horizontal list of cards: width moreVideosCardW, gap 16, pad L24. Card: thumb 16:9 radius 12 with duration badge; text row below: avatar 36 | 12 | title (white, videoTitle max2) + meta (white@70%) | 3-dot white. No ad cards. Tap card => play it, panel closes. Back or X closes the panel and returns to controls.
+### 4.25 Fullscreen related panel
+The fullscreen player does not show a More videos panel.
 
 ### 4.26 ProfileChip + ProfileSheet (Library)
 ProfileChip: tonal pill, height 40, label "Profile" (or local profile name if set) + chevron-down 16. In the Library top bar leading slot.
@@ -309,7 +309,7 @@ Expanded layout (phone portrait): player 16:9 pinned top (stays while below scro
  5. Related: VideoCard feed mode list (phone). Loading more on scroll.
 Description: DescriptionSheet (4.27) is the single description UI. Show full text, links tappable, hashtags bodyStrong, chapters list tappable (seek).
 Minimize: vertical drag on player; panel collapses to MiniPlayer; audio continues (background play + media notification). Close removes session.
-Fullscreen: rotate or button; controls 4.20; More videos 4.25. Exit restores portrait panel.
+Fullscreen: rotate or button; controls 4.20. Exit restores portrait panel.
 Audio-only mode: toggle in player settings sheet. Video surface replaced by thumbnail; mode switch keeps position.
 States: loading=player black 16:9 with centered spinner + below skeleton (title bars, channel row, actions) | error (stream fail)=in-player centered "Playback error" + Retry text button | unavailable video=message in place of player.
 Behavior extras: SponsorBlock auto-skip segments with snackbar "Skipped sponsor" + Undo; RYD dislike count; resume position from history; autoplay next from related (setting); history entry saved on play.
@@ -441,7 +441,6 @@ Behavior bans: staggered list entrance animation, bouncing/elastic curves, paral
 | user/channel picture | ChannelAvatar |
 | playlist in a list | PlaylistRow (Library) / PlaylistCard (grid) |
 | video/short details | DescriptionSheet |
-| fullscreen related videos | MoreVideosPanel |
 | profile actions | ProfileChip + ProfileSheet |
 
 ## 10. DEFINITION OF DONE (UI TASK)

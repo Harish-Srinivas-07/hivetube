@@ -76,6 +76,13 @@ final connectivityProvider = StreamProvider<List<ConnectivityResult>>((ref) {
   })();
 });
 
+final isOfflineProvider = Provider<bool>((ref) {
+  final connections = ref.watch(connectivityProvider).value;
+  return connections != null &&
+      connections.isNotEmpty &&
+      connections.every((connection) => connection == ConnectivityResult.none);
+});
+
 final bandwidthEstimatorProvider = Provider<BandwidthEstimator>((ref) {
   final network = ref.watch(networkFamilyProvider).value;
   final dio = Dio();

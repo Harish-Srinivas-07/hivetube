@@ -213,6 +213,32 @@ void main() {
       await tester.tap(find.byIcon(LucideIcons.thumbsDown));
       expect(disliked, isTrue);
     });
+
+    testWidgets('reaction segments respond at the top and bottom edges', (
+      tester,
+    ) async {
+      var likes = 0;
+      var dislikes = 0;
+      await tester.pumpWidget(
+        buildApp(
+          AppLikeDislikeSegment(
+            likeCount: '18K',
+            dislikeCount: '236',
+            reaction: 0,
+            onLike: () => likes++,
+            onDislike: () => dislikes++,
+          ),
+        ),
+      );
+
+      final bounds = tester.getRect(find.byType(AppLikeDislikeSegment));
+      final likeX = tester.getCenter(find.text('18K')).dx;
+      final dislikeX = tester.getCenter(find.text('236')).dx;
+      await tester.tapAt(Offset(likeX, bounds.top + 1));
+      await tester.tapAt(Offset(dislikeX, bounds.bottom - 1));
+      expect(likes, 1);
+      expect(dislikes, 1);
+    });
   });
 
   group('AppSubscribedButton tests', () {

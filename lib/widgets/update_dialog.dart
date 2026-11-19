@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -62,9 +63,67 @@ Future<void> checkForUpdates(BuildContext context, WidgetRef ref) async {
 class _CheckingDialog extends StatelessWidget {
   const _CheckingDialog();
   @override
-  Widget build(BuildContext context) => const AppDialog(
-    title: 'Checking for updates',
-    content: LinearProgressIndicator(),
+  Widget build(BuildContext context) => AppDialog(
+    content: _updateStatusContent(
+      context,
+      icon: Icons.system_update_rounded,
+      title: 'Checking for updates',
+      details: const LinearProgressIndicator(),
+    ),
+  );
+}
+
+Widget _updateStatusContent(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  String? message,
+  Widget? details,
+  List<Widget> actions = const [],
+}) {
+  final colors = Theme.of(context).colorScheme;
+  return SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest,
+              borderRadius: AppRadius.xlBorder,
+            ),
+            child: Icon(icon, size: AppSizes.iconLg, color: colors.onSurface),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.pageTitle,
+        ),
+        if (message != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.body.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ],
+        if (details != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          details,
+        ],
+        if (actions.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xl),
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.xs),
+            actions[i],
+          ],
+        ],
+      ],
+    ),
   );
 }
 
@@ -80,12 +139,21 @@ class _CheckResultDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppDialog(
-    title: title,
-    content: Text(message, style: AppTextStyles.body),
-    actions: [
-      if (onRetry != null) AppButton.text(label: 'Retry', onPressed: onRetry),
-      AppButton.text(label: 'Close', onPressed: () => Navigator.pop(context)),
-    ],
+    content: _updateStatusContent(
+      context,
+      icon: onRetry == null ? Icons.check_circle_outline : Icons.error_outline,
+      title: title,
+      message: message,
+      actions: [
+        if (onRetry != null)
+          AppButton.filled(
+            label: 'Retry',
+            size: AppButtonSize.large,
+            onPressed: onRetry,
+          ),
+        AppButton.text(label: 'Close', onPressed: () => Navigator.pop(context)),
+      ],
+    ),
   );
 }
 
@@ -224,20 +292,24 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
         final openSettings = await showDialog<bool>(
           context: context,
           builder: (context) => AppDialog(
-            title: 'Allow app installs',
-            content: const Text(
-              'Allow HiveTube to install this update in Android settings, then return here.',
+            content: _updateStatusContent(
+              context,
+              icon: Icons.install_mobile_rounded,
+              title: 'Allow app installs',
+              message:
+                  'Allow HiveTube to install this update in Android settings, then return here.',
+              actions: [
+                AppButton.filled(
+                  label: 'Settings',
+                  size: AppButtonSize.large,
+                  onPressed: () => Navigator.pop(context, true),
+                ),
+                AppButton.text(
+                  label: 'Later',
+                  onPressed: () => Navigator.pop(context, false),
+                ),
+              ],
             ),
-            actions: [
-              AppButton.text(
-                label: 'Later',
-                onPressed: () => Navigator.pop(context, false),
-              ),
-              AppButton.filled(
-                label: 'Settings',
-                onPressed: () => Navigator.pop(context, true),
-              ),
-            ],
           ),
         );
         if (openSettings == true) {
@@ -296,21 +368,23 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
     final cancel = await showDialog<bool>(
       context: context,
       builder: (context) => AppDialog(
-        title: 'Cancel download?',
-        content: const Text(
-          'The update download will stop.',
-          style: AppTextStyles.body,
+        content: _updateStatusContent(
+          context,
+          icon: Icons.system_update_rounded,
+          title: 'Cancel download?',
+          message: 'The update download will stop.',
+          actions: [
+            AppButton.filled(
+              label: 'Cancel download',
+              size: AppButtonSize.large,
+              onPressed: () => Navigator.pop(context, true),
+            ),
+            AppButton.text(
+              label: 'Continue',
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ],
         ),
-        actions: [
-          AppButton.text(
-            label: 'Continue',
-            onPressed: () => Navigator.pop(context, false),
-          ),
-          AppButton.filled(
-            label: 'Cancel download',
-            onPressed: () => Navigator.pop(context, true),
-          ),
-        ],
       ),
     );
     if (cancel == true) _cancelDownload();
@@ -332,9 +406,6 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
   Widget build(BuildContext context) {
     final state = ref.watch(updateControllerProvider);
     final downloading = state is UpdateDownloading;
-    final ready = state is UpdateReady;
-    final failed = state is UpdateFailed ? state : null;
-    final available = !downloading && !ready && failed == null;
     final theme = Theme.of(context);
     return PopScope(
       canPop: !downloading,
@@ -342,51 +413,54 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
         if (!didPop && downloading) _cancelWithConfirmation();
       },
       child: AppDialog(
-        title: switch (state) {
-          UpdateDownloading() => 'Downloading update',
-          UpdateReady() => 'Update ready',
-          UpdateFailed() => 'Update failed',
-          _ => null,
-        },
         content: switch (state) {
           UpdateDownloading(:final received, :final total, :final progress) =>
-            _downloadContent(received, total, progress, theme),
-          UpdateReady() => const Text(
-            'Opening Android installer…',
-            style: AppTextStyles.body,
+            _updateStatusContent(
+              context,
+              icon: Icons.system_update_rounded,
+              title: 'Downloading update',
+              details: _downloadContent(received, total, progress, theme),
+              actions: [
+                AppButton.text(label: 'Cancel', onPressed: _cancelDownload),
+              ],
+            ),
+          UpdateReady() => _updateStatusContent(
+            context,
+            icon: Icons.system_update_rounded,
+            title: 'Update ready',
+            message: 'Opening Android installer…',
+            actions: [
+              AppButton.filled(
+                label: 'Install now',
+                size: AppButtonSize.large,
+                onPressed: _launchInstaller,
+              ),
+              AppButton.text(label: 'Open GitHub', onPressed: _openGitHub),
+            ],
           ),
-          UpdateFailed(:final error) => Text(
-            error.message,
-            style: AppTextStyles.body,
+          UpdateFailed(:final error, :final info) => _updateStatusContent(
+            context,
+            icon: Icons.error_outline,
+            title: 'Update failed',
+            message: error.message,
+            actions: [
+              AppButton.filled(
+                label: 'Retry',
+                size: AppButtonSize.large,
+                onPressed: _readyPath != null
+                    ? _launchInstaller
+                    : info?.apkUrl == null
+                    ? () => checkForUpdates(context, ref)
+                    : _download,
+              ),
+              AppButton.text(
+                label: 'Close',
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
           ),
           _ => _availableContent(theme),
         },
-        actions: available
-            ? null
-            : [
-                if (failed != null) ...[
-                  AppButton.text(
-                    label: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  AppButton.text(
-                    label: 'Retry',
-                    onPressed: _readyPath != null
-                        ? _launchInstaller
-                        : failed.info?.apkUrl == null
-                        ? () => checkForUpdates(context, ref)
-                        : _download,
-                  ),
-                ] else if (downloading) ...[
-                  AppButton.text(label: 'Cancel', onPressed: _cancelDownload),
-                ] else if (ready) ...[
-                  AppButton.text(label: 'Open GitHub', onPressed: _openGitHub),
-                  AppButton.filled(
-                    label: 'Install now',
-                    onPressed: _launchInstaller,
-                  ),
-                ],
-              ],
       ),
     );
   }
@@ -458,11 +532,20 @@ class _UpdateDialogState extends ConsumerState<_UpdateDialog>
                     maxHeight: AppSizes.updateChangelogMaxHeight,
                   ),
                   child: SingleChildScrollView(
-                    child: Text(
-                      widget.info.changelog,
-                      style: AppTextStyles.body.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    child: MarkdownBody(
+                      data: widget.info.changelog,
+                      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                        p: AppTextStyles.body.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
+                      onTapLink: (_, href, _) {
+                        if (href == null) return;
+                        final uri = widget.info.releaseUrl.resolve(href);
+                        if (uri.scheme == 'http' || uri.scheme == 'https') {
+                          launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
                     ),
                   ),
                 ),

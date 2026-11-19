@@ -12,6 +12,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_motion.dart';
 import '../shorts/shorts_screen.dart';
+import '../downloads/downloads_screen.dart';
 import '../shorts/shorts_feed_provider.dart';
 import '../watch/watch_panel.dart';
 import '../watch/mini_player_inset.dart';
@@ -165,6 +166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
       });
     }
     final historyById = ref.watch(homeHistoryByIdProvider);
+    final offline = ref.watch(isOfflineProvider);
     return OrientationBuilder(
       builder: (context, orientation) {
         final landscape = orientation == Orientation.landscape;
@@ -189,22 +191,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                             child: home.when(
                               skipLoadingOnRefresh: false,
                               skipLoadingOnReload: false,
-                              loading: () => Padding(
-                                padding: EdgeInsets.only(
-                                  top: statusBarInset + AppSizes.appBarHeight,
-                                ),
-                                child: FeedSkeleton(),
-                              ),
-                              error: (_, _) => Padding(
-                                padding: EdgeInsets.only(
-                                  top: statusBarInset + AppSizes.appBarHeight,
-                                ),
-                                child: ErrorRetry(
-                                  message: 'Unable to load Home',
-                                  onRetry: () =>
-                                      ref.read(homeProvider.notifier).refresh(),
-                                ),
-                              ),
+                              loading: () => offline
+                                  ? _offlineHome(statusBarInset)
+                                  : Padding(
+                                      padding: EdgeInsets.only(
+                                        top:
+                                            statusBarInset +
+                                            AppSizes.appBarHeight,
+                                      ),
+                                      child: FeedSkeleton(),
+                                    ),
+                              error: (_, _) => offline
+                                  ? _offlineHome(statusBarInset)
+                                  : Padding(
+                                      padding: EdgeInsets.only(
+                                        top:
+                                            statusBarInset +
+                                            AppSizes.appBarHeight,
+                                      ),
+                                      child: ErrorRetry(
+                                        message: 'Unable to load Home',
+                                        onRetry: () => ref
+                                            .read(homeProvider.notifier)
+                                            .refresh(),
+                                      ),
+                                    ),
                               data: (data) => RefreshIndicator(
                                 onRefresh: () =>
                                     ref.read(homeProvider.notifier).refresh(),
@@ -215,6 +226,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                                   slivers: _feedSlivers(
                                     data,
                                     historyById,
+                                    offline: offline,
                                     landscape: landscape,
                                     availableWidth: constraints.maxWidth,
                                   ),
@@ -247,11 +259,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     );
   }
 
+  Widget _offlineHome(double statusBarInset) => Padding(
+    padding: EdgeInsets.only(top: statusBarInset + AppSizes.appBarHeight),
+    child: Center(child: _downloadsButton()),
+  );
+
+  Widget _downloadsButton() => AppButton.tonal(
+    label: 'Go to downloads',
+    icon: LucideIcons.download,
+    onPressed: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const DownloadsScreen())),
+  );
+
   List<Widget> _feedSlivers(
     HomeData data,
     Map<String, HistoryEntry> history, {
     required bool landscape,
     required double availableWidth,
+    required bool offline,
   }) => [
     if (landscape)
       SliverPersistentHeader(
@@ -303,6 +329,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
         ),
       ),
     ],
+    if (offline)
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _downloadsButton(),
+          ),
+        ),
+      ),
     if (data.errors.isNotEmpty && data.videos.isNotEmpty)
       SliverToBoxAdapter(
         child: Container(
@@ -772,9 +808,9 @@ class _Shorts extends ConsumerWidget {
                                 .round(),
                         fadeInDuration: AppMotion.imageFade,
                         placeholder: (_, _) => ColoredBox(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
                         ),
                       ),
                       Positioned(

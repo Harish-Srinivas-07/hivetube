@@ -57,6 +57,8 @@ class VideoCard extends ConsumerWidget {
     this.trailing,
     this.thumbnailBadge,
     this.thumbnailOverlay,
+    this.additionalMetadata,
+    this.detailMetadata,
     this.enabled = true,
     this.showAvatar = true,
     this.compact,
@@ -75,6 +77,8 @@ class VideoCard extends ConsumerWidget {
        enabled = true,
        thumbnailBadge = null,
        thumbnailOverlay = null,
+       additionalMetadata = null,
+       detailMetadata = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -87,6 +91,8 @@ class VideoCard extends ConsumerWidget {
     this.trailing,
     this.thumbnailBadge,
     this.thumbnailOverlay,
+    this.additionalMetadata,
+    this.detailMetadata,
     this.enabled = true,
   }) : mode = VideoCardMode.compact,
        showAvatar = false,
@@ -105,6 +111,8 @@ class VideoCard extends ConsumerWidget {
        enabled = true,
        thumbnailBadge = null,
        thumbnailOverlay = null,
+       additionalMetadata = null,
+       detailMetadata = null,
        compact = null,
        roundedThumbnail = null;
 
@@ -120,6 +128,8 @@ class VideoCard extends ConsumerWidget {
        trailing = null,
        thumbnailBadge = null,
        thumbnailOverlay = null,
+       additionalMetadata = null,
+       detailMetadata = null,
        enabled = true,
        showAvatar = true;
 
@@ -133,6 +143,8 @@ class VideoCard extends ConsumerWidget {
        trailing = null,
        thumbnailBadge = null,
        thumbnailOverlay = null,
+       additionalMetadata = null,
+       detailMetadata = null,
        enabled = true,
        compact = null,
        roundedThumbnail = null;
@@ -144,6 +156,8 @@ class VideoCard extends ConsumerWidget {
   final Widget? trailing;
   final String? thumbnailBadge;
   final Widget? thumbnailOverlay;
+  final String? additionalMetadata;
+  final String? detailMetadata;
   final bool enabled;
   final bool showAvatar;
 
@@ -204,6 +218,8 @@ class VideoCard extends ConsumerWidget {
           trailing: trailing,
           thumbnailBadge: thumbnailBadge,
           thumbnailOverlay: thumbnailOverlay,
+          additionalMetadata: additionalMetadata,
+          detailMetadata: detailMetadata,
           enabled: enabled,
         );
         break;
@@ -381,6 +397,8 @@ class _CompactCard extends StatelessWidget {
     this.trailing,
     this.thumbnailBadge,
     this.thumbnailOverlay,
+    this.additionalMetadata,
+    this.detailMetadata,
     required this.enabled,
   });
 
@@ -390,6 +408,8 @@ class _CompactCard extends StatelessWidget {
   final Widget? trailing;
   final String? thumbnailBadge;
   final Widget? thumbnailOverlay;
+  final String? additionalMetadata;
+  final String? detailMetadata;
   final bool enabled;
 
   @override
@@ -488,6 +508,24 @@ class _CompactCard extends StatelessWidget {
                       color: cs.onSurfaceVariant,
                     ),
                   ),
+                  if (additionalMetadata != null)
+                    Text(
+                      additionalMetadata!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.meta.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  if (detailMetadata != null)
+                    Text(
+                      detailMetadata!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.meta.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                 ],
               ),
             ),
