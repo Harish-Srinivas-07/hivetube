@@ -1,34 +1,90 @@
+import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
+
+enum LogLevel { log, warn, error, fatal, success }
+
 class Logger {
-  Logger._();
+  static const String reset = "\x1B[0m";
+  static const String red = "\x1B[31m";
+  static const String yellow = "\x1B[33m";
+  static const String green = "\x1B[32m";
+  static const String cyan = "\x1B[36m";
+  static const String boldRed = "\x1B[1;31m";
 
-  static const _blue = '\x1B[38;5;33m';
-  static const _yellow = '\x1B[38;5;220m';
-  static const _green = '\x1B[38;5;46m';
-  static const _red = '\x1B[38;5;196m';
-  static const _reset = '\x1B[0m';
-
-  static void log(String screenName, Object? message) => _write(screenName, message, _blue);
-
-  static void success(String screenName, Object? message) => _write(screenName, message, _green);
-
-  static void warn(String screenName, Object? message) => _write(screenName, message, _yellow);
-
-  static void error(String screenName, Object? message, {StackTrace? stackTrace}) {
-    final fullMessage = stackTrace == null ? message : '$message\n$stackTrace';
-    _write(screenName, fullMessage, _red);
+  static String _formatTime() {
+    return "[${DateFormat('dd-MM-yyyy hh:mm:ss a').format(DateTime.now())}]";
   }
 
-  static void _write(String screenName, Object? message, String color) {
-    final now = DateTime.now();
-    final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
-    final period = now.hour < 12 ? 'AM' : 'PM';
-    final timestamp =
-        '${now.day.toString().padLeft(2, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.year} ${hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')} $period';
+  static String _getColor(LogLevel level) {
+    switch (level) {
+      case LogLevel.warn:
+        return yellow;
+      case LogLevel.error:
+        return red;
+      case LogLevel.fatal:
+        return boldRed;
+      case LogLevel.success:
+        return green;
+      case LogLevel.log:
+        return cyan;
+    }
+  }
 
-    // ignore: avoid_print
-    print('$color$timestamp: $screenName:$_reset   $message');
+  static String _levelName(LogLevel level) {
+    switch (level) {
+      case LogLevel.warn:
+        return "WARN";
+      case LogLevel.error:
+        return "ERROR";
+      case LogLevel.fatal:
+        return "FATAL";
+      case LogLevel.success:
+        return "SUCCESS";
+      case LogLevel.log:
+        return "LOG";
+    }
+  }
+
+  static void _print(LogLevel level, String titleOrMsg, List<Object?> args) {
+    // if ((isProduction || kReleaseMode) && level != LogLevel.error && level != LogLevel.fatal) {
+    //   return;
+    // }
+
+    final levelStr = _levelName(level);
+
+    String prefix;
+    List<Object?> messageArgs;
+
+    if (args.isEmpty) {
+      prefix = "[$levelStr]";
+      messageArgs = [titleOrMsg];
+    } else {
+      prefix = "[$levelStr] $titleOrMsg:";
+      messageArgs = args;
+    }
+
+    final color = _getColor(level);
+
+    debugPrint("$color${_formatTime()} $prefix$reset ${messageArgs.join(" ")}", wrapWidth: 1024);
+  }
+
+  static void log(String titleOrMsg, [dynamic arg]) {
+    _print(LogLevel.log, titleOrMsg, arg == null ? [] : [arg]);
+  }
+
+  static void warn(String titleOrMsg, [dynamic arg]) {
+    _print(LogLevel.warn, titleOrMsg, arg == null ? [] : [arg]);
+  }
+
+  static void error(String titleOrMsg, [dynamic arg]) {
+    _print(LogLevel.error, titleOrMsg, arg == null ? [] : [arg]);
+  }
+
+  static void fatal(String titleOrMsg, [dynamic arg]) {
+    _print(LogLevel.fatal, titleOrMsg, arg == null ? [] : [arg]);
+  }
+
+  static void success(String titleOrMsg, [dynamic arg]) {
+    _print(LogLevel.success, titleOrMsg, arg == null ? [] : [arg]);
   }
 }

@@ -21,6 +21,7 @@ dependencies:
   connectivity_plus:
   crypto:
   xml:
+  intl:
 
   # Storage and files
   drift: ^2.35.4
@@ -53,6 +54,8 @@ dependencies:
   url_launcher:
 
 dependency_overrides:
+  # file_saver 0.7 requires a newer meta than Flutter 3.44 pins.
+  meta: ^1.19.0
   media_kit:
     path: third_party/media_kit
 
