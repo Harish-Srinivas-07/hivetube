@@ -43,14 +43,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER" || SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
           for attempt in 1 2 3; do
-            if sdkmanager "cmake;3.22.1"; then
+            if "$SDKMANAGER" "cmake;3.22.1"; then
               exit 0
             fi
             echo "CMake installation failed (attempt $attempt of 3)." >&2
-            if [[ "$attempt" -lt 3 ]]; then
-              sleep 10
-            fi
+            [[ "$attempt" -lt 3 ]] && sleep 10
           done
           exit 1
 
