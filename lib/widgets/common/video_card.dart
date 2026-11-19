@@ -16,18 +16,6 @@ import 'channel_avatar.dart';
 import 'preview_card_visibility.dart';
 import 'thumbnail_with_duration.dart';
 
-String _feedThumbnail(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null ||
-      (uri.host != 'i.ytimg.com' && uri.host != 'img.youtube.com')) {
-    return url;
-  }
-  return url.replaceFirst(
-    RegExp(r'/(?:hqdefault|default)\.jpg(?=\?|$)'),
-    '/mqdefault.jpg',
-  );
-}
-
 /// Display presentation mode for [VideoCard].
 enum VideoCardMode {
   /// Full-bleed mobile feed card (thumbnail top, avatar + metadata bottom).
@@ -291,9 +279,7 @@ class _FeedCard extends StatelessWidget {
           ThumbnailWithDuration(
             thumbnailKey: ValueKey('homeThumbnail:${video.id}'),
             progressKey: ValueKey('watchedProgress:${video.id}'),
-            url: roundedThumbnail
-                ? video.thumbUrl
-                : _feedThumbnail(video.thumbUrl),
+            url: video.thumbUrl,
             duration: video.durationText,
             videoId: video.isLive || video.isShort ? null : video.id,
             progress: progress,

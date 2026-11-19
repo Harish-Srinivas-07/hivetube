@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as dev;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -313,7 +312,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               TextButton(
                 onPressed: _clearRecents,
                 style: TextButton.styleFrom(
-                  minimumSize: const Size(AppSpacing.none, AppSizes.buttonLarge),
+                  minimumSize: const Size(
+                    AppSpacing.none,
+                    AppSizes.buttonLarge,
+                  ),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: const Text('Clear all'),
@@ -637,72 +639,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildShortsShelf(List<ShortItem> shorts) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.xs,
-            ),
-            child: Text('Shorts', style: AppTextStyles.sectionTitle),
-          ),
-          SizedBox(
-            height:
-                AppSizes.horizontalThumbCardHeight +
-                AppSpacing.sm +
-                MediaQuery.textScalerOf(context).scale(
-                  AppTextStyles.caption.fontSize! *
-                      AppTextStyles.caption.height! *
-                      2,
-                ),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              itemCount: shorts.length,
-              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-              itemBuilder: (context, i) {
-                final s = shorts[i];
-                return GestureDetector(
-                  onTap: () => openWatchPanel(ref, s.id),
-                  child: SizedBox(
-                    width: AppSpacing.shortWidth,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: AppRadius.mdBorder,
-                          child: CachedNetworkImage(
-                            imageUrl: s.thumbUrl,
-                            width: AppSpacing.shortWidth,
-                            height: AppSizes.horizontalThumbCardHeight,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Flexible(
-                          child: Text(
-                            s.title ?? '',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.caption,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(contentPrefsProvider);
@@ -746,6 +682,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
       return true;
     }).toList();
+
+    final displayResults = <SearchResultItem>[];
+    for (final item in filteredResults) {
+      if (item is ShortSearchResult &&
+          displayResults.isNotEmpty &&
+          displayResults.last is ShortsShelfSearchResult) {
+        final previous = displayResults.removeLast() as ShortsShelfSearchResult;
+        displayResults.add(
+          ShortsShelfSearchResult([...previous.shorts, item.short]),
+        );
+      } else if (item is ShortSearchResult) {
+        displayResults.add(ShortsShelfSearchResult([item.short]));
+      } else {
+        displayResults.add(item);
+      }
+    }
 
     final isResultsMode = activeQuery.isNotEmpty;
     final historyList = _buildRecentSearches(recentSearches);
@@ -810,7 +762,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             )
           else
-            for (final result in filteredResults) ...[
+            for (final result in displayResults) ...[
               if (result is VideoSearchResult)
                 VideoCard.searchResult(
                   video: result.video,
@@ -821,20 +773,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               else if (result is PlaylistSearchResult)
                 _buildPlaylistRow(result.playlist)
               else if (result is ShortsShelfSearchResult)
-                _buildShortsShelf(result.shorts)
-              else if (result is ShortSearchResult)
-                VideoCard.searchResult(
-                  video: VideoItem(
-                    id: result.short.id,
-                    title: result.short.title ?? '',
-                    channelId: result.short.channelId ?? '',
-                    channelName: result.short.channelName ?? '',
-                    channelAvatarUrl: result.short.channelAvatarUrl ?? '',
-                    thumbUrl: result.short.thumbUrl,
-                    viewsText: result.short.viewsText ?? '',
-                    isShort: true,
-                  ),
-                  onTap: () => openWatchPanel(ref, result.short.id),
+                ShortsShelf(
+                  items: result.shorts,
+                  onTap: (index) =>
+                      openWatchPanel(ref, result.shorts[index].id),
                 ),
             ],
           if (loadingMore)

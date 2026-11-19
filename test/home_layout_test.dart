@@ -42,6 +42,35 @@ class _History implements HistoryRepo {
 }
 
 void main() {
+  testWidgets('feed cards retain the supplied thumbnail quality', (
+    tester,
+  ) async {
+    const url = 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg';
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: VideoCard.feed(
+              video: const VideoItem(
+                id: 'abcdefghijk',
+                title: 'Video',
+                thumbUrl: url,
+                durationText: '1:00',
+              ),
+              onTap: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester
+          .widget<ThumbnailWithDuration>(find.byType(ThumbnailWithDuration))
+          .url,
+      url,
+    );
+  });
+
   test('saved duration is available without network access', () async {
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);

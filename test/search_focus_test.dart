@@ -106,6 +106,13 @@ void main() {
       find.text('A longer title that wraps across two lines'),
       findsOneWidget,
     );
+    expect(find.text('Standalone short'), findsOneWidget);
+    expect(find.text('123 views'), findsOneWidget);
+    expect(find.byTooltip('More options'), findsNWidgets(2));
+    expect(
+      tester.widget<GridView>(find.byType(GridView)).scrollDirection,
+      Axis.horizontal,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -241,8 +248,12 @@ class _ShortsSearch extends Fake implements YtSearch {
           id: 'one',
           thumbUrl: '',
           title: 'A longer title that wraps across two lines',
+          viewsText: '123 views',
         ),
       ]),
+      ShortSearchResult(
+        ShortItem(id: 'two', thumbUrl: '', title: 'Standalone short'),
+      ),
     ],
   );
 }

@@ -6,6 +6,7 @@ export 'error_retry.dart';
 export 'formatters.dart';
 export 'inline_banner.dart';
 export 'section_header.dart';
+export 'shorts_shelf.dart';
 export 'skeletons.dart';
 export 'thumbnail_with_duration.dart';
 export 'video_card.dart';
