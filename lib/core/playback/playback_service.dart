@@ -15,6 +15,7 @@ import '../providers.dart';
 import '../settings/app_settings.dart';
 import 'load_guard.dart';
 import 'playback_failure_monitor.dart';
+import 'playback_network_state.dart';
 import 'seek_controller.dart';
 import 'audio_handler.dart';
 import '../db/app_db.dart';
@@ -214,6 +215,7 @@ class PlaybackService extends ChangeNotifier {
   final _loadGuard = LoadGuard();
   final _budget = RecoveryBudget();
   final _failureMonitor = PlaybackFailureMonitor();
+  final _networkState = PlaybackNetworkState();
   late SeekController _seekController;
   bool _switching = false, _disposed = false, _userPaused = false;
   bool _visible = true, _resumeAfterVisibility = false;
@@ -261,18 +263,27 @@ class PlaybackService extends ChangeNotifier {
     required VideoQualityPreference preference,
     required bool wifiNetwork,
     required bool mobileNetwork,
+    bool online = true,
   }) {
+    final recoverNow = _networkState.updateOnline(online);
     final oldCap = _qualityCap;
     final oldPreference = _qualityPreference;
     final changed =
         _qualityPreference != preference ||
         _wifiNetwork != wifiNetwork ||
         _mobileNetwork != mobileNetwork;
-    if (!changed) return;
+    if (!changed) {
+      if (recoverNow) unawaited(_recover());
+      return;
+    }
     cancelShortPreloads(disposePlayer: true);
     _qualityPreference = preference;
     _wifiNetwork = wifiNetwork;
     _mobileNetwork = mobileNetwork;
+    if (recoverNow) {
+      unawaited(_recover());
+      return;
+    }
     if (request != null &&
         state.quality == null &&
         (oldCap != _qualityCap || oldPreference != _qualityPreference)) {
@@ -295,6 +306,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _reloadForQualityPolicy() {
+    if (!_networkState.online) return;
     final current = request;
     if (current == null) return;
     state.autoQualityHeight = null;
@@ -360,7 +372,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _recordAdaptiveStall() {
-    if (!_automaticQualityEnabled) return;
+    if (!_networkState.online || !_automaticQualityEnabled) return;
     final current = state.autoQualityHeight ?? state.heights.firstOrNull;
     if (current == null) return;
     final lower = _adaptiveQuality.recordStall(
@@ -372,6 +384,7 @@ class PlaybackService extends ChangeNotifier {
   }
 
   void _switchAutomaticQuality(int height) {
+    if (!_networkState.online) return;
     final current = request;
     if (current == null || _switching || !_automaticQualityEnabled) return;
     unawaited(
@@ -601,6 +614,10 @@ class PlaybackService extends ChangeNotifier {
             current != null &&
             !_userPaused &&
             state.status != PlayerStatus.error) {
+          if (!_networkState.online) {
+            _networkState.deferRecovery();
+            return;
+          }
           _failureMonitor.report(state.position, () {
             if (!_disposed &&
                 !_switching &&
@@ -1576,6 +1593,7 @@ class PlaybackController extends Notifier<PlaybackService?> {
       preference: preference,
       wifiNetwork: wifi,
       mobileNetwork: mobile,
+      online: !connectivity.contains(ConnectivityResult.none),
     );
   }
 
@@ -1638,6 +1656,7 @@ class PlaybackController extends Notifier<PlaybackService?> {
       preference: preference,
       wifiNetwork: wifi,
       mobileNetwork: mobile,
+      online: !connectivity.contains(ConnectivityResult.none),
     );
     final handler = ref.read(audioHandlerProvider);
     _handler = handler;
