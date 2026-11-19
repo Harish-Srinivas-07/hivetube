@@ -12,6 +12,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/yt/models.dart';
 import '../../services/search_suggestions.dart';
 import '../../features/home/home_variety.dart';
+import '../../features/shorts/shorts_screen.dart';
 import '../../features/watch/mini_player_inset.dart';
 import '../../features/watch/watch_panel.dart';
 import '../../theme/app_radius.dart';
@@ -775,8 +776,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               else if (result is ShortsShelfSearchResult)
                 ShortsShelf(
                   items: result.shorts,
-                  onTap: (index) =>
-                      openWatchPanel(ref, result.shorts[index].id),
+                  cardWidth: AppSpacing.searchShortWidth,
+                  onTap: (index) {
+                    ref
+                        .read(shortsSelectionProvider.notifier)
+                        .open(result.shorts, index);
+                    context.go('/shorts');
+                  },
                 ),
             ],
           if (loadingMore)

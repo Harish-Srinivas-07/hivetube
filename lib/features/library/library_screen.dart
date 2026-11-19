@@ -517,9 +517,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ),
               ),
               AppIconButton(
+                key: const ValueKey('historyVideoMenu'),
                 icon: LucideIcons.ellipsisVertical,
                 tooltip: 'More options',
                 tonal: false,
+                compact: true,
                 onPressed: () => showVideoOptionsMenu(
                   context,
                   videoId: id,
@@ -975,7 +977,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               compact: true,
                             ),
                           )
-                        else if (userPlaylists.isEmpty)
+                        else ...[
                           _LibraryEntryRow(
                             key: const ValueKey('playlistsFirstCard'),
                             title: 'Create playlist',
@@ -984,10 +986,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                             badgeIcon: LucideIcons.plus,
                             onTap: _createPlaylistDialog,
                             onMore: _createPlaylistDialog,
-                          )
-                        else
+                          ),
                           for (final playlist in userPlaylists)
                             _playlistRow(playlist),
+                        ],
                       ],
                     ],
                     SizedBox(

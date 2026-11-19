@@ -34,6 +34,14 @@ String _posterForAnimatedThumbnail(String url, String videoId) {
       .toString();
 }
 
+String preferredYoutubeThumbnailUrl(String url, String? videoId) {
+  if (videoId == null || videoId.isEmpty) return url;
+  final uri = Uri.tryParse(url);
+  final host = uri?.host.toLowerCase() ?? '';
+  if (host != 'i.ytimg.com' && host != 'img.youtube.com') return url;
+  return 'https://i.ytimg.com/vi/$videoId/maxresdefault.jpg';
+}
+
 /// Unified YouTube-style video thumbnail with duration badge and watched progress bar.
 class ThumbnailWithDuration extends ConsumerWidget {
   const ThumbnailWithDuration({
@@ -73,6 +81,9 @@ class ThumbnailWithDuration extends ConsumerWidget {
     final imageUrl = preview == null || preview.isActive
         ? url
         : _posterForAnimatedThumbnail(url, preview.videoId);
+    final highResolutionUrl = preview?.isActive == true
+        ? imageUrl
+        : preferredYoutubeThumbnailUrl(imageUrl, videoId);
 
     return AspectRatio(
       key: thumbnailKey,
@@ -91,19 +102,12 @@ class ThumbnailWithDuration extends ConsumerWidget {
               )
             else if (imageUrl.isNotEmpty)
               LayoutBuilder(
-                builder: (context, constraints) => CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  memCacheWidth:
+                builder: (context, constraints) {
+                  final cacheWidth =
                       (constraints.maxWidth *
                               MediaQuery.devicePixelRatioOf(context))
-                          .ceil(),
-                  maxWidthDiskCache:
-                      (constraints.maxWidth *
-                              MediaQuery.devicePixelRatioOf(context))
-                          .ceil(),
-                  fadeInDuration: AppMotion.imageFade,
-                  errorWidget: (_, _, _) => Container(
+                          .ceil();
+                  final placeholder = Container(
                     color: theme.colorScheme.surfaceContainerHigh,
                     child: const Center(
                       child: Icon(
@@ -112,10 +116,28 @@ class ThumbnailWithDuration extends ConsumerWidget {
                         size: AppSizes.icon,
                       ),
                     ),
-                  ),
-                  placeholder: (_, _) =>
-                      Container(color: theme.colorScheme.surfaceContainerHigh),
-                ),
+                  );
+                  Widget cachedImage(
+                    String source, {
+                    bool allowFallback = true,
+                  }) => CachedNetworkImage(
+                    imageUrl: source,
+                    fit: BoxFit.cover,
+                    memCacheWidth: cacheWidth,
+                    maxWidthDiskCache: cacheWidth,
+                    fadeInDuration: AppMotion.imageFade,
+                    errorWidget: (_, _, _) =>
+                        allowFallback &&
+                            source == highResolutionUrl &&
+                            highResolutionUrl != imageUrl
+                        ? cachedImage(imageUrl, allowFallback: false)
+                        : placeholder,
+                    placeholder: (_, _) => Container(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                    ),
+                  );
+                  return cachedImage(highResolutionUrl);
+                },
               )
             else
               Container(

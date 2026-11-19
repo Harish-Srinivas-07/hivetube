@@ -9,6 +9,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import 'thumbnail_with_duration.dart';
 import '../video_options_menu.dart';
 
 class ShortsShelf extends StatelessWidget {
@@ -26,79 +27,93 @@ class ShortsShelf extends StatelessWidget {
     builder: (context, _) {
       final itemWidth = cardWidth;
       final itemHeight =
-          itemWidth / AppSpacing.homeShortRatio + AppSizes.listRowHeight;
+          itemWidth / AppSpacing.homeShortRatio +
+          MediaQuery.textScalerOf(context).scale(AppSizes.listRowHeight);
 
-      Widget shortCard(int index) => InkWell(
-        onTap: () => onTap(index),
-        child: SizedBox(
-          width: itemWidth,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: AppRadius.mdBorder,
-                child: AspectRatio(
-                  aspectRatio: AppSpacing.homeShortRatio,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CachedNetworkImage(
-                        imageUrl: items[index].thumbUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth:
-                            (itemWidth * MediaQuery.devicePixelRatioOf(context))
-                                .round(),
-                        maxWidthDiskCache:
-                            (itemWidth * MediaQuery.devicePixelRatioOf(context))
-                                .round(),
-                        fadeInDuration: AppMotion.imageFade,
-                        placeholder: (_, _) => ColoredBox(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                        ),
-                      ),
-                      Positioned(
-                        right: AppSpacing.xs,
-                        top: AppSpacing.xs,
-                        child: IconButton(
-                          tooltip: 'More options',
-                          onPressed: () => showVideoOptionsMenu(
-                            context,
-                            videoId: items[index].id,
-                          ),
-                          icon: const Icon(
-                            LucideIcons.ellipsisVertical,
-                            color: AppColors.shortsForeground,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                items[index].title ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.homeShortTitle.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              if ((items[index].viewsText ?? '').isNotEmpty)
-                Text(
-                  items[index].viewsText!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.caption.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
+      Widget shortCard(int index) {
+        final item = items[index];
+        final suppliedUrl = item.thumbUrl;
+        final preferredUrl = preferredYoutubeThumbnailUrl(suppliedUrl, item.id);
+
+        Widget image(
+          String url, {
+          bool allowFallback = true,
+        }) => CachedNetworkImage(
+          key: ValueKey(
+            'shortsShelfThumbnail:${item.id}:${allowFallback ? 'preferred' : 'fallback'}',
           ),
-        ),
-      );
+          imageUrl: url,
+          fit: BoxFit.cover,
+          memCacheWidth: (itemWidth * MediaQuery.devicePixelRatioOf(context))
+              .round(),
+          maxWidthDiskCache:
+              (itemWidth * MediaQuery.devicePixelRatioOf(context)).round(),
+          fadeInDuration: AppMotion.imageFade,
+          placeholder: (_, _) => ColoredBox(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          ),
+          errorWidget: (_, _, _) => allowFallback && preferredUrl != suppliedUrl
+              ? image(suppliedUrl, allowFallback: false)
+              : ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+        );
+
+        return InkWell(
+          onTap: () => onTap(index),
+          child: SizedBox(
+            width: itemWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: AppRadius.mdBorder,
+                  child: AspectRatio(
+                    aspectRatio: AppSpacing.homeShortRatio,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        image(preferredUrl),
+                        Positioned(
+                          right: AppSpacing.xs,
+                          top: AppSpacing.xs,
+                          child: IconButton(
+                            tooltip: 'More options',
+                            onPressed: () =>
+                                showVideoOptionsMenu(context, videoId: item.id),
+                            icon: const Icon(
+                              LucideIcons.ellipsisVertical,
+                              color: AppColors.shortsForeground,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  item.title ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.homeShortTitle.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                if ((item.viewsText ?? '').isNotEmpty)
+                  Text(
+                    item.viewsText!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,

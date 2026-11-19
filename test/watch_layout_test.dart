@@ -353,6 +353,10 @@ void main() {
               ? AppColors.videoSheet
               : theme.colorScheme.surface,
         );
+        final videoBottom = tester
+            .getRect(find.byKey(const ValueKey('watchVideoAspectRatio')))
+            .bottom;
+        expect(tester.getRect(surface).top, greaterThanOrEqualTo(videoBottom));
       }
 
       await tester.tap(find.text('A real video title'));

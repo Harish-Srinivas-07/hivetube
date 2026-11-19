@@ -11,6 +11,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../features/home/home_controller.dart';
+import '../../features/shorts/shorts_screen.dart';
 import '../video_options_menu.dart';
 import 'channel_avatar.dart';
 import 'preview_card_visibility.dart';
@@ -161,13 +162,29 @@ class VideoCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cardOnTap = video.isShort
+        ? () {
+            ref.read(shortsSelectionProvider.notifier).open([
+              ShortItem(
+                id: video.id,
+                thumbUrl: video.thumbUrl,
+                title: video.title,
+                channelName: video.channelName,
+                channelId: video.channelId,
+                channelAvatarUrl: video.channelAvatarUrl,
+                viewsText: video.viewsText,
+              ),
+            ], 0);
+            context.go('/shorts');
+          }
+        : onTap;
     final effectiveMode = _effectiveMode;
     late final Widget content;
     switch (effectiveMode) {
       case VideoCardMode.shelf:
         content = RepaintBoundary(
           child: InkWell(
-            onTap: onTap,
+            onTap: cardOnTap,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -201,7 +218,7 @@ class VideoCard extends ConsumerWidget {
       case VideoCardMode.compact:
         content = _CompactCard(
           video: video,
-          onTap: onTap,
+          onTap: cardOnTap,
           progress: progress,
           trailing: trailing,
           thumbnailBadge: thumbnailBadge,
@@ -214,7 +231,7 @@ class VideoCard extends ConsumerWidget {
       case VideoCardMode.grid:
         content = _FeedCard(
           video: video,
-          onTap: onTap,
+          onTap: cardOnTap,
           progress: progress,
           trailing: trailing,
           showAvatar: showAvatar,
@@ -223,12 +240,12 @@ class VideoCard extends ConsumerWidget {
         );
         break;
       case VideoCardMode.searchResult:
-        content = _SearchResultCard(video: video, onTap: onTap, ref: ref);
+        content = _SearchResultCard(video: video, onTap: cardOnTap, ref: ref);
         break;
       case VideoCardMode.feed:
         content = _FeedCard(
           video: video,
-          onTap: onTap,
+          onTap: cardOnTap,
           progress: progress,
           trailing: trailing,
           showAvatar: showAvatar,

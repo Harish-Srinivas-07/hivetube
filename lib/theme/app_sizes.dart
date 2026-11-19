@@ -20,6 +20,7 @@ abstract final class AppSizes {
   static const double updateChangelogMaxHeight = 120;
   // Touch targets (minimum 48 for accessibility)
   static const double touchMin = 48;
+  static const double playerCenterControl = 64;
 
   // Icons
   static const double iconXs = 16;

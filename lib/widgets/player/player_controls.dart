@@ -26,6 +26,7 @@ import '../../core/yt/watch_info.dart';
 import '../logger.dart';
 import 'player_seek_bar.dart';
 import 'player_settings_menu.dart';
+import '../ui/app_controls.dart';
 
 double? videoAspectRatioFromController(
   PlaybackService? service, {
@@ -85,6 +86,8 @@ class SharedPlayer extends ConsumerStatefulWidget {
     this.thumbnailUrl,
     this.chapters = const [],
     this.onChapters,
+    this.autoplayCountdown,
+    this.onReplayFromStart,
   });
   final PlaybackService service;
   final List<WatchChapter> chapters;
@@ -96,7 +99,9 @@ class SharedPlayer extends ConsumerStatefulWidget {
   final Widget? videoOverride;
   final String? requestVideoId;
   final String? thumbnailUrl;
+  final int? autoplayCountdown;
   final VoidCallback? onMinimize, onPrevious, onNext;
+  final VoidCallback? onReplayFromStart;
   final ValueChanged<double>? onPanelDragUpdate, onPanelDragEnd;
   @override
   ConsumerState<SharedPlayer> createState() => _SharedPlayerState();
@@ -218,6 +223,29 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       if (mounted) ref.read(playerUiProvider.notifier).setOverlayVisible(false);
     });
   }
+
+  Widget _replayAction() => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      AppButton.tonal(
+        label: 'Replay from start',
+        icon: LucideIcons.rotateCcw,
+        onPressed: () async {
+          widget.onReplayFromStart?.call();
+          await widget.service.togglePlay();
+          if (mounted) _scheduleHide();
+        },
+      ),
+      if (widget.autoplayCountdown case final seconds? when seconds > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Text(
+            'Up next in $seconds',
+            style: AppTextStyles.meta.copyWith(color: AppColors.white),
+          ),
+        ),
+    ],
+  );
 
   void _toggleOverlay() {
     final notifier = ref.read(playerUiProvider.notifier);
@@ -611,17 +639,18 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                           dimmed: widget.onPrevious == null,
                         ),
                         const SizedBox(width: AppSpacing.xxl),
-                        _roundControl(
-                          icon: state.playing
-                              ? Icons.pause_rounded
-                              : state.status == PlayerStatus.ended
-                              ? Icons.replay_rounded
-                              : Icons.play_arrow_rounded,
-                          tooltip: state.playing ? 'Pause' : 'Play',
-                          onPressed: () => unawaited(service.togglePlay()),
-                          diameter: AppSizes.touchMin + AppSpacing.xxl,
-                          size: AppSizes.iconLg + AppSpacing.md,
-                        ),
+                        if (state.status == PlayerStatus.ended)
+                          _replayAction()
+                        else
+                          _roundControl(
+                            icon: state.playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            tooltip: state.playing ? 'Pause' : 'Play',
+                            onPressed: () => unawaited(service.togglePlay()),
+                            diameter: AppSizes.touchMin + AppSpacing.xxl,
+                            size: AppSizes.iconLg + AppSpacing.md,
+                          ),
                         const SizedBox(width: AppSpacing.xxl),
                         _roundControl(
                           icon: Icons.skip_next_rounded,
@@ -1079,53 +1108,47 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                                         ),
                                       ),
                                       const SizedBox(width: AppSpacing.xl),
-                                      Container(
-                                        width: 64,
-                                        height: 64,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: Colors.black.withValues(
-                                            alpha: 0.5,
+                                      if (state.recovering ||
+                                          state.status ==
+                                              PlayerStatus.buffering)
+                                        const SizedBox.square(
+                                          dimension: AppSizes.icon,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: AppSizes.seekTrack,
+                                            color: AppColors.white,
+                                          ),
+                                        )
+                                      else if (state.status ==
+                                          PlayerStatus.ended)
+                                        _replayAction()
+                                      else
+                                        Container(
+                                          width: AppSizes.playerCenterControl,
+                                          height: AppSizes.playerCenterControl,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                          ),
+                                          child: IconButton(
+                                            key: const ValueKey(
+                                              'playerPlayPauseButton',
+                                            ),
+                                            color: AppColors.shortsForeground,
+                                            iconSize:
+                                                AppSizes.iconLg + AppSpacing.xs,
+                                            onPressed: () async {
+                                              await service.togglePlay();
+                                              if (mounted) _scheduleHide();
+                                            },
+                                            icon: Icon(
+                                              state.playing
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                            ),
                                           ),
                                         ),
-                                        child:
-                                            state.recovering ||
-                                                state.status ==
-                                                    PlayerStatus.buffering
-                                            ? const Center(
-                                                child: SizedBox(
-                                                  width: AppSizes.icon,
-                                                  height: AppSizes.icon,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth:
-                                                            AppSizes.seekTrack,
-                                                        color: AppColors.white,
-                                                      ),
-                                                ),
-                                              )
-                                            : IconButton(
-                                                key: const ValueKey(
-                                                  'playerPlayPauseButton',
-                                                ),
-                                                color:
-                                                    AppColors.shortsForeground,
-                                                iconSize: 36,
-                                                onPressed: () async {
-                                                  await service.togglePlay();
-                                                  if (mounted) _scheduleHide();
-                                                },
-                                                icon: Icon(
-                                                  state.status ==
-                                                          PlayerStatus.ended
-                                                      ? LucideIcons.rotateCcw
-                                                      : state.playing
-                                                      ? Icons.pause_rounded
-                                                      : Icons
-                                                            .play_arrow_rounded,
-                                                ),
-                                              ),
-                                      ),
                                       const SizedBox(width: AppSpacing.xl),
                                       Opacity(
                                         opacity: widget.onNext == null

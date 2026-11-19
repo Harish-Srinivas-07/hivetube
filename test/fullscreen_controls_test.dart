@@ -120,4 +120,45 @@ void main() {
     await tester.tap(find.byTooltip('Exit fullscreen'));
     await tester.pump();
   });
+
+  testWidgets('fullscreen shows replay and autoplay countdown when ended', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final service = _FakePlayback()
+      ..snapshot.status = PlayerStatus.ended
+      ..snapshot.playing = false;
+    var replayCount = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_FullscreenUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox.expand(
+              child: SharedPlayer(
+                service: service,
+                autoplayCountdown: 3,
+                onReplayFromStart: () => replayCount++,
+                videoOverride: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Replay from start'), findsOneWidget);
+    expect(find.text('Up next in 3'), findsOneWidget);
+    expect(find.byTooltip('Pause'), findsNothing);
+
+    await tester.tap(find.text('Replay from start'));
+    await tester.pump();
+    expect(replayCount, 1);
+    expect(service.toggleCount, 1);
+  });
 }

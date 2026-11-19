@@ -30,3 +30,27 @@ VideoItem? selectUpNext({
       )
       .firstOrNull;
 }
+
+VideoItem? selectOfflineUpNext({
+  required List<VideoItem> queue,
+  required Iterable<VideoItem> downloaded,
+  required Set<String> finished,
+  required String currentId,
+}) {
+  final available = downloaded.toList(growable: false);
+  final availableIds = available.map((video) => video.id).toSet();
+  final queued = queue
+      .where(
+        (video) =>
+            availableIds.contains(video.id) &&
+            video.id != currentId &&
+            !finished.contains(video.id),
+      )
+      .toList(growable: false);
+  return selectUpNext(
+    queue: queued,
+    related: available,
+    finished: finished,
+    currentId: currentId,
+  );
+}

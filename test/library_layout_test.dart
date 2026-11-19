@@ -102,9 +102,16 @@ void main() {
       final historyShelf = tester.getRect(
         find.byKey(const ValueKey('historyShelf')),
       );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('historyVideoMenu'))),
+        Size.square(AppSizes.buttonCompact),
+      );
       final likedRow = tester.getRect(find.byKey(const ValueKey('rowLiked')));
       final watchLaterRow = tester.getRect(
         find.byKey(const ValueKey('rowWatchLater')),
+      );
+      final createPlaylistRow = tester.getRect(
+        find.byKey(const ValueKey('playlistsFirstCard')),
       );
       final playlistRow = tester.getRect(
         find.byKey(ValueKey('playlist-$playlistId')),
@@ -124,7 +131,8 @@ void main() {
       expect(historyHeader.top, greaterThan(buttons.bottom));
       expect(likedRow.top, greaterThan(historyShelf.bottom));
       expect(watchLaterRow.top, greaterThanOrEqualTo(likedRow.bottom));
-      expect(playlistRow.top, greaterThanOrEqualTo(watchLaterRow.bottom));
+      expect(createPlaylistRow.top, greaterThanOrEqualTo(watchLaterRow.bottom));
+      expect(playlistRow.top, greaterThanOrEqualTo(createPlaylistRow.bottom));
       expect(
         tester.getSize(find.byKey(const ValueKey('libraryBottomInset'))).height,
         AppSizes.bottomNav + AppSpacing.xl,

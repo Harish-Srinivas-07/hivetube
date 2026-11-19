@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:media_kit/media_kit.dart';
@@ -12,9 +13,9 @@ import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/providers.dart';
+import 'package:hivetube/core/streams/stream_selector.dart';
 import 'package:hivetube/core/yt/watch_info.dart';
 import 'package:hivetube/core/yt/yt_comments.dart';
-import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/features/channel/channel_screen.dart';
 import 'package:hivetube/features/watch/mini_player_inset.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
@@ -189,6 +190,7 @@ Widget _buildTestApp({
   Widget? child,
   bool listenPlayback = false,
   GlobalKey? miniPlayerKey,
+  WatchInfo? savedInfo,
 }) {
   final db = AppDb(NativeDatabase.memory());
   addTearDown(db.close);
@@ -199,11 +201,12 @@ Widget _buildTestApp({
       playerUiProvider.overrideWith(
         listenPlayback ? _ListeningUi.new : _FakeUi.new,
       ),
-      shortMetadataProvider('vid1').overrideWith((ref) async => null),
       relatedVideosProvider('vid1').overrideWith(_NoRelated.new),
-      watchInfoProvider(
-        'vid1',
-      ).overrideWith((ref) => Completer<WatchInfo>().future),
+      watchInfoProvider('vid1').overrideWith(
+        (ref) => savedInfo == null
+            ? Completer<WatchInfo>().future
+            : Future.value(savedInfo),
+      ),
       watchCommentsProvider(
         'cToken',
       ).overrideWith((ref) async => _dummyComments),
@@ -234,6 +237,48 @@ Widget _buildTestApp({
 }
 
 void main() {
+  testWidgets('audio-only playback shows the saved video thumbnail', (
+    tester,
+  ) async {
+    final service = _MockPlaybackService()..state.mode = PlaybackMode.audio;
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      _buildTestApp(
+        service: service,
+        onRef: (ref) => capturedRef = ref,
+        savedInfo: const WatchInfo(
+          id: 'vid1',
+          title: 'Downloaded audio',
+          channelName: 'Test channel',
+          channelId: 'UCtest',
+          avatar: '',
+          subscribers: '',
+          description: '',
+          likes: '',
+          views: '',
+          date: '',
+          handle: '',
+          commentsToken: null,
+          related: VideoPage([], null),
+          chapters: [],
+          chips: {},
+          thumbnail: 'https://example.com/audio-cover.jpg',
+        ),
+      ),
+    );
+    capturedRef.read(watchPanelProvider.notifier).open('vid1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      tester
+          .widget<CachedNetworkImage>(find.byType(CachedNetworkImage).first)
+          .imageUrl,
+      'https://example.com/audio-cover.jpg',
+    );
+    expect(service.state.frameReadyId, isNull);
+  });
+
   testWidgets('watch panel ignores dimensions from the preceding Short', (
     tester,
   ) async {

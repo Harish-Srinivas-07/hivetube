@@ -488,6 +488,7 @@ class AppIconButton extends StatelessWidget {
     this.color,
     this.backgroundColor,
     this.tonal = true,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -497,6 +498,7 @@ class AppIconButton extends StatelessWidget {
   final Color? color;
   final Color? backgroundColor;
   final bool tonal;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -505,6 +507,23 @@ class AppIconButton extends StatelessWidget {
     final bgColor =
         backgroundColor ??
         (tonal ? cs.surfaceContainerHighest : AppColors.transparent);
+
+    if (compact) {
+      return SizedBox.square(
+        dimension: AppSizes.buttonCompact,
+        child: IconButton(
+          icon: Icon(icon, size: size, color: effectiveColor),
+          onPressed: onPressed,
+          tooltip: tooltip,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(
+            width: AppSizes.buttonCompact,
+            height: AppSizes.buttonCompact,
+          ),
+        ),
+      );
+    }
 
     return SizedBox.square(
       dimension: AppSizes.buttonIconTouch,

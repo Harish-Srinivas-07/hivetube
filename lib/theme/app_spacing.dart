@@ -17,6 +17,7 @@ abstract final class AppSpacing {
   static const double videoMaxWidth = 360,
       shortWidth = 128,
       homeShortWidth = 150,
+      searchShortWidth = 180,
       homeLandscapeShortWidth = 160,
       homeLandscapeCardMaxWidth = 320,
       homeShortRatio = 2 / 3,

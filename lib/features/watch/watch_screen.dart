@@ -31,6 +31,7 @@ import '../../widgets/ui/ui.dart';
 import '../../widgets/player/player_controls.dart';
 import '../../widgets/video_options_menu.dart';
 import 'watch_panel.dart';
+import 'offline_watch.dart';
 import 'watch_rules.dart';
 import 'queue_sheet.dart';
 import '../home/home_variety.dart';
@@ -38,57 +39,65 @@ import '../downloads/downloads_screen.dart';
 import '../playlist/save_to_playlist_sheet.dart';
 import '../../core/db/app_db.dart';
 
+Future<WatchInfo> _savedOfflineWatchInfo(Ref ref, String id) async {
+  final db = ref.read(dbProvider);
+  final downloads =
+      await (db.select(db.downloads)
+            ..where((row) => row.videoId.equals(id))
+            ..where((row) => row.status.equals('completed')))
+          .get();
+  if (downloads.isEmpty) throw StateError('No saved video metadata');
+  final media = await (db.select(
+    db.media,
+  )..where((row) => row.videoId.equals(id))).getSingleOrNull();
+  if (media == null) throw StateError('No saved video metadata');
+  final metadata = await ref.read(downloadManagerProvider).metadata.read(id);
+  String saved(String key) => metadata[key] as String? ?? '';
+  return WatchInfo(
+    id: id,
+    title: media.title,
+    channelName: media.channelName,
+    channelId: media.channelId,
+    thumbnail: saved('thumbnail').isNotEmpty
+        ? saved('thumbnail')
+        : media.thumbUrl,
+    durationSec: metadata['durationSec'] as int? ?? media.durationSec ?? 0,
+    avatar: saved('avatar'),
+    subscribers: saved('subscribers'),
+    description: saved('description'),
+    likes: saved('likes'),
+    views: saved('views'),
+    date: saved('date'),
+    handle: saved('handle'),
+    commentsToken: null,
+    related: const VideoPage([], null),
+    chapters: (metadata['chapters'] as List? ?? [])
+        .whereType<List>()
+        .where(
+          (chapter) =>
+              chapter.length == 2 && chapter[0] is String && chapter[1] is int,
+        )
+        .map(
+          (chapter) => WatchChapter(
+            chapter[0] as String,
+            Duration(milliseconds: chapter[1] as int),
+          ),
+        )
+        .toList(),
+    chips: const {},
+  );
+}
+
 final watchInfoProvider = FutureProvider.family<WatchInfo, String>((
   ref,
   id,
 ) async {
   ref.watch(contentPrefsProvider.select((prefs) => prefs.prefsVersion));
+  if (ref.watch(isOfflineProvider)) return _savedOfflineWatchInfo(ref, id);
   try {
     return await (await ref.watch(ytApiProvider.future)).next.watch(id);
   } catch (_) {
-    final db = ref.read(dbProvider);
-    final downloads =
-        await (db.select(db.downloads)
-              ..where((row) => row.videoId.equals(id))
-              ..where((row) => row.status.equals('completed')))
-            .get();
-    if (downloads.isEmpty) rethrow;
-    final media = await (db.select(
-      db.media,
-    )..where((row) => row.videoId.equals(id))).getSingleOrNull();
-    if (media == null) rethrow;
-    final metadata = await ref.read(downloadManagerProvider).metadata.read(id);
-    String saved(String key) => metadata[key] as String? ?? '';
-    return WatchInfo(
-      id: id,
-      title: media.title,
-      channelName: media.channelName,
-      channelId: media.channelId,
-      thumbnail: saved('thumbnail').isNotEmpty
-          ? saved('thumbnail')
-          : media.thumbUrl,
-      durationSec: metadata['durationSec'] as int? ?? media.durationSec ?? 0,
-      avatar: saved('avatar'),
-      subscribers: saved('subscribers'),
-      description: saved('description'),
-      likes: saved('likes'),
-      views: saved('views'),
-      date: saved('date'),
-      handle: saved('handle'),
-      commentsToken: null,
-      related: const VideoPage([], null),
-      chapters: (metadata['chapters'] as List? ?? [])
-          .whereType<List>()
-          .where((c) => c.length == 2 && c[0] is String && c[1] is int)
-          .map(
-            (c) => WatchChapter(
-              c[0] as String,
-              Duration(milliseconds: c[1] as int),
-            ),
-          )
-          .toList(),
-      chips: const {},
-    );
+    return _savedOfflineWatchInfo(ref, id);
   }
 });
 final watchCommentsProvider = FutureProvider.family<CommentPage, String>(
@@ -277,6 +286,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     unawaited(_start(ref.read(playbackProvider)));
   }
 
+  void _cancelCountdownForReplay() {
+    countdown?.cancel();
+    countdown = null;
+    cancelledFor = id;
+    if (mounted) setState(() => countdownFor = null);
+  }
+
   Future<void> _loadMore() async {
     final token = relatedFilter == 'All' ? continuation : filteredContinuation;
     if (paging || token == null) return;
@@ -388,6 +404,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(contentPrefsProvider);
+    final isOffline = ref.watch(isOfflineProvider);
+    final offlineVideos = isOffline
+        ? ref.watch(offlineWatchVideosProvider).asData?.value ??
+              const <VideoItem>[]
+        : const <VideoItem>[];
     final service = ref.watch(playbackProvider);
     ref.listen<PlaybackService?>(playbackProvider, (_, current) {
       if (current != null) unawaited(_start(current));
@@ -439,7 +460,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         });
       }
     }
-    final relatedCandidates = relatedFilter == 'All'
+    final relatedCandidates = isOffline
+        ? offlineVideos
+        : relatedFilter == 'All'
         ? [
             if (info != null) ...info.related.items.where((v) => !v.isShort),
             ...extra,
@@ -456,13 +479,21 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
     final queueEntries = ref.watch(sessionQueueProvider);
     final queue = queueEntries.map((entry) => entry.video).toList();
-    final next = selectUpNext(
-      queue: queue,
-      related: related,
-      finished: finished,
-      currentId: id,
-    );
-    if (service?.state.status == PlayerStatus.ended &&
+    final next = isOffline
+        ? selectOfflineUpNext(
+            queue: queue,
+            downloaded: offlineVideos,
+            finished: finished,
+            currentId: id,
+          )
+        : selectUpNext(
+            queue: queue,
+            related: related,
+            finished: finished,
+            currentId: id,
+          );
+    if (!widget.embedded &&
+        service?.state.status == PlayerStatus.ended &&
         ref.read(contentPrefsProvider).autoplay &&
         next != null &&
         cancelledFor != id &&
@@ -470,8 +501,13 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       countdownFor = id;
       seconds = 5;
       countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) {
+        if (!mounted ||
+            service?.state.status != PlayerStatus.ended ||
+            !ref.read(contentPrefsProvider).autoplay) {
           timer.cancel();
+          countdown = null;
+          countdownFor = null;
+          if (mounted) setState(() {});
           return;
         }
         setState(() => seconds--);
@@ -481,12 +517,19 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               .read(sessionQueueProvider)
               .map((entry) => entry.video)
               .toList();
-          final target = selectUpNext(
-            queue: currentQueue,
-            related: related,
-            finished: finished,
-            currentId: id,
-          );
+          final target = isOffline
+              ? selectOfflineUpNext(
+                  queue: currentQueue,
+                  downloaded: offlineVideos,
+                  finished: finished,
+                  currentId: id,
+                )
+              : selectUpNext(
+                  queue: currentQueue,
+                  related: related,
+                  finished: finished,
+                  currentId: id,
+                );
           if (target == null) {
             countdownFor = null;
             return;
@@ -521,6 +564,10 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                     videoOverride: widget.videoOverride,
                     chapters: info?.chapters ?? const [],
                     onChapters: () => _showChapters(info?.chapters ?? const []),
+                    autoplayCountdown: countdownFor == id && seconds > 0
+                        ? seconds
+                        : null,
+                    onReplayFromStart: _cancelCountdownForReplay,
                     onMinimize: () => unawaited(_back()),
                     onPrevious: previous.isEmpty
                         ? null
@@ -541,7 +588,11 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   ),
           );
     if (!ui.isFullscreen) {
-      player = AspectRatio(aspectRatio: inlineAspectRatio, child: player);
+      player = AspectRatio(
+        key: const ValueKey('watchVideoAspectRatio'),
+        aspectRatio: inlineAspectRatio,
+        child: player,
+      );
     }
     final details = info == null
         ? Center(
@@ -552,7 +603,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   )
                 : const CircularProgressIndicator(),
           )
-        : _details(info, related, heavyContentReady: heavyContentReady);
+        : _details(
+            info,
+            related,
+            heavyContentReady: heavyContentReady,
+            isOffline: isOffline,
+          );
     return Focus(
       autofocus: true,
       onKeyEvent: (_, event) {
@@ -652,7 +708,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                   ),
                                   Expanded(
                                     child: heavyContentReady
-                                        ? _relatedList(related)
+                                        ? isOffline
+                                              ? const SizedBox.shrink()
+                                              : _relatedList(related)
                                         : const SizedBox.shrink(),
                                   ),
                                 ],
@@ -843,8 +901,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         ? AppSpacing.sheetMaxHeightFactor
         : 1.0;
     return min(
-      (viewport.height - bottomInset - videoBottom + AppSpacing.xl) /
-          viewport.height,
+      (viewport.height - bottomInset - videoBottom) / viewport.height,
       sheetLimit,
     ).clamp(0.01, sheetLimit);
   }
@@ -853,6 +910,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     WatchInfo info,
     List<VideoItem> related, {
     required bool heavyContentReady,
+    required bool isOffline,
   }) => CustomScrollView(
     controller: scroll,
     slivers: [
@@ -1095,7 +1153,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   ],
                 ),
               ),
-              if (heavyContentReady && info.commentsToken != null) ...[
+              if (!isOffline &&
+                  heavyContentReady &&
+                  info.commentsToken != null) ...[
                 const SizedBox(height: AppSpacing.md),
                 Consumer(
                   builder: (context, ref, _) {
@@ -1190,40 +1250,42 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           ),
         ),
       ),
-      SliverToBoxAdapter(
-        child: SizedBox(
-          height: AppSizes.chipHeight + AppSpacing.md + AppSpacing.sm,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.sm,
-            ),
-            children: [
-              for (final label in [
-                'All',
-                if (info.channelName.isNotEmpty) 'From ${info.channelName}',
-                ...info.chips.keys,
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(right: AppSpacing.sm),
-                  child: AppChip(
-                    label: label,
-                    selected: relatedFilter == label,
-                    onTap: () => _selectRelated(info, label),
+      if (!isOffline) ...[
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: AppSizes.chipHeight + AppSpacing.md + AppSpacing.sm,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.sm,
+              ),
+              children: [
+                for (final label in [
+                  'All',
+                  if (info.channelName.isNotEmpty) 'From ${info.channelName}',
+                  ...info.chips.keys,
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: AppSpacing.sm),
+                    child: AppChip(
+                      label: label,
+                      selected: relatedFilter == label,
+                      onTap: () => _selectRelated(info, label),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-      const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
-      SliverList.builder(
-        itemCount: related.length,
-        itemBuilder: (context, index) => _video(related[index]),
-      ),
+        const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
+        SliverList.builder(
+          itemCount: related.length,
+          itemBuilder: (context, index) => _video(related[index]),
+        ),
+      ],
       SliverBottomInset(
         extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
       ),

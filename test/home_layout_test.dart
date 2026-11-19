@@ -45,9 +45,12 @@ void main() {
   testWidgets('feed cards retain the supplied thumbnail quality', (
     tester,
   ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
     const url = 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg';
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [dbProvider.overrideWithValue(db)],
         child: MaterialApp(
           home: Scaffold(
             body: VideoCard.feed(

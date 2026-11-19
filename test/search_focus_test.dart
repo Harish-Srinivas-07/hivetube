@@ -1,17 +1,21 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/native.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/yt/parser.dart';
 import 'package:hivetube/core/yt/yt_search.dart';
 import 'package:hivetube/features/search/search_screen.dart';
+import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/services/search_suggestions.dart';
+import 'package:hivetube/theme/app_spacing.dart';
 import 'package:hivetube/widgets/ui/ui.dart';
 
 void main() {
@@ -73,28 +77,44 @@ void main() {
   ) async {
     final db = AppDb(NativeDatabase.memory());
     addTearDown(db.close);
+    final container = ProviderContainer(
+      overrides: [
+        dbProvider.overrideWithValue(db),
+        ytApiProvider.overrideWith((ref) async => _ShortsApi()),
+        recentSearchesStreamProvider.overrideWith(
+          (ref) => Stream.value(const <String>[]),
+        ),
+        subscriptionsStreamProvider.overrideWith((ref) => const Stream.empty()),
+      ],
+    );
+    addTearDown(container.dispose);
+    final router = GoRouter(
+      initialLocation: '/search',
+      routes: [
+        GoRoute(
+          path: '/search',
+          builder: (_, _) => SearchScreen(
+            initialQuery: 'music',
+            suggestionSource: _FakeSuggestionSource(),
+          ),
+        ),
+        GoRoute(
+          path: '/shorts',
+          builder: (_, _) => const Scaffold(body: Text('shorts route')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          dbProvider.overrideWithValue(db),
-          ytApiProvider.overrideWith((ref) async => _ShortsApi()),
-          recentSearchesStreamProvider.overrideWith(
-            (ref) => Stream.value(const <String>[]),
-          ),
-          subscriptionsStreamProvider.overrideWith(
-            (ref) => const Stream.empty(),
-          ),
-        ],
-        child: MaterialApp(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
             ).copyWith(textScaler: const TextScaler.linear(1.3)),
             child: child!,
-          ),
-          home: SearchScreen(
-            initialQuery: 'music',
-            suggestionSource: _FakeSuggestionSource(),
           ),
         ),
       ),
@@ -108,11 +128,27 @@ void main() {
     );
     expect(find.text('Standalone short'), findsOneWidget);
     expect(find.text('123 views'), findsOneWidget);
+    expect(
+      tester.widget<ShortsShelf>(find.byType(ShortsShelf)).cardWidth,
+      AppSpacing.searchShortWidth,
+    );
+    expect(
+      tester
+          .widget<CachedNetworkImage>(
+            find.byKey(const ValueKey('shortsShelfThumbnail:one:preferred')),
+          )
+          .imageUrl,
+      'https://i.ytimg.com/vi/one/maxresdefault.jpg',
+    );
     expect(find.byTooltip('More options'), findsNWidgets(2));
     expect(
       tester.widget<GridView>(find.byType(GridView)).scrollDirection,
       Axis.horizontal,
     );
+    await tester.tap(find.text('A longer title that wraps across two lines'));
+    await tester.pumpAndSettle();
+    expect(find.text('shorts route'), findsOneWidget);
+    expect(container.read(shortsSelectionProvider).items.single.id, 'one');
     expect(tester.takeException(), isNull);
   });
 
@@ -246,7 +282,7 @@ class _ShortsSearch extends Fake implements YtSearch {
       ShortsShelfSearchResult([
         ShortItem(
           id: 'one',
-          thumbUrl: '',
+          thumbUrl: 'https://i.ytimg.com/vi/one/hqdefault.jpg',
           title: 'A longer title that wraps across two lines',
           viewsText: '123 views',
         ),

@@ -141,4 +141,27 @@ void main() {
       valid,
     );
   });
+  test('offline up next skips queued videos without a local download', () {
+    const online = VideoItem(id: 'online', title: 'Online');
+    const current = VideoItem(id: 'current', title: 'Current');
+    const downloaded = VideoItem(id: 'downloaded', title: 'Downloaded');
+    expect(
+      selectOfflineUpNext(
+        queue: [online],
+        downloaded: [current, downloaded],
+        finished: const {},
+        currentId: current.id,
+      ),
+      downloaded,
+    );
+    expect(
+      selectOfflineUpNext(
+        queue: [online, downloaded],
+        downloaded: [current, downloaded],
+        finished: const {},
+        currentId: current.id,
+      ),
+      downloaded,
+    );
+  });
 }

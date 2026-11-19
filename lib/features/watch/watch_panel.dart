@@ -24,10 +24,10 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/player/player_controls.dart';
-import '../shorts/shorts_screen.dart';
 import '../home/home_variety.dart';
 import 'mini_player_inset.dart';
 import 'watch_screen.dart';
+import 'offline_watch.dart';
 
 // ─────────────────────────── providers ───────────────────────────────────────
 
@@ -92,6 +92,9 @@ class RelatedVideosController extends AsyncNotifier<List<VideoItem>> {
   final String id;
   @override
   Future<List<VideoItem>> build() async {
+    if (ref.watch(isOfflineProvider)) {
+      return ref.watch(offlineWatchVideosProvider.future);
+    }
     final prefs = ref.watch(contentPrefsProvider);
     final items = (await (await ref.watch(
       ytApiProvider.future,
@@ -376,21 +379,38 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     final service = ref.watch(playbackProvider);
     final ui = ref.watch(playerUiProvider);
     final miniCorner = ref.watch(miniCornerProvider);
-    final metadataState = ref.watch(shortMetadataProvider(id));
+    final metadataState = ref.watch(watchInfoProvider(id));
     final metadata = metadataState.value;
-    final title = metadata?.title?.trim().isNotEmpty == true
-        ? metadata!.title!.trim()
+    final title = metadata?.title.trim().isNotEmpty == true
+        ? metadata!.title.trim()
         : metadataState.isLoading
         ? 'Loading…'
         : 'Video details unavailable';
-    final channelName = metadata?.channelName?.trim() ?? '';
+    final channelName = metadata?.channelName.trim() ?? '';
     final related =
         ref.watch(relatedVideosProvider(id)).value ?? const <VideoItem>[];
+    final isOffline = ref.watch(isOfflineProvider);
+    final offlineIds = related.map((video) => video.id).toSet();
+    final queueEntries = ref.watch(sessionQueueProvider);
+    final queue = queueEntries.map((entry) => entry.video).toList();
+    final queuedOfflineNext = isOffline
+        ? ref
+              .read(watchSessionProvider.notifier)
+              .firstUnplayed(
+                queue
+                    .where((video) => offlineIds.contains(video.id))
+                    .map((video) => video.id),
+              )
+        : null;
     ref.watch(watchSessionProvider);
-    final nextId = ref
-        .read(watchSessionProvider.notifier)
-        .firstUnplayed(related.map((v) => v.id));
-    final hasQueuedNext = ref.watch(sessionQueueProvider).isNotEmpty;
+    final nextId =
+        queuedOfflineNext ??
+        ref
+            .read(watchSessionProvider.notifier)
+            .firstUnplayed(related.map((video) => video.id));
+    final hasQueuedNext = isOffline
+        ? queuedOfflineNext != null
+        : queue.isNotEmpty;
     final playbackController = ref.read(playbackProvider.notifier);
     _playbackController = playbackController;
     playbackController.updateRelatedVideos(related);
@@ -402,7 +422,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
         unawaited(_start(id, service));
         _syncAutoplay(id, service, unplayed, autoplay);
         final handler = ref.read(audioHandlerProvider);
-        final thumbnail = metadata?.thumbUrl;
+        final thumbnail = metadata?.thumbnail;
         handler?.setMetadata(
           id,
           title,
@@ -511,14 +531,37 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                     key: _sharedVideoKey,
                     service: service,
                     requestVideoId: id,
-                    thumbnailUrl: metadata?.thumbUrl ?? '',
+                    thumbnailUrl: metadata?.thumbnail ?? '',
                     topInsetAlreadyApplied: true,
                     videoOverride: widget.videoOverride,
                     onMinimize: () => _animate(0),
                     onPrevious: playbackController.skipToPrevious,
                     onNext: !hasQueuedNext && nextId == null
                         ? null
+                        : isOffline
+                        ? () {
+                            if (nextId == null) return;
+                            if (queueEntries.firstOrNull?.video.id == nextId) {
+                              ref
+                                  .read(sessionQueueProvider.notifier)
+                                  .takeNext();
+                            }
+                            _openExpanded(nextId);
+                          }
                         : playbackController.skipToNext,
+                    autoplayCountdown:
+                        _countdownId == id &&
+                            _countdown != null &&
+                            _remaining > 0
+                        ? _remaining
+                        : null,
+                    onReplayFromStart: () {
+                      _countdown?.cancel();
+                      _countdown = null;
+                      _countdownId = null;
+                      _cancelledAutoplayId = id;
+                      if (mounted) setState(() {});
+                    },
                     onPanelDragUpdate: (dy) {
                       animation.stop();
                       animation.value =

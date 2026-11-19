@@ -45,6 +45,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
   final Map<String, List<dynamic>> _itemsByTab = {};
   final Map<String, String?> _continuationByTab = {};
   final Set<String> _loadedTabs = {};
+  final Set<String> _failedTabs = {};
   final Map<String, String?> _sortByTab = {};
   final Set<String> _loadingTabs = {};
 
@@ -65,6 +66,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       _itemsByTab.clear();
       _continuationByTab.clear();
       _loadedTabs.clear();
+      _failedTabs.clear();
       _sortByTab.clear();
       _selectedTabIndex = 0;
       _resolvedChannelId = '';
@@ -184,6 +186,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
     if (tab == 'About' || data == null || _loadingTabs.contains(tab)) return;
     if (!refresh && _loadedTabs.contains(tab)) return;
     _loadingTabs.add(tab);
+    _failedTabs.remove(tab);
     if (mounted) setState(() {});
     try {
       final api = await ref.read(ytApiProvider.future);
@@ -196,6 +199,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
         _itemsByTab[tab] = List<dynamic>.of(page.currentTabItems);
         _continuationByTab[tab] = page.continuation;
         _loadedTabs.add(tab);
+        _failedTabs.remove(tab);
         if (page.sortChips.isNotEmpty) {
           data = _copyWithSortChips(data!, page.sortChips);
         }
@@ -203,7 +207,10 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       });
     } catch (_) {
       if (mounted) {
-        setState(() => partialError = 'Some channel content could not load.');
+        setState(() {
+          _failedTabs.add(tab);
+          partialError = 'Some channel content could not load.';
+        });
       }
     } finally {
       _loadingTabs.remove(tab);
@@ -616,27 +623,26 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
                 if (channel.description.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.md),
                   InkWell(
+                    key: const ValueKey('channelDescription'),
                     onTap: _showChannelDescription,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            channel.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: channel.description),
+                          TextSpan(
+                            text: ' more',
                             style: AppTextStyles.meta.copyWith(
-                              color: colors.onSurfaceVariant,
+                              color: colors.onSurface,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                        Text(
-                          ' more',
-                          style: AppTextStyles.meta.copyWith(
-                            color: colors.onSurface,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.meta.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -715,8 +721,13 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
       );
     }
 
-    if (_loadingTabs.contains(tab) && !_loadedTabs.contains(tab)) {
-      slivers.add(const SliverToBoxAdapter(child: _ChannelTabSkeleton()));
+    if (!_loadedTabs.contains(tab) && !_failedTabs.contains(tab)) {
+      slivers.add(
+        SliverToBoxAdapter(
+          key: ValueKey('channelTabLoading:$tab'),
+          child: const _ChannelTabSkeleton(),
+        ),
+      );
       slivers.add(_bottomInset(context));
       return slivers;
     }

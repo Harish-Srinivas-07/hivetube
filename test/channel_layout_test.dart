@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +20,7 @@ class _ChannelApi extends Fake implements YtApi {
 }
 
 class _ChannelBrowse extends Fake implements YtBrowse {
+  static Completer<ChannelPageData>? pendingVideos;
   @override
   Future<ChannelAboutData> channelAbout(String channelId) async =>
       const ChannelAboutData(
@@ -31,28 +34,90 @@ class _ChannelBrowse extends Fake implements YtBrowse {
     String? params,
     String? continuation,
     CancelToken? cancelToken,
-  }) async => ChannelPageData(
-    id: channelId,
-    name: 'Test channel',
-    handle: '@testchannel',
-    subscribersText: '100 subscribers',
-    videosCountText: '12 videos',
-    bannerUrl: 'https://example.invalid/banner.jpg',
-    tabs: const ['Home', 'Shorts'],
-    currentTabItems: params == YtBrowse.tabParamsShorts
-        ? const [
-            ShortItem(
-              id: 'short-1',
-              thumbUrl: '',
-              title: 'A Short title',
-              viewsText: '1K views',
-            ),
-          ]
-        : const [],
-  );
+  }) async {
+    if (params == YtBrowse.tabParamsVideos && pendingVideos != null) {
+      return pendingVideos!.future;
+    }
+    return ChannelPageData(
+      id: channelId,
+      name: 'Test channel',
+      handle: '@testchannel',
+      subscribersText: '100 subscribers',
+      videosCountText: '12 videos',
+      description:
+          'This channel description should use two full lines before the more link appears.',
+      bannerUrl: 'https://example.invalid/banner.jpg',
+      tabs: const ['Home', 'Videos', 'Shorts'],
+      currentTabItems: params == YtBrowse.tabParamsShorts
+          ? const [
+              ShortItem(
+                id: 'short-1',
+                thumbUrl: '',
+                title: 'A Short title',
+                viewsText: '1K views',
+              ),
+            ]
+          : const [],
+    );
+  }
 }
 
 void main() {
+  testWidgets(
+    'unloaded channel tab shows loading skeleton until data arrives',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final pending = Completer<ChannelPageData>();
+      _ChannelBrowse.pendingVideos = pending;
+      addTearDown(() => _ChannelBrowse.pendingVideos = null);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ytApiProvider.overrideWith((ref) async => _ChannelApi()),
+            subscriptionRepoProvider.overrideWithValue(EmptySubscriptionRepo()),
+          ],
+          child: const MaterialApp(home: ChannelScreen(channelId: 'UCtest')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Videos'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.byKey(const ValueKey('channelTabLoading:Videos')),
+        findsOneWidget,
+      );
+      expect(find.text('This channel has no videos'), findsNothing);
+      pending.complete(
+        ChannelPageData(
+          id: 'UCtest',
+          name: 'Test channel',
+          handle: '@testchannel',
+          tabs: const ['Home', 'Videos', 'Shorts'],
+          currentTabItems: const [
+            VideoItem(
+              id: 'video-1',
+              title: 'Loaded video',
+              channelId: 'UCtest',
+              channelName: 'Test channel',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.byKey(const ValueKey('channelTabLoading:Videos')),
+        findsNothing,
+      );
+      expect(find.text('Loaded video'), findsOneWidget);
+    },
+  );
+
   testWidgets('channel Shorts show titles and a working options menu', (
     tester,
   ) async {
@@ -134,6 +199,16 @@ void main() {
     expect(find.text('Subscribe'), findsOneWidget);
     expect(find.text('Join'), findsNothing);
     expect(find.byTooltip('Community'), findsNothing);
+    final description = find.byKey(const ValueKey('channelDescription'));
+    expect(description, findsOneWidget);
+    expect(
+      tester
+          .widget<RichText>(
+            find.descendant(of: description, matching: find.byType(RichText)),
+          )
+          .maxLines,
+      2,
+    );
     final tabs = tester.widget<TabBar>(find.byType(TabBar));
     expect(tabs.indicatorColor, AppColors.primary);
     expect(tabs.labelColor, AppColors.primary);

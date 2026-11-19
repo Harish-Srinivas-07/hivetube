@@ -141,7 +141,7 @@ BEHAVIOR: selecting calls controller.select(chip); keep scroll position of bar; 
 DON'T: pill radius, border, shadow, elevation.
 
 ### 4.3 ThumbnailWithDuration
-Spec: AspectRatio 16/9, fill, placeholder=surfaceVariant flat (no spinner), CachedNetworkImage memCacheWidth = displayWidth*DPR, fadeIn 150ms.
+Spec: AspectRatio 16/9, fill, placeholder=surfaceVariant flat (no spinner), CachedNetworkImage memCacheWidth = displayWidth*DPR, fadeIn 150ms. For YouTube video IDs, request `maxresdefault.jpg`; if it is unavailable, retry the supplied thumbnail URL.
 Radius param: 0 (feed phone) | md (all others).
 Duration badge: bottom-right, inset 4, bg badgeBg, text badge, radius xs 4, pad h4 v2. In compact/history thumbs the badge MUST NOT hide title-relevant content: keep inset 4.
 Live: badge red bg, text "LIVE", same position. Upcoming: "UPCOMING" dark badge.
@@ -258,7 +258,7 @@ PlaylistRow (Library list): padding v8 h16. StackedCover width playlistRowThumbW
 Order top to bottom (screen gutter 16):
 1. Banner: margin h16, ratio bannerRatio, radius 12, cover fit. Hidden entirely (no placeholder gap) if the channel has none. Sits below the top bar (top bar does not overlay it).
 2. Identity row (pad T16): avatar 72 | 16 | Column: name headline + verified badge (check-circle icon verifiedIcon, onSurface) inline when verified; "@handle" bodyStrong? NO: handle meta onSurfaceVariant 14 (use body, onSurfaceVariant); "2.11m subscribers · 309 videos" meta onSurfaceVariant (use body size 14 onSurfaceVariant).
-3. Description: 1 line (body, onSurfaceVariant) + inline "...more" bodyStrong onSurface. Tap => About tab. Padding T12.
+3. Description: 2 lines (body, onSurfaceVariant) + inline "...more" bodyStrong onSurface. The text and "more" share the full content width. Tap => About tab. Padding T12.
 4. Links row (when links exist): link icon 16 + "Instagram and 2 more links" bodyStrong onSurface. Tap => links sheet (radio-less list, tap opens browser). Padding T8.
 5. Action pills row (pad T16, gap 8, height buttonLarge 40): Subscribe (filled; subscribed state = tonal + bell + chevron-down) | Join (tonal, star icon 20, only if the channel has memberships; opens the channel page in the external browser; MUST NOT show price/offer text) | Community (tonal, community icon 20, only if the Posts tab exists; switches to Posts tab). Row scrolls horizontally if it overflows; no scrollbar.
 6. Tab bar: sticky under the top bar. Tabs: Home, Videos, Shorts, Playlists, Posts (Posts only if the channel has posts; About is reached via description tap or the more menu). tabLabel, horizontal scroll, tab horizontal pad 12, tab spacing 0, selected indicator 2px onSurface under the label (full tab width), indicator slide 200ms.
@@ -295,7 +295,7 @@ Top: SearchField. Body modes:
  a) empty query: recents list (SuggestionRow history, max 10, "Clear all" text button right of a small header)
  b) typing: suggestions list (SuggestionRow), keyboard stays up, list scrolls with keyboard dismiss on drag.
  c) results: ChipBar (All, Videos, Channels, Playlists, Live — optional filter) then results list. Mix of VideoCard searchResult, channel row (avatar 72 + name bodyStrong + "@handle · N subscribers" meta + Subscribe button 36 right), playlist row (compact thumb with count badge + title + "Playlist · N videos"), Shorts shelf (horizontal) when present.
-Results gap 16. Infinite scroll via continuation; footer spinner 24.
+Results gap 16. Infinite scroll via continuation; footer spinner 24. Search Shorts shelf cards are 180 px wide and prefer YouTube `maxresdefault.jpg`, falling back to the supplied thumbnail URL.
 States: loading=Skeleton (searchResult layout) | empty="No results for 'x'" + subtitle "Try different keywords" | error=ErrorRetry.
 Behavior: submitting saves term (await) to history (max 5-10 unique), unfocuses field, runs search. Back clears to prior mode. Focus must stay stable while suggestions update (existing focus test must pass).
 
@@ -307,10 +307,11 @@ Expanded layout (phone portrait): player 16:9 pinned top (stays while below scro
  3. ActionRow (4.11).
  4. Comments teaser: surfaceVariant rounded 12 card (flat) pad 12: "Comments N" bodyStrong + top comment preview 1-2 lines + avatar 24. Tap => comments sheet (draggable, snap 60%/100%).
  5. Related: VideoCard feed mode list (phone). Loading more on scroll.
-Description: DescriptionSheet (4.27) is the single description UI. Show full text, links tappable, hashtags bodyStrong, chapters list tappable (seek).
+Description: DescriptionSheet (4.27) is the single description UI. Show full text, links tappable, hashtags bodyStrong, chapters list tappable (seek). Description and comments sheets stay below the video player's bottom edge.
 Minimize: vertical drag on player; panel collapses to MiniPlayer; audio continues (background play + media notification). Close removes session.
-Fullscreen: rotate or button; controls 4.20. Exit restores portrait panel.
-Audio-only mode: toggle in player settings sheet. Video surface replaced by thumbnail; mode switch keeps position.
+Fullscreen: rotate or button; controls 4.20. Exit restores portrait panel. When playback ends, replace the center play/pause control with a "Replay from start" button. During autoplay countdown, show "Up next in N" directly below the replay button in both inline and fullscreen players. Replay cancels the pending autoplay countdown.
+Offline playback: hide comments and related-video filters/lists. Autoplay and Next may select only completed local video downloads with an existing file; never open an online recommendation while disconnected.
+Audio-only mode: toggle in player settings sheet. Video surface replaced by the saved video thumbnail, including audio-only downloads; mode switch keeps position.
 States: loading=player black 16:9 with centered spinner + below skeleton (title bars, channel row, actions) | error (stream fail)=in-player centered "Playback error" + Retry text button | unavailable video=message in place of player.
 Behavior extras: SponsorBlock auto-skip segments with snackbar "Skipped sponsor" + Undo; RYD dislike count; resume position from history; autoplay next from related (setting); history entry saved on play.
 Motion: expand/collapse follows drag 1:1, settle slow 300ms easeOutCubic; content below fades in 150ms once player expanded.
@@ -335,7 +336,7 @@ Header scrolls away with the content; tabs pin under the glass top bar.
  - Playlists: 2-col grid of PlaylistCard, gap 12, pad h16.
  - Posts: list of text posts (avatar 36 + name bodyStrong + time meta; body text max 8 lines + "Read more"; image radius 12 if any; like count meta). Tab hidden when the channel has no posts.
  - About: description text, links, joined date, location, view count, stats as 2-line rows (settingsTitle + settingsSub).
-States: loading=ChannelHeader skeleton + tab body skeleton | error=ErrorRetry | empty tab=EmptyState ("This channel has no videos").
+States: loading=ChannelHeader skeleton + tab body skeleton; each tab shows its body skeleton until its first load succeeds or fails | error=ErrorRetry | empty tab=EmptyState ("This channel has no videos").
 Behavior: subscribe toggles local subscription + optimistic UI; notification bell sheet (All/Personalized/None) when subscribed.
 
 ### 5.6 LIBRARY (tab 3, "You")
@@ -347,7 +348,7 @@ Layout top->bottom:
  4. History shelf: SectionHeader linked "History >" (tap => /history). Horizontal list pad L16, gap 16, card width historyCardW (144): thumb 16:9 radius 12 with duration badge + progress bar; below pad T8: title videoTitle max2 + 3-dot 24 trailing, meta 12 max1 (channel name). Empty: EmptyState compact ("Videos you watch will show here").
  5. SectionHeader plain "Library" (sectionTitle).
  6. Chip row (AppChipBar, pad L16): AppChip.dropdown "Recent" (sort sheet: Recent, A–Z, Recently added) | "Downloaded" | "Playlists" (filter chips, toggle; none selected = show all).
- 7. PlaylistRow list (4.23): built-ins first (Liked videos, Watch later, Downloads when files exist), then user playlists per sort. Each row has a 3-dot menu (Play all, Share, Delete for user playlists). Empty (no user playlists): one PlaylistRow-style row "New playlist" with plus icon in the cover slot.
+ 7. PlaylistRow list (4.23): built-ins first (Liked videos, Watch later, Downloads when files exist), then a "Create playlist" row with plus icon, then user playlists per sort. Keep the create row visible when playlists already exist. Each playlist row has a 3-dot menu (Play all, Share, Delete for user playlists).
 States: loading=header skeleton + shelf/list skeletons | each section has its own empty (never one global empty).
 Downloads: completed videos can be copied to Gallery and Downloads; completed audio can be copied to Downloads. Export retains the original format and adds the `_HiveTibe` suffix.
 Behavior: Backup opens bottom sheet: Export to file / Import from file (+ Takeout import). Edit profile opens bottom sheet with avatar picker + name field (text field style: surfaceVariant fill, radius 12, no border). Stats lives in ProfileSheet. Pull-to-refresh refreshes shelves.
@@ -402,7 +403,7 @@ Never: blank screen, text-only "No videos found" without layout, multiple stacke
 
 ## 7. PERFORMANCE RULES (UI)
 - Feeds: SliverList.builder, stable ValueKey(id), addAutomaticKeepAlives false, RepaintBoundary per card, no Opacity/ClipRRect around large subtrees unless needed (ClipRRect only on thumb).
-- Images: CachedNetworkImage with memCacheWidth/maxWidthDiskCache = logical width * DPR; low-res placeholder = flat color; fadeInDuration 150ms; never decode full-size for thumbs. Banner/avatars follow the same rule.
+- Images: CachedNetworkImage with memCacheWidth/maxWidthDiskCache = logical width * DPR; low-res placeholder = flat color; fadeInDuration 150ms; never decode full-size for thumbs. Video thumbnails prefer YouTube `maxresdefault.jpg` and fall back to the supplied URL. Banner/avatars follow the same cache-size rule.
 - Featured-panel dominant color: compute once per thumb URL off the UI thread, cache in memory; fall back to surfaceVariant while pending.
 - Provider reads: use ref.watch(provider.select(...)); parent lists MUST NOT watch per-item data (avatars, progress, like state). Per-item data via family providers inside the item.
 - Avatar/metadata backfill: batch or family provider; one state update does not rebuild the list.
