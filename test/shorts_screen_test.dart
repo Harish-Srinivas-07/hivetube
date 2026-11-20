@@ -64,6 +64,53 @@ class _VideoApi extends Fake implements YtApi {
 }
 
 void main() {
+  testWidgets('a routed Short with channel details has a Material ancestor', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    appRouter.go('/home');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          playbackProvider.overrideWith(_NoPlayback.new),
+          shortsFeedProvider.overrideWith(_NoFetchShortsFeed.new),
+          shortsSelectionProvider.overrideWith(
+            () => _SelectedShorts(
+              const ShortsSelection(
+                items: [
+                  ShortItem(
+                    id: 'channel-short',
+                    thumbUrl: '',
+                    title: 'A short',
+                    channelName: 'Channel',
+                    channelId: 'UCchannel',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          shortMetadataProvider(
+            'channel-short',
+          ).overrideWith((ref) async => null),
+        ],
+        child: const HiveTubeApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    appRouter.push('/shorts-player');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('@Channel'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(appRouter.routeInformationProvider.value.uri.path, '/home');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   test(
     'watch metadata uses video description when secondary info is empty',
     () {

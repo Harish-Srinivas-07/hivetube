@@ -334,7 +334,6 @@ class _DownloadItem extends ConsumerWidget {
                           : null,
                       onTap: () {
                         if (row.status == 'completed') {
-                          Navigator.pop(context);
                           openWatchPanel(ref, row.videoId);
                         } else {
                           showDownloadActions(

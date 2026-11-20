@@ -21,6 +21,7 @@ import 'package:hivetube/features/watch/mini_player_inset.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
+import 'package:hivetube/widgets/common/channel_avatar.dart';
 
 class _FakeMediaPlayerState extends Fake implements PlayerState {
   int? videoWidth;
@@ -101,6 +102,9 @@ class _MockPlaybackService extends Fake implements PlaybackService {
     _snapshot.status = PlayerStatus.playing;
     _notifyListeners();
   }
+
+  @override
+  Future<void> playVideoRequest(PlayRequest value) => play(value);
 
   @override
   Future<void> stop() async {
@@ -385,6 +389,109 @@ void main() {
     expect(find.byType(ChannelScreen), findsOneWidget);
     expect(find.byType(WatchScreen), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recommended channel avatar opens channel from player overlay', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final router = GoRouter(
+      navigatorKey: navigatorKey,
+      initialLocation: '/home',
+      routes: [
+        GoRoute(path: '/home', builder: (_, _) => const Scaffold()),
+        GoRoute(
+          path: '/channel/:id',
+          builder: (_, state) =>
+              Scaffold(body: Text('Channel ${state.pathParameters['id']}')),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    var minimized = false;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          isOfflineProvider.overrideWithValue(false),
+          playbackProvider.overrideWith(
+            () => _MockPlaybackController(_MockPlaybackService()),
+          ),
+          playerUiProvider.overrideWith(_FakeUi.new),
+          watchInfoProvider('vid1').overrideWith(
+            (ref) async => const WatchInfo(
+              id: 'vid1',
+              title: 'Video',
+              channelName: 'Original channel',
+              channelId: 'UCoriginal',
+              avatar: '',
+              subscribers: '',
+              description: '',
+              likes: '',
+              views: '',
+              date: '',
+              handle: '',
+              commentsToken: null,
+              chapters: [],
+              chips: {},
+              related: VideoPage([
+                VideoItem(
+                  id: 'related',
+                  title: 'A recommended video',
+                  channelId: 'UCrecommended',
+                  channelName: 'Recommended channel',
+                  channelAvatarUrl: 'https://example.com/avatar.jpg',
+                ),
+              ], null),
+            ),
+          ),
+          dislikeCountProvider('vid1').overrideWith((ref) async => 0),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (context, child) => StatefulBuilder(
+            builder: (context, setState) => Stack(
+              children: [
+                child!,
+                if (!minimized)
+                  Navigator(
+                    onGenerateRoute: (_) => MaterialPageRoute<void>(
+                      builder: (_) => WatchScreen(
+                        id: 'vid1',
+                        embedded: true,
+                        placeholderVideo: true,
+                        navigatorContext: () => navigatorKey.currentContext,
+                        onMinimize: () => setState(() => minimized = true),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final avatar = find.byWidgetPredicate(
+      (widget) =>
+          widget is ChannelAvatar && widget.name == 'Recommended channel',
+    );
+    expect(avatar, findsWidgets);
+    await tester.tap(avatar.last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(minimized, isTrue);
+    expect(find.text('Channel UCrecommended'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets(

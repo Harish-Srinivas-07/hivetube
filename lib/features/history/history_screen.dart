@@ -20,6 +20,7 @@ import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/ui/app_feedback.dart';
 import '../../widgets/ui/app_controls.dart';
 import '../watch/mini_player_inset.dart';
+import '../watch/watch_panel.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -434,7 +435,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         child: VideoCard.compact(
           video: _toVideo(item),
           progress: item.history.positionMs > 0 ? progress : null,
-          onTap: () => context.push('/watch/${item.history.videoId}'),
+          onTap: () => openWatchPanel(ref, item.history.videoId),
           trailing: SizedBox.square(
             dimension: AppSizes.buttonIcon,
             child: IconButton(

@@ -14,6 +14,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 
 import 'app/router.dart';
 import 'core/playback/player_ui_state.dart';
+import 'core/playback/picture_in_picture.dart';
 import 'core/providers.dart';
 import 'core/downloads/download_manager.dart';
 import 'core/content/language_profile.dart';
@@ -70,6 +71,13 @@ Future<void> main() async {
   final savedLocal = await db.getValue('settings_local_content');
   final savedAutoplay = await db.getValue('settings_autoplay');
   final savedBackgroundPlay = await db.getValue('settings_background_play');
+  final savedPictureInPicture = await db.getValue(
+    'settings_picture_in_picture',
+  );
+  final savedAudioOnly = await db.getValue('settings_audio_only');
+  if (savedBackgroundPlay == 'false' && savedAudioOnly == 'true') {
+    await db.setValue('settings_audio_only', 'false');
+  }
   final savedPreviewsEnabled = await db.getValue('settings_previews_enabled');
   final savedPreviewsWifiOnly = await db.getValue(
     'settings_previews_wifi_only',
@@ -108,6 +116,8 @@ Future<void> main() async {
     localContent: savedLocal != 'false',
     autoplay: savedAutoplay == 'true',
     backgroundPlay: savedBackgroundPlay != 'false',
+    pictureInPicture: savedPictureInPicture != 'false',
+    audioOnly: savedBackgroundPlay != 'false' && savedAudioOnly == 'true',
     previewsEnabled: savedPreviewsEnabled != 'false',
     previewsWifiOnly: savedPreviewsWifiOnly != 'false',
     videoQualityPreference: VideoQualityPreference.values.firstWhere(
@@ -166,6 +176,12 @@ class HiveTubeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.read(downloadManagerProvider);
+    ref.watch(pictureInPictureProvider);
+    ref.listen(pictureInPictureProvider, (_, inPip) {
+      if (inPip) {
+        _playerNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      }
+    });
     playerBackButtonDispatcher.onPlayerBack = () async {
       if (ref.read(watchPanelProvider) == null) return false;
       final playerNavigator = _playerNavigatorKey.currentState;
@@ -200,6 +216,27 @@ class HiveTubeApp extends ConsumerWidget {
       routeInformationParser: appRouter.routeInformationParser,
       routerDelegate: appRouter.routerDelegate,
       backButtonDispatcher: playerBackButtonDispatcher,
+      onNavigationNotification: (notification) {
+        final ui = ref.read(playerUiProvider);
+        final playerCanHandleBack =
+            ref.read(watchPanelProvider) != null &&
+            (ui.locked ||
+                ui.isFullscreen ||
+                ui.panelMode != PlayerPanelMode.mini ||
+                (_playerNavigatorKey.currentState?.canPop() ?? false));
+        SystemNavigator.setFrameworkHandlesBack(
+          notification.canHandlePop ||
+              appRouter.canPop() ||
+              appRouter
+                      .routerDelegate
+                      .currentConfiguration
+                      .lastOrNull
+                      ?.matchedLocation ==
+                  '/shorts' ||
+              playerCanHandleBack,
+        );
+        return true;
+      },
       builder: (context, child) => _RootPlayerOverlay(child: child),
     );
   }
@@ -211,6 +248,7 @@ class _RootPlayerOverlay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final inPip = ref.watch(pictureInPictureProvider);
     final ui = ref.watch(playerUiProvider);
     final panelOpen = ref.watch(watchPanelProvider) != null;
     final wide =
@@ -229,7 +267,12 @@ class _RootPlayerOverlay extends ConsumerWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          PreviewScrollListener(child: child ?? const SizedBox.shrink()),
+          Offstage(
+            offstage: inPip,
+            child: PreviewScrollListener(
+              child: child ?? const SizedBox.shrink(),
+            ),
+          ),
           Positioned.fill(
             child: _PlayerHitTestGate(
               acceptsHit: (globalPosition) {

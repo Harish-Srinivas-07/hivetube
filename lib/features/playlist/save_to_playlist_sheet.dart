@@ -10,6 +10,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/ui/ui.dart';
+import 'playlist_dialog_content.dart';
 
 Future<void> showSaveToPlaylistSheet(
   BuildContext context, {
@@ -127,33 +128,31 @@ class _SaveToPlaylistSheetState extends ConsumerState<_SaveToPlaylistSheet> {
       context: context,
       useRootNavigator: !PlayerNavigatorScope.contains(context),
       builder: (dialogContext) => AppDialog(
-        title: 'New playlist',
-        content: ClipRRect(
-          borderRadius: AppRadius.mdBorder,
-          child: ColoredBox(
-            color: Theme.of(dialogContext).colorScheme.surfaceContainerHighest,
-            child: TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Playlist name',
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.all(AppSpacing.md),
+        content: PlaylistDialogContent(
+          icon: LucideIcons.listPlus,
+          title: 'New playlist',
+          actionLabel: 'Create',
+          onCancel: () => Navigator.of(dialogContext).pop(),
+          onAction: () =>
+              Navigator.of(dialogContext).pop(controller.text.trim()),
+          details: ClipRRect(
+            borderRadius: AppRadius.mdBorder,
+            child: ColoredBox(
+              color: Theme.of(
+                dialogContext,
+              ).colorScheme.surfaceContainerHighest,
+              child: TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Playlist name',
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(AppSpacing.md),
+                ),
               ),
             ),
           ),
         ),
-        actions: [
-          AppButton.text(
-            label: 'Cancel',
-            onPressed: () => Navigator.of(dialogContext).pop(),
-          ),
-          AppButton.text(
-            label: 'Create',
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-          ),
-        ],
       ),
     );
     controller.dispose();

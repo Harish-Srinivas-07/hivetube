@@ -8,8 +8,10 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../core/playback/playback_service.dart';
+import '../../core/playback/picture_in_picture.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/audio_handler.dart';
 import '../../core/playback/watch_session.dart';
@@ -272,7 +274,8 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     _started = id;
     _active = service;
     if (service.state.videoId == id &&
-        service.state.mode == PlaybackMode.video) {
+        (service.state.mode == PlaybackMode.video ||
+            service.state.mode == PlaybackMode.audio)) {
       return;
     }
     if (!ref.read(watchSessionProvider).watched.contains(id)) {
@@ -289,7 +292,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     if (!mounted || ref.read(watchPanelProvider) != id || _started != id) {
       return;
     }
-    await service.play(
+    await service.playVideoRequest(
       PlayRequest(videoId: id, mode: PlaybackMode.video, startAt: start),
     );
   }
@@ -377,6 +380,18 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     if (id == null) return const SizedBox.shrink();
 
     final service = ref.watch(playbackProvider);
+    final inPip = ref.watch(pictureInPictureProvider);
+    if (inPip && service != null) {
+      return ColoredBox(
+        color: AppColors.shortsBackground,
+        child: Center(
+          child: Video(
+            controller: service.controller,
+            controls: NoVideoControls,
+          ),
+        ),
+      );
+    }
     final ui = ref.watch(playerUiProvider);
     final miniCorner = ref.watch(miniCornerProvider);
     final metadataState = ref.watch(watchInfoProvider(id));

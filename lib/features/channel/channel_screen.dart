@@ -456,7 +456,7 @@ class _ChannelScreenState extends ConsumerState<ChannelScreen>
 
   void _openShorts(List<ShortItem> items, int index) {
     ref.read(shortsSelectionProvider.notifier).open(items, index);
-    context.go('/shorts');
+    openShortsFromRoute(context, ref);
   }
 
   @override

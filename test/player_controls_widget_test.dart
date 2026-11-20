@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -10,6 +13,8 @@ import 'package:hivetube/core/settings/app_settings.dart';
 import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/core/playback/player_ui_state.dart';
+import 'package:hivetube/core/playback/picture_in_picture.dart';
+import 'package:hivetube/core/streams/stream_selector.dart';
 import 'package:hivetube/features/shorts/shorts_screen.dart';
 import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:hivetube/widgets/player/player_controls.dart';
@@ -81,6 +86,13 @@ class _FakePlayback extends Fake implements PlaybackService {
   @override
   Future<void> play(PlayRequest value) async {}
   @override
+  Future<void> playVideoRequest(PlayRequest value) => play(value);
+  @override
+  Future<void> setAudioOnly(bool enabled) async {
+    snapshot.mode = enabled ? PlaybackMode.audio : PlaybackMode.video;
+  }
+
+  @override
   Future<void> stop() async {
     stopped = true;
   }
@@ -107,6 +119,30 @@ class _NoRelated extends RelatedVideosController {
 class _FakeUi extends PlayerUiController {
   @override
   PlayerUiState build() => const PlayerUiState(playing: true, dismissed: false);
+}
+
+class _ProgressUi extends PlayerUiController {
+  _ProgressUi(this.fullscreen);
+  final bool fullscreen;
+  @override
+  PlayerUiState build() => PlayerUiState(
+    playing: true,
+    dismissed: false,
+    isFullscreen: fullscreen,
+    position: const Duration(seconds: 40),
+    duration: const Duration(minutes: 3),
+  );
+  void updatePosition(Duration value) =>
+      state = state.copyWith(position: value);
+}
+
+class _AudioSettings extends AppSettingsController {
+  @override
+  AppSettings build() => const AppSettings(gl: 'IN');
+  @override
+  Future<void> setAudioOnly(bool enabled) async {
+    state = state.copyWith(audioOnly: enabled);
+  }
 }
 
 class _AutoplaySettings extends AppSettingsController {
@@ -149,6 +185,164 @@ class _FullscreenCaptionsUi extends PlayerUiController {
 }
 
 void main() {
+  testWidgets('fullscreen audio-only control follows Background play', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final service = _FakePlayback()
+      ..state.mode = PlaybackMode.video
+      ..state.position = const Duration(seconds: 42);
+    final container = ProviderContainer(
+      overrides: [
+        dbProvider.overrideWithValue(db),
+        initialAppSettingsProvider.overrideWithValue(
+          const AppSettings(gl: 'IN', backgroundPlay: false),
+        ),
+        playbackProvider.overrideWith(() => _FakePlaybackController(service)),
+        playerUiProvider.overrideWith(() => _ProgressUi(true)),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(playbackProvider);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 800,
+              height: 400,
+              child: SharedPlayer(
+                service: service,
+                videoOverride: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('Audio only'), findsNothing);
+    await container.read(appSettingsProvider.notifier).setBackgroundPlay(true);
+    await tester.pump();
+    expect(find.byTooltip('Audio only'), findsOneWidget);
+    await tester.tap(find.byTooltip('Audio only'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(container.read(appSettingsProvider).audioOnly, isTrue);
+    expect(service.state.mode, PlaybackMode.audio);
+    expect(find.byTooltip('Disable audio only'), findsOneWidget);
+    await container.read(appSettingsProvider.notifier).setBackgroundPlay(false);
+    await tester.pump();
+    expect(find.byTooltip('Audio only'), findsNothing);
+    expect(find.byTooltip('Disable audio only'), findsNothing);
+    expect(service.state.mode, PlaybackMode.video);
+    expect(service.state.position, const Duration(seconds: 42));
+    expect(await db.getValue('settings_audio_only'), 'false');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('audio-only setting makes PiP ineligible immediately', () async {
+    final service = _FakePlayback()
+      ..state.mode = PlaybackMode.video
+      ..state.playing = true;
+    final container = ProviderContainer(
+      overrides: [
+        playbackProvider.overrideWith(() => _FakePlaybackController(service)),
+        appSettingsProvider.overrideWith(_AudioSettings.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final pip = container.read(pictureInPictureProvider.notifier);
+    expect(pip.eligible, isTrue);
+    await container.read(appSettingsProvider.notifier).setAudioOnly(true);
+    expect(pip.eligible, isFalse);
+  });
+  for (final fullscreen in [false, true]) {
+    testWidgets(
+      'audio-only thumbnail keeps player controls in fullscreen=$fullscreen',
+      (tester) async {
+        final service = _FakePlayback()
+          ..state.mode = PlaybackMode.video
+          ..state.frameReadyId = 'video';
+        final container = ProviderContainer(
+          overrides: [
+            playerUiProvider.overrideWith(() => _ProgressUi(fullscreen)),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: Scaffold(
+                body: SizedBox(
+                  width: 400,
+                  height: 225,
+                  child: SharedPlayer(
+                    service: service,
+                    requestVideoId: 'video',
+                    thumbnailUrl: 'https://example.com/cover.jpg',
+                    videoOverride: const SizedBox.expand(
+                      key: ValueKey('visible-video'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final playerRect = tester.getRect(find.byType(SharedPlayer));
+        expect(find.byKey(const ValueKey('visible-video')), findsOneWidget);
+        await service.setAudioOnly(true);
+        service.state.frozenFrame = Uint8List.fromList([1, 2, 3]);
+        (container.read(playerUiProvider.notifier) as _ProgressUi)
+            .updatePosition(const Duration(seconds: 42));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('visible-video')), findsNothing);
+        expect(
+          find.byWidgetPredicate(
+            (widget) => widget is Image && widget.image is MemoryImage,
+          ),
+          findsNothing,
+        );
+        expect(tester.getRect(find.byType(SharedPlayer)), playerRect);
+        expect(
+          tester
+              .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
+              .imageUrl,
+          'https://example.com/cover.jpg',
+        );
+        void expectPosition(int seconds) {
+          if (fullscreen) {
+            expect(
+              tester.widget<Slider>(find.byType(Slider)).value,
+              seconds * 1000,
+            );
+          } else {
+            expect(
+              tester.widget<PlayerSeekBar>(find.byType(PlayerSeekBar)).position,
+              Duration(seconds: seconds),
+            );
+          }
+        }
+
+        expectPosition(42);
+        (container.read(playerUiProvider.notifier) as _ProgressUi)
+            .updatePosition(const Duration(seconds: 55));
+        await tester.pump();
+        expectPosition(55);
+        await service.setAudioOnly(false);
+        service.state.frozenFrame = null;
+        (container.read(playerUiProvider.notifier) as _ProgressUi)
+            .updatePosition(const Duration(seconds: 56));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('visible-video')), findsOneWidget);
+        expectPosition(56);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
   testWidgets('player top controls have evenly spaced centers', (tester) async {
     final service = _FakePlayback()..state.captions = [{}];
     await tester.pumpWidget(

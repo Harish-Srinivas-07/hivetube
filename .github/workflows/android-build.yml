@@ -86,6 +86,9 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Clear Gradle cache
+        run: rm -rf ~/.gradle/caches
+
       - name: Build universal release APK
         run: flutter build apk --release
 

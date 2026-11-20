@@ -781,7 +781,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ref
                         .read(shortsSelectionProvider.notifier)
                         .open(result.shorts, index);
-                    context.go('/shorts');
+                    openShortsFromRoute(context, ref);
                   },
                 ),
             ],

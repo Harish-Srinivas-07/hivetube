@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
+import '../playback/playback_service.dart';
 import '../streams/adaptive_quality_policy.dart';
 import '../../features/shorts/shorts_screen.dart';
 import '../content/language_profile.dart';
@@ -45,6 +46,8 @@ class AppSettings {
     this.localContent = true,
     this.autoplay = false,
     this.backgroundPlay = true,
+    this.pictureInPicture = true,
+    this.audioOnly = false,
     this.previewsEnabled = true,
     this.previewsWifiOnly = true,
     this.revision = 0,
@@ -59,6 +62,8 @@ class AppSettings {
   final bool localContent;
   final bool autoplay;
   final bool backgroundPlay;
+  final bool pictureInPicture;
+  final bool audioOnly;
   final bool previewsEnabled;
   final bool previewsWifiOnly;
   final int revision;
@@ -81,6 +86,8 @@ class AppSettings {
     bool? localContent,
     bool? autoplay,
     bool? backgroundPlay,
+    bool? pictureInPicture,
+    bool? audioOnly,
     bool? previewsEnabled,
     bool? previewsWifiOnly,
     int? revision,
@@ -94,6 +101,8 @@ class AppSettings {
     localContent: localContent ?? this.localContent,
     autoplay: autoplay ?? this.autoplay,
     backgroundPlay: backgroundPlay ?? this.backgroundPlay,
+    pictureInPicture: pictureInPicture ?? this.pictureInPicture,
+    audioOnly: audioOnly ?? this.audioOnly,
     previewsEnabled: previewsEnabled ?? this.previewsEnabled,
     previewsWifiOnly: previewsWifiOnly ?? this.previewsWifiOnly,
     revision: revision ?? this.revision,
@@ -143,10 +152,48 @@ class AppSettingsController extends Notifier<AppSettings> {
 
   Future<void> setBackgroundPlay(bool enabled) async {
     if (state.backgroundPlay == enabled) return;
+    final resetAudioOnly = !enabled && state.audioOnly;
+    final db = ref.read(dbProvider);
+    await db.transaction(() async {
+      await db.setValue('settings_background_play', enabled.toString());
+      if (resetAudioOnly) await db.setValue('settings_audio_only', 'false');
+    });
+    state = state.copyWith(
+      backgroundPlay: enabled,
+      audioOnly: resetAudioOnly ? false : null,
+    );
+    if (resetAudioOnly && ref.read(playbackProvider.exists)) {
+      await ref.read(playbackProvider)?.setAudioOnly(false);
+    }
+  }
+
+  Future<void> setPictureInPicture(bool enabled) async {
+    if (state.pictureInPicture == enabled) return;
     await ref
         .read(dbProvider)
-        .setValue('settings_background_play', enabled.toString());
-    state = state.copyWith(backgroundPlay: enabled);
+        .setValue('settings_picture_in_picture', enabled.toString());
+    state = state.copyWith(pictureInPicture: enabled);
+  }
+
+  Future<void> setAudioOnly(bool enabled) async {
+    if (enabled && !state.backgroundPlay) return;
+    if (state.audioOnly == enabled) return;
+    await ref
+        .read(dbProvider)
+        .setValue('settings_audio_only', enabled.toString());
+    if (enabled && !state.backgroundPlay) {
+      await ref.read(dbProvider).setValue('settings_audio_only', 'false');
+      return;
+    }
+    state = state.copyWith(audioOnly: enabled);
+  }
+
+  Future<void> setAudioOnlyPlayback(bool enabled) async {
+    await setAudioOnly(enabled);
+    if (!state.backgroundPlay || state.audioOnly != enabled) return;
+    if (ref.read(playbackProvider.exists)) {
+      await ref.read(playbackProvider)?.setAudioOnly(enabled);
+    }
   }
 
   Future<void> setPreviewsEnabled(bool enabled) async {

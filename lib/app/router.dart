@@ -63,6 +63,13 @@ final appRouter = GoRouter(
       ],
     ),
     GoRoute(
+      path: '/shorts-player',
+      builder: (context, state) => const Material(
+        type: MaterialType.transparency,
+        child: ShortsScreen(),
+      ),
+    ),
+    GoRoute(
       path: '/watch/:id',
       builder: (context, state) =>
           _WatchDeepLink(id: state.pathParameters['id']!),
@@ -111,7 +118,11 @@ class _WatchDeepLinkState extends ConsumerState<_WatchDeepLink> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       openWatchPanel(ref, widget.id);
-      context.go('/home');
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
     });
   }
 

@@ -39,7 +39,9 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void setMetadata(String id, String title, String channel, {Uri? artUri}) {
-    if (_service?.request?.videoId != id && _service?.state.videoId != id) return;
+    if (_service?.request?.videoId != id && _service?.state.videoId != id) {
+      return;
+    }
     final previous = mediaItem.valueOrNull;
     final isShort = _service?.state.mode == PlaybackMode.short;
     final displayTitle = title.trim().isNotEmpty
@@ -73,8 +75,9 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
     Uri? artUri,
   }) {
     final displayTitle = title.trim().isNotEmpty ? title.trim() : 'Short';
-    final displayChannel =
-        channel.trim().isNotEmpty ? channel.trim() : 'YouTube Short';
+    final displayChannel = channel.trim().isNotEmpty
+        ? channel.trim()
+        : 'YouTube Short';
     final previous = mediaItem.valueOrNull;
     if (previous?.id == id &&
         previous?.title == displayTitle &&
@@ -163,9 +166,7 @@ class HiveAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async => _service?.stop();
   @override
-  Future<void> onTaskRemoved() async {
-    if (_service?.state.playing != true) await stop();
-  }
+  Future<void> onTaskRemoved() async {}
   @override
   Future<void> skipToNext() async => onNext?.call();
   @override

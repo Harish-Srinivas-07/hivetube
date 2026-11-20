@@ -50,6 +50,7 @@ class VideoCard extends ConsumerWidget {
     this.detailMetadata,
     this.enabled = true,
     this.showAvatar = true,
+    this.onChannelTap,
     this.compact,
     this.roundedThumbnail,
   });
@@ -62,6 +63,7 @@ class VideoCard extends ConsumerWidget {
     this.progress,
     this.trailing,
     this.showAvatar = true,
+    this.onChannelTap,
   }) : mode = VideoCardMode.feed,
        enabled = true,
        thumbnailBadge = null,
@@ -84,6 +86,7 @@ class VideoCard extends ConsumerWidget {
     this.detailMetadata,
     this.enabled = true,
   }) : mode = VideoCardMode.compact,
+       onChannelTap = null,
        showAvatar = false,
        compact = null,
        roundedThumbnail = null;
@@ -97,6 +100,7 @@ class VideoCard extends ConsumerWidget {
     this.trailing,
     this.showAvatar = true,
   }) : mode = VideoCardMode.grid,
+       onChannelTap = null,
        enabled = true,
        thumbnailBadge = null,
        thumbnailOverlay = null,
@@ -111,6 +115,7 @@ class VideoCard extends ConsumerWidget {
     required this.video,
     required this.onTap,
   }) : mode = VideoCardMode.searchResult,
+       onChannelTap = null,
        compact = null,
        roundedThumbnail = null,
        progress = null,
@@ -128,6 +133,7 @@ class VideoCard extends ConsumerWidget {
     required this.onTap,
     this.progress,
   }) : mode = VideoCardMode.shelf,
+       onChannelTap = null,
        showAvatar = false,
        trailing = null,
        thumbnailBadge = null,
@@ -149,6 +155,7 @@ class VideoCard extends ConsumerWidget {
   final String? detailMetadata;
   final bool enabled;
   final bool showAvatar;
+  final ValueChanged<String>? onChannelTap;
 
   /// Backward-compatibility parameters:
   final bool? compact;
@@ -175,7 +182,11 @@ class VideoCard extends ConsumerWidget {
                 viewsText: video.viewsText,
               ),
             ], 0);
-            context.go('/shorts');
+            if (GoRouterState.of(context).matchedLocation == '/home') {
+              context.go('/shorts');
+            } else {
+              openShortsFromRoute(context, ref);
+            }
           }
         : onTap;
     final effectiveMode = _effectiveMode;
@@ -236,6 +247,7 @@ class VideoCard extends ConsumerWidget {
           trailing: trailing,
           showAvatar: showAvatar,
           roundedThumbnail: true,
+          onChannelTap: onChannelTap,
           ref: ref,
         );
         break;
@@ -250,6 +262,7 @@ class VideoCard extends ConsumerWidget {
           trailing: trailing,
           showAvatar: showAvatar,
           roundedThumbnail: false,
+          onChannelTap: onChannelTap,
           ref: ref,
         );
         break;
@@ -270,6 +283,7 @@ class _FeedCard extends StatelessWidget {
     this.trailing,
     this.showAvatar = true,
     this.roundedThumbnail = false,
+    this.onChannelTap,
     required this.ref,
   });
 
@@ -279,6 +293,7 @@ class _FeedCard extends StatelessWidget {
   final Widget? trailing;
   final bool showAvatar;
   final bool roundedThumbnail;
+  final ValueChanged<String>? onChannelTap;
   final WidgetRef ref;
 
   @override
@@ -315,14 +330,16 @@ class _FeedCard extends StatelessWidget {
                 if (showAvatar &&
                     (video.channelId.isNotEmpty ||
                         video.channelName.isNotEmpty)) ...[
-                  _FeedAvatar(video: video),
+                  _FeedAvatar(video: video, onChannelTap: onChannelTap),
                   const SizedBox(width: AppSpacing.md),
                 ],
                 Expanded(
                   child: _TextBlock(
                     video: video,
                     onChannelTap: video.channelId.isNotEmpty
-                        ? () => context.push('/channel/${video.channelId}')
+                        ? () => onChannelTap != null
+                              ? onChannelTap!(video.channelId)
+                              : context.push('/channel/${video.channelId}')
                         : null,
                     theme: theme,
                     cs: cs,
@@ -365,8 +382,9 @@ class _FeedCard extends StatelessWidget {
 }
 
 class _FeedAvatar extends ConsumerWidget {
-  const _FeedAvatar({required this.video});
+  const _FeedAvatar({required this.video, this.onChannelTap});
   final VideoItem video;
+  final ValueChanged<String>? onChannelTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -386,7 +404,9 @@ class _FeedAvatar extends ConsumerWidget {
       url: resolved?.url ?? video.channelAvatarUrl,
       size: AppSizes.searchResultAvatar,
       onTap: channelId.isNotEmpty
-          ? () => context.push('/channel/$channelId')
+          ? () => onChannelTap != null
+                ? onChannelTap!(channelId)
+                : context.push('/channel/$channelId')
           : null,
     );
   }

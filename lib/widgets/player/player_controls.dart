@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import '../../core/playback/audio_handler.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../../core/playback/player_interactions.dart';
 import '../../core/settings/app_settings.dart';
+import '../../core/streams/stream_selector.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
@@ -617,6 +619,31 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                         if (!compactFullscreen)
                           _fullscreenAutoplayControl(autoplay),
                         if (state.captions.isNotEmpty) _captionControl(state),
+                        if (!widget.short &&
+                            ref.watch(
+                              appSettingsProvider.select(
+                                (s) => s.backgroundPlay,
+                              ),
+                            ))
+                          _roundControl(
+                            icon: LucideIcons.headphones,
+                            tooltip:
+                                ref.watch(
+                                  appSettingsProvider.select(
+                                    (s) => s.audioOnly,
+                                  ),
+                                )
+                                ? 'Disable audio only'
+                                : 'Audio only',
+                            showBackground: false,
+                            onPressed: () => unawaited(
+                              ref
+                                  .read(appSettingsProvider.notifier)
+                                  .setAudioOnlyPlayback(
+                                    !ref.read(appSettingsProvider).audioOnly,
+                                  ),
+                            ),
+                          ),
                         _roundControl(
                           icon: LucideIcons.settings,
                           tooltip: 'Settings',
@@ -790,8 +817,11 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
         : requestVideoId == null || requestVideoId.isEmpty
         ? ''
         : 'https://i.ytimg.com/vi/$requestVideoId/hqdefault.jpg';
+    final audioOnly = state.mode == PlaybackMode.audio;
     final frameReady =
-        requestVideoId != null && state.frameReadyId == requestVideoId;
+        !audioOnly &&
+        requestVideoId != null &&
+        state.frameReadyId == requestVideoId;
     final videoAspectRatio = videoAspectRatioFromController(service);
     final fillVerticalFullscreen =
         ui.isFullscreen && videoAspectRatio != null && videoAspectRatio < 1;
@@ -871,7 +901,14 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 fit: StackFit.expand,
                 children: [
                   const ColoredBox(color: AppColors.black),
-                  if (thumbnailUrl.isNotEmpty)
+                  if (thumbnailUrl.startsWith('file:'))
+                    Image.file(
+                      File.fromUri(Uri.parse(thumbnailUrl)),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          const ColoredBox(color: AppColors.black),
+                    )
+                  else if (thumbnailUrl.isNotEmpty)
                     CachedNetworkImage(
                       imageUrl: thumbnailUrl,
                       fit: BoxFit.cover,
@@ -880,49 +917,50 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                       placeholder: (_, _) =>
                           const ColoredBox(color: AppColors.black),
                     ),
-                  IgnorePointer(
-                    ignoring: !frameReady,
-                    child: AnimatedOpacity(
-                      opacity: frameReady ? 1 : 0,
-                      duration: frameReady ? AppMotion.fast : Duration.zero,
-                      child:
-                          widget.videoOverride ??
-                          InteractiveViewer(
-                            transformationController: _videoTransform,
-                            minScale: 1,
-                            maxScale: 3,
-                            panEnabled: !widget.short && !compact,
-                            scaleEnabled: !widget.short && !compact,
-                            child: Video(
-                              controller: service.controller,
-                              controls: NoVideoControls,
-                              fit: widget.short || fillVerticalFullscreen
-                                  ? BoxFit.cover
-                                  : BoxFit.contain,
-                              subtitleViewConfiguration:
-                                  SubtitleViewConfiguration(
-                                    visible: widget.short && !ui.isFullscreen,
-                                    style: AppTextStyles.body.copyWith(
-                                      color: AppColors.shortsForeground,
-                                      backgroundColor: AppColors.shortsScrim,
+                  if (!audioOnly)
+                    IgnorePointer(
+                      ignoring: !frameReady,
+                      child: AnimatedOpacity(
+                        opacity: frameReady ? 1 : 0,
+                        duration: frameReady ? AppMotion.fast : Duration.zero,
+                        child:
+                            widget.videoOverride ??
+                            InteractiveViewer(
+                              transformationController: _videoTransform,
+                              minScale: 1,
+                              maxScale: 3,
+                              panEnabled: !widget.short && !compact,
+                              scaleEnabled: !widget.short && !compact,
+                              child: Video(
+                                controller: service.controller,
+                                controls: NoVideoControls,
+                                fit: widget.short || fillVerticalFullscreen
+                                    ? BoxFit.cover
+                                    : BoxFit.contain,
+                                subtitleViewConfiguration:
+                                    SubtitleViewConfiguration(
+                                      visible: widget.short && !ui.isFullscreen,
+                                      style: AppTextStyles.body.copyWith(
+                                        color: AppColors.shortsForeground,
+                                        backgroundColor: AppColors.shortsScrim,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      padding: const EdgeInsets.fromLTRB(
+                                        AppSpacing.lg,
+                                        0,
+                                        AppSpacing.lg,
+                                        AppSpacing.xl,
+                                      ),
                                     ),
-                                    textAlign: TextAlign.center,
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppSpacing.lg,
-                                      0,
-                                      AppSpacing.lg,
-                                      AppSpacing.xl,
-                                    ),
-                                  ),
+                              ),
                             ),
-                          ),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          if (state.frozenFrame != null)
+          if (!audioOnly && state.frozenFrame != null)
             Image.memory(
               state.frozenFrame!,
               fit: fillVerticalFullscreen ? BoxFit.cover : BoxFit.contain,

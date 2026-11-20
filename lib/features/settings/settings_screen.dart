@@ -347,6 +347,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   .setBackgroundPlay(value),
             ),
             switchTile(
+              icon: LucideIcons.pictureInPicture,
+              title: 'Picture-in-picture',
+              subtitle: settings.pictureInPicture ? 'On' : 'Off',
+              value: settings.pictureInPicture,
+              onChanged: (value) => ref
+                  .read(contentPrefsProvider.notifier)
+                  .setPictureInPicture(value),
+            ),
+            switchTile(
               icon: LucideIcons.play,
               title: 'Autoplay',
               subtitle: settings.autoplay ? 'On' : 'Off',

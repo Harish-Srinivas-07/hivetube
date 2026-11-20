@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../core/playback/playback_service.dart';
 import '../core/playback/lifecycle_policy.dart';
+import '../core/playback/picture_in_picture.dart';
 import '../core/settings/app_settings.dart';
 import '../core/streams/stream_selector.dart';
 import '../core/playback/player_ui_state.dart';
@@ -43,6 +45,19 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed &&
+        Platform.isAndroid &&
+        ref.read(pictureInPictureProvider.notifier).eligible) {
+      return;
+    }
+    if (ref.read(pictureInPictureProvider) ||
+        ref.read(pictureInPictureProvider.notifier).entering) {
+      return;
+    }
+    _applyLifecycleState(state);
+  }
+
+  void _applyLifecycleState(AppLifecycleState state) {
     final enabled = ref.read(appSettingsProvider).backgroundPlay;
     final action = lifecyclePlaybackAction(state, backgroundPlay: enabled);
     final service = ref.read(playbackProvider);
@@ -220,6 +235,13 @@ class _AppShellState extends ConsumerState<AppShell>
       ),
       child: Stack(
         children: [
+          PopScope(
+            canPop: !shorts,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && shorts) unawaited(select(0));
+            },
+            child: const SizedBox.shrink(),
+          ),
           // ── Main scaffold ────────────────────────────────────────────────────
           Scaffold(
             backgroundColor: shorts

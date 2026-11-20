@@ -12,6 +12,8 @@ import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/playback/audio_handler.dart';
 import '../../core/playback/playback_service.dart';
+import '../../core/playback/player_ui_state.dart';
+import '../watch/watch_panel.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../core/yt/watch_info.dart';
@@ -49,6 +51,15 @@ final shortsSelectionProvider =
     NotifierProvider<ShortsSelectionController, ShortsSelection>(
       ShortsSelectionController.new,
     );
+
+Future<void> openShortsFromRoute(BuildContext context, WidgetRef ref) async {
+  if (ref.read(watchPanelProvider) != null) {
+    ref.read(watchPanelProvider.notifier).close();
+    ref.read(playerUiProvider.notifier).setDismissed(true);
+    await ref.read(playbackProvider)?.stop();
+  }
+  if (context.mounted) context.push('/shorts-player');
+}
 
 class ShortsSelectionController extends Notifier<ShortsSelection> {
   @override

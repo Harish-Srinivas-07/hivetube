@@ -23,6 +23,7 @@ import '../../widgets/sheets/app_sheet.dart';
 import '../../widgets/ui/app_controls.dart';
 import '../../widgets/ui/app_feedback.dart';
 import 'save_to_playlist_sheet.dart';
+import 'playlist_dialog_content.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
   const PlaylistScreen({super.key, required this.playlistId});
@@ -515,20 +516,14 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppDialog(
-        title: 'Delete playlist?',
-        content: const Text(
-          'This playlist and its saved order will be deleted.',
+        content: PlaylistDialogContent(
+          icon: LucideIcons.trash2,
+          title: 'Delete playlist?',
+          message: 'This playlist and its saved order will be deleted.',
+          actionLabel: 'Delete',
+          onCancel: () => Navigator.of(dialogContext).pop(false),
+          onAction: () => Navigator.of(dialogContext).pop(true),
         ),
-        actions: [
-          AppButton.text(
-            label: 'Cancel',
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-          ),
-          AppButton.text(
-            label: 'Delete',
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-          ),
-        ],
       ),
     );
     if (confirmed != true || !mounted) return;

@@ -236,7 +236,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     started = current;
     _activeService = service;
     if (service.state.videoId == current &&
-        service.state.mode == PlaybackMode.video) {
+        (service.state.mode == PlaybackMode.video ||
+            service.state.mode == PlaybackMode.audio)) {
       return;
     }
     final history = await ref.read(historyRepoProvider).recent();
@@ -252,7 +253,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
     final saved = history.where((h) => h.videoId == current).firstOrNull;
     await service.setLoop(false);
-    await service.play(
+    await service.playVideoRequest(
       PlayRequest(
         videoId: current,
         mode: PlaybackMode.video,
@@ -901,7 +902,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         ? AppSpacing.sheetMaxHeightFactor
         : 1.0;
     return min(
-      (viewport.height - bottomInset - videoBottom) / viewport.height,
+      (viewport.height - bottomInset - videoBottom + AppSpacing.xl) /
+          viewport.height,
       sheetLimit,
     ).clamp(0.01, sheetLimit);
   }
@@ -1045,6 +1047,28 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 child: Row(
                   children: [
                     _reactionGroup(info),
+                    if (ref.watch(
+                      appSettingsProvider.select((s) => s.backgroundPlay),
+                    ))
+                      _action(
+                        LucideIcons.headphones,
+                        ref.watch(
+                              appSettingsProvider.select((s) => s.audioOnly),
+                            )
+                            ? 'Audio only on'
+                            : 'Audio only',
+                        () async {
+                          final enabled = !ref
+                              .read(appSettingsProvider)
+                              .audioOnly;
+                          await ref
+                              .read(appSettingsProvider.notifier)
+                              .setAudioOnlyPlayback(enabled);
+                        },
+                        isSelected: ref.watch(
+                          appSettingsProvider.select((s) => s.audioOnly),
+                        ),
+                      ),
                     _action(
                       LucideIcons.share,
                       'Share',
@@ -1481,6 +1505,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     child: VideoCard.feed(
       video: item,
       onTap: () => _open(item.id),
+      onChannelTap: _openChannel,
       trailing: _menu(item),
     ),
   );

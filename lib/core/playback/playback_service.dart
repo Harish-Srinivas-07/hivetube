@@ -65,6 +65,38 @@ class PlayRequest {
 }
 
 @visibleForTesting
+Future<String?> findLocalPlaybackPath(
+  AppDb db,
+  String videoId,
+  PlaybackMode mode,
+) async => (await findLocalPlaybackSource(db, videoId, mode))?.path;
+
+@visibleForTesting
+Future<({String path, bool hasVideo})?> findLocalPlaybackSource(
+  AppDb db,
+  String videoId,
+  PlaybackMode mode,
+) async {
+  if (mode == PlaybackMode.short) return null;
+  final rows =
+      await (db.select(db.downloads)..where(
+            (row) =>
+                row.videoId.equals(videoId) & row.status.equals('completed'),
+          ))
+          .get();
+  for (final kind
+      in mode == PlaybackMode.audio ? ['video', 'audio'] : ['video']) {
+    for (final row in rows.reversed) {
+      final path = row.path;
+      if (row.kind == kind && path != null && await File(path).exists()) {
+        return (path: path, hasVideo: kind == 'video');
+      }
+    }
+  }
+  return null;
+}
+
+@visibleForTesting
 Future<void> savePlaybackHistory(
   HistoryRepo history,
   PlayRequest? request,
@@ -103,6 +135,26 @@ class PlaybackSnapshot {
   Duration get displayPosition => seekTarget ?? position;
 }
 
+@visibleForTesting
+Future<PlayRequest?> switchRetainedVideoTrack({
+  required PlaybackSnapshot snapshot,
+  required PlayRequest current,
+  required bool audioOnly,
+  required Future<void> Function(VideoTrack) setTrack,
+  required bool Function() isCurrent,
+  required bool Function() isPaused,
+}) async {
+  await setTrack(audioOnly ? VideoTrack.no() : VideoTrack.auto());
+  if (!isCurrent()) return null;
+  return PlayRequest(
+    videoId: current.videoId,
+    mode: audioOnly ? PlaybackMode.audio : PlaybackMode.video,
+    startAt: snapshot.position,
+    play: !isPaused(),
+    saveHistory: current.saveHistory,
+  );
+}
+
 class PlaybackService extends ChangeNotifier {
   PlaybackService(
     this.cache,
@@ -112,6 +164,7 @@ class PlaybackService extends ChangeNotifier {
     this.onQualityPreferenceChanged,
     this.completedDownloadPath,
     this.prepareStreaming,
+    this.audioOnlyPreference,
   }) {
     _seekController = _createSeekController();
     _configurePlayer(player, shortBuffer: false);
@@ -197,8 +250,13 @@ class PlaybackService extends ChangeNotifier {
   final StreamCache cache;
   final RelayServer relay;
   final HistoryRepo history;
-  final Future<String?> Function(String videoId)? completedDownloadPath;
+  final Future<({String path, bool hasVideo})?> Function(
+    String videoId,
+    PlaybackMode mode,
+  )?
+  completedDownloadPath;
   final Future<void> Function()? prepareStreaming;
+  final bool Function()? audioOnlyPreference;
   final BandwidthEstimator? bandwidthEstimator;
   final Future<void> Function(VideoQualityPreference)?
   onQualityPreferenceChanged;
@@ -229,6 +287,8 @@ class PlaybackService extends ChangeNotifier {
   Timer? _adaptiveTimer;
   Uri? _currentAudioUri;
   bool _playingLocalFile = false;
+  bool _videoTrackSuppressed = false;
+  Future<void>? _backgroundTrackChange;
   String? _activeFrameVideoId;
   PlayRequest? _backgroundVideoRequest;
   static const _audioFocus = MethodChannel('hivetube/audio_focus');
@@ -596,6 +656,12 @@ class PlaybackService extends ChangeNotifier {
         final current = request;
         if (_playingLocalFile && !_switching && current != null) {
           _playingLocalFile = false;
+          if (current.mode == PlaybackMode.audio) {
+            state.status = PlayerStatus.error;
+            state.error = StreamError.extractionFailed;
+            _notify();
+            return;
+          }
           unawaited(
             _load(
               PlayRequest(
@@ -658,6 +724,19 @@ class PlaybackService extends ChangeNotifier {
 
   Future<void> playVideoRequest(PlayRequest value) async {
     final backgroundVideo = _backgroundVideoRequest;
+    if (value.mode == PlaybackMode.video &&
+        (audioOnlyPreference?.call() ?? false)) {
+      await play(
+        PlayRequest(
+          videoId: value.videoId,
+          mode: PlaybackMode.audio,
+          startAt: value.startAt,
+          play: value.play,
+          saveHistory: value.saveHistory,
+        ),
+      );
+      return;
+    }
     if (backgroundVideo == null || value.mode != PlaybackMode.video) {
       await play(value);
       return;
@@ -672,6 +751,64 @@ class PlaybackService extends ChangeNotifier {
         saveHistory: value.saveHistory,
       ),
     );
+  }
+
+  Future<void> setAudioOnly(bool enabled) async {
+    final current = request;
+    if (current == null || current.mode == PlaybackMode.short) return;
+    final mode = enabled ? PlaybackMode.audio : PlaybackMode.video;
+    _backgroundVideoRequest = null;
+    if (current.mode == mode) return;
+    final localVideoTrackAvailable =
+        _playingLocalFile &&
+        player.state.tracks.video.any(
+          (track) => track.id != 'auto' && track.id != 'no',
+        );
+    if (current.mode == PlaybackMode.video ||
+        _videoTrackSuppressed ||
+        localVideoTrackAvailable) {
+      await _setRetainedVideoTrack(current, enabled);
+      return;
+    }
+    await _load(
+      PlayRequest(
+        videoId: current.videoId,
+        mode: mode,
+        startAt: state.position,
+        play: !_userPaused && _shouldResumeCurrent,
+        saveHistory: current.saveHistory,
+      ),
+      qualitySwitch: true,
+    );
+  }
+
+  Future<void> _setRetainedVideoTrack(
+    PlayRequest current,
+    bool audioOnly,
+  ) async {
+    final next = await switchRetainedVideoTrack(
+      snapshot: state,
+      current: current,
+      audioOnly: audioOnly,
+      setTrack: player.setVideoTrack,
+      isCurrent: () => identical(request, current),
+      isPaused: () => _userPaused,
+    );
+    if (next == null) return;
+    _videoTrackSuppressed = audioOnly;
+    request = next;
+    state.mode = request!.mode;
+    state.frozenFrame = null;
+    if (!audioOnly) {
+      state.frameReadyId = current.videoId;
+      _activeFrameVideoId = current.videoId;
+    }
+    unawaited(
+      WakelockPlus.toggle(
+        enable: !audioOnly && _visible && state.playing,
+      ).catchError((_) {}),
+    );
+    _notify();
   }
 
   int beginShortPreloadCycle() => ++_shortPreloadGeneration;
@@ -764,11 +901,18 @@ class PlaybackService extends ChangeNotifier {
     if (!_loadGuard.isCurrent(generation)) return;
     try {
       _playingLocalFile = false;
+      _videoTrackSuppressed = false;
       if (!skipLocalFile &&
-          value.mode == PlaybackMode.video &&
+          value.mode != PlaybackMode.short &&
           completedDownloadPath != null) {
+        String? localPath;
         try {
-          final path = await completedDownloadPath!(value.videoId);
+          final source = await completedDownloadPath!(
+            value.videoId,
+            value.mode,
+          );
+          final path = source?.path;
+          localPath = path;
           if (!_loadGuard.isCurrent(generation)) return;
           if (path != null && await File(path).exists()) {
             final previous = _commitTail;
@@ -783,11 +927,18 @@ class PlaybackService extends ChangeNotifier {
               final shouldPlay = value.play && _visible && !_userPaused;
               await player.open(
                 Media(Uri.file(path).toString(), start: value.startAt),
-                play: shouldPlay,
+                play: value.mode == PlaybackMode.audio ? false : shouldPlay,
               );
               if (!_loadGuard.isCurrent(generation)) return;
+              await player.setVideoTrack(
+                value.mode == PlaybackMode.audio
+                    ? VideoTrack.no()
+                    : VideoTrack.auto(),
+              );
+              _videoTrackSuppressed =
+                  value.mode == PlaybackMode.audio && source!.hasVideo;
               _currentAudioUri = null;
-              if (shouldPlay) {
+              if (shouldPlay && value.mode == PlaybackMode.video) {
                 final ready = await _waitForRequestFrame(
                   videoId: value.videoId,
                   startAt: value.startAt,
@@ -820,6 +971,7 @@ class PlaybackService extends ChangeNotifier {
             }
           }
         } catch (error) {
+          if (localPath != null && value.mode == PlaybackMode.audio) rethrow;
           _debugLog('Local playback failed; resolving stream: $error');
           if (!_loadGuard.isCurrent(generation)) return;
         }
@@ -837,12 +989,20 @@ class PlaybackService extends ChangeNotifier {
       final maxHeight = state.quality == null
           ? _qualityCap
           : AdaptiveQualityPolicy.maxVideoHeight;
-      final selected = await cache.resolve(
-        value.videoId,
-        value.mode,
-        quality: requestedQuality,
-        maxHeight: maxHeight,
-      );
+      var retainVideo = value.mode == PlaybackMode.audio;
+      late SelectedStreams selected;
+      try {
+        selected = await cache.resolve(
+          value.videoId,
+          retainVideo ? PlaybackMode.video : value.mode,
+          quality: requestedQuality,
+          maxHeight: maxHeight,
+        );
+      } on StreamException {
+        if (!retainVideo) rethrow;
+        retainVideo = false;
+        selected = await cache.resolve(value.videoId, PlaybackMode.audio);
+      }
       _debugLog('_load: resolved streams for ${value.videoId}.');
       if (!_loadGuard.isCurrent(generation)) return;
       final availableStreams = value.mode == PlaybackMode.audio
@@ -856,7 +1016,7 @@ class PlaybackService extends ChangeNotifier {
       state.heights = (availableStreams?.videos ?? const <StreamFormat>[])
           .map((format) => resolutionOf(format, value.mode))
           .toList();
-      final videoFormat = value.mode == PlaybackMode.audio
+      final videoFormat = value.mode == PlaybackMode.audio && !retainVideo
           ? null
           : selected.videos
                     .where(
@@ -906,13 +1066,13 @@ class PlaybackService extends ChangeNotifier {
               .catchError((Object _) {}),
         );
       }
-      final format = value.mode == PlaybackMode.audio
+      final format = value.mode == PlaybackMode.audio && !retainVideo
           ? selected.audio!
           : videoFormat!;
       _debugLog('_load: registering video on relay...');
       final video = await relay.register(format);
       _debugLog('_load: registered video: $video');
-      final audio = value.mode == PlaybackMode.audio
+      final audio = value.mode == PlaybackMode.audio && !retainVideo
           ? null
           : await relay.register(selected.audio!);
       _currentAudioUri = audio;
@@ -944,8 +1104,15 @@ class PlaybackService extends ChangeNotifier {
             !_userPaused;
         await player.open(
           Media(video.toString(), start: value.startAt),
-          play: shouldPlay,
+          play: retainVideo ? false : shouldPlay,
         );
+        if (retainVideo) {
+          await player.setVideoTrack(VideoTrack.no());
+          _videoTrackSuppressed = true;
+        }
+        if (value.mode != PlaybackMode.audio) {
+          await player.setVideoTrack(VideoTrack.auto());
+        }
         _debugLog('_load: player.open finished.');
         if (!_loadGuard.isCurrent(generation)) return;
         if (audio != null) {
@@ -1151,22 +1318,31 @@ class PlaybackService extends ChangeNotifier {
       return;
     }
     _backgroundVideoRequest = current;
-    await _load(
-      PlayRequest(
-        videoId: current.videoId,
-        mode: PlaybackMode.audio,
-        startAt: state.position,
-        play: _shouldResumeCurrent,
-        saveHistory: current.saveHistory,
-      ),
-      qualitySwitch: true,
-    );
+    final changing = _setRetainedVideoTrack(current, true);
+    _backgroundTrackChange = changing;
+    try {
+      await changing;
+    } finally {
+      if (identical(_backgroundTrackChange, changing)) {
+        _backgroundTrackChange = null;
+      }
+    }
   }
 
   Future<void> restoreBackgroundVideo() async {
+    final changing = _backgroundTrackChange;
+    if (changing != null) await changing;
     final original = _backgroundVideoRequest;
     if (original == null) return;
     _backgroundVideoRequest = null;
+    if (audioOnlyPreference?.call() ?? false) return;
+    final current = request;
+    if (_videoTrackSuppressed &&
+        current != null &&
+        current.videoId == original.videoId) {
+      await _setRetainedVideoTrack(current, false);
+      return;
+    }
     await _load(
       PlayRequest(
         videoId: original.videoId,
@@ -1636,17 +1812,9 @@ class PlaybackController extends Notifier<PlaybackService?> {
       prepareStreaming: () async {
         await ref.read(visitorDataProvider.future);
       },
-      completedDownloadPath: (videoId) async {
-        final db = ref.read(dbProvider);
-        final rows =
-            await (db.select(db.downloads)..where(
-                  (row) =>
-                      row.videoId.equals(videoId) &
-                      row.status.equals('completed'),
-                ))
-                .get();
-        return rows.isEmpty ? null : rows.last.path;
-      },
+      audioOnlyPreference: () => ref.read(appSettingsProvider).audioOnly,
+      completedDownloadPath: (videoId, mode) =>
+          findLocalPlaybackSource(ref.read(dbProvider), videoId, mode),
       bandwidthEstimator: estimator,
       onQualityPreferenceChanged: (value) => ref
           .read(appSettingsProvider.notifier)

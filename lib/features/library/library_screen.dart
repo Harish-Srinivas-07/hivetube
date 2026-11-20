@@ -13,6 +13,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_motion.dart';
 import 'library_skeleton.dart';
 import '../downloads/downloads_screen.dart';
+import '../playlist/playlist_dialog_content.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_colors.dart';
@@ -21,6 +22,7 @@ import '../../core/providers.dart';
 import '../../core/yt/takeout_parser.dart';
 import '../../core/yt/models.dart';
 import '../watch/mini_player_inset.dart';
+import '../watch/watch_panel.dart';
 import '../../widgets/ui/ui.dart';
 import '../../widgets/video_options_menu.dart';
 import '../../widgets/home_top_bar.dart';
@@ -366,46 +368,42 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AppDialog(
-        title: 'New playlist',
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Playlist title...',
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-            border: const OutlineInputBorder(
-              borderRadius: AppRadius.mdBorder,
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: const OutlineInputBorder(
-              borderRadius: AppRadius.mdBorder,
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: const OutlineInputBorder(
-              borderRadius: AppRadius.mdBorder,
-              borderSide: BorderSide.none,
-            ),
-            errorBorder: const OutlineInputBorder(
-              borderRadius: AppRadius.mdBorder,
-              borderSide: BorderSide.none,
-            ),
-            disabledBorder: const OutlineInputBorder(
-              borderRadius: AppRadius.mdBorder,
-              borderSide: BorderSide.none,
+        content: PlaylistDialogContent(
+          icon: LucideIcons.listPlus,
+          title: 'New playlist',
+          actionLabel: 'Create',
+          onCancel: () => Navigator.of(ctx).pop(),
+          onAction: () => Navigator.of(ctx).pop(controller.text.trim()),
+          details: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Playlist title...',
+              filled: true,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+              border: const OutlineInputBorder(
+                borderRadius: AppRadius.mdBorder,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: const OutlineInputBorder(
+                borderRadius: AppRadius.mdBorder,
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderRadius: AppRadius.mdBorder,
+                borderSide: BorderSide.none,
+              ),
+              errorBorder: const OutlineInputBorder(
+                borderRadius: AppRadius.mdBorder,
+                borderSide: BorderSide.none,
+              ),
+              disabledBorder: const OutlineInputBorder(
+                borderRadius: AppRadius.mdBorder,
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
         ),
-        actions: [
-          AppButton.text(
-            onPressed: () => Navigator.of(ctx).pop(),
-            label: 'Cancel',
-          ),
-          AppButton.filled(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            label: 'Create',
-          ),
-        ],
       ),
     );
 
@@ -490,7 +488,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: () => context.push('/watch/$id'),
+            onTap: () => openWatchPanel(ref, id),
             child: ThumbnailWithDuration(
               url: video.thumbUrl,
               videoId: id,
@@ -505,7 +503,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             children: [
               Expanded(
                 child: InkWell(
-                  onTap: () => context.push('/watch/$id'),
+                  onTap: () => openWatchPanel(ref, id),
                   child: Text(
                     video.title,
                     maxLines: 2,

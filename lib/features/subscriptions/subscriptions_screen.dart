@@ -15,6 +15,7 @@ import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../watch/mini_player_inset.dart';
+import '../watch/watch_panel.dart';
 import '../../widgets/common/common.dart';
 import '../../widgets/ui/app_controls.dart';
 import '../../widgets/home_top_bar.dart';
@@ -502,7 +503,7 @@ class _SubscriptionFeedCard extends ConsumerWidget {
     );
     return VideoCard.feed(
       video: video,
-      onTap: () => context.push('/watch/${item.videoId}'),
+      onTap: () => openWatchPanel(ref, item.videoId),
     );
   }
 }
