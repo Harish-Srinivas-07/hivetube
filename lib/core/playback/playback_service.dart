@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:media_kit/media_kit.dart';
@@ -30,6 +31,7 @@ import '../streams/net_family.dart';
 import '../innertube/innertube_http.dart';
 import '../yt/captions.dart';
 import '../yt/models.dart';
+import '../../widgets/logger.dart';
 import 'session_queue.dart';
 import 'watch_session.dart';
 import 'player_interactions.dart';
@@ -155,6 +157,43 @@ Future<PlayRequest?> switchRetainedVideoTrack({
   );
 }
 
+class _PreparedShort {
+  _PreparedShort(this.id, this.player, this.controller, this.audio);
+  final String id;
+  final Player player;
+  final VideoController controller;
+  final Uri audio;
+}
+
+@visibleForTesting
+class ShortPreloadQueue {
+  int generation = 0;
+  Future<void> _tail = Future.value();
+
+  int begin() => ++generation;
+
+  Future<T> run<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+}
+
+@visibleForTesting
+Future<bool> handoffShortPlayer({
+  required bool Function() isCurrent,
+  required Future<void> Function() pausePrevious,
+  required Future<void> Function() promote,
+  required Future<void> Function() start,
+}) async {
+  if (!isCurrent()) return false;
+  await pausePrevious();
+  if (!isCurrent()) return false;
+  await promote();
+  if (isCurrent()) await start();
+  return true;
+}
+
 class PlaybackService extends ChangeNotifier {
   PlaybackService(
     this.cache,
@@ -260,11 +299,14 @@ class PlaybackService extends ChangeNotifier {
   final BandwidthEstimator? bandwidthEstimator;
   final Future<void> Function(VideoQualityPreference)?
   onQualityPreferenceChanged;
-  final Player _player = Player();
-  late final VideoController _controller = VideoController(_player);
+  Player _player = Player();
+  late VideoController _controller = VideoController(_player);
   Player get player => _player;
   VideoController get controller => _controller;
-  int _shortPreloadGeneration = 0;
+  final _shortQueue = ShortPreloadQueue();
+  int get _shortPreloadGeneration => _shortQueue.generation;
+  _PreparedShort? _preparedShort;
+  String? _failedShortPreload;
   final Set<Player> _observedPlayers = {};
   final Set<VideoController> _frameWaitedControllers = {};
   final PlaybackSnapshot state = PlaybackSnapshot();
@@ -811,10 +853,23 @@ class PlaybackService extends ChangeNotifier {
     _notify();
   }
 
-  int beginShortPreloadCycle() => ++_shortPreloadGeneration;
+  int beginShortPreloadCycle() => _shortQueue.begin();
+
+  Future<T> _runShortOperation<T>(Future<T> Function() action) {
+    return _shortQueue.run(action);
+  }
 
   void cancelShortPreloads({bool disposePlayer = false}) {
-    _shortPreloadGeneration++;
+    _shortQueue.begin();
+    if (disposePlayer) {
+      unawaited(
+        _runShortOperation(() async {
+          final prepared = _preparedShort;
+          _preparedShort = null;
+          if (prepared != null) await prepared.player.dispose();
+        }),
+      );
+    }
   }
 
   Future<void> preResolve(
@@ -823,6 +878,11 @@ class PlaybackService extends ChangeNotifier {
     int? generation,
   }) async {
     if (generation != null && generation != _shortPreloadGeneration) return;
+    if (mode == PlaybackMode.short &&
+        (!_networkState.online ||
+            _qualityPreference == VideoQualityPreference.dataSaver)) {
+      return;
+    }
     try {
       await cache.resolve(
         id,
@@ -830,15 +890,195 @@ class PlaybackService extends ChangeNotifier {
         quality: AdaptiveQualityPolicy.fixedHeight(_qualityPreference),
         maxHeight: _qualityCap,
       );
-    } catch (_) {}
+    } catch (error) {
+      if (generation == null || generation == _shortPreloadGeneration) {
+        Logger.log('Shorts', error);
+      }
+    }
   }
 
-  Future<void> preloadShort(String id, {required int generation}) =>
-      preResolve(id, PlaybackMode.short, generation: generation);
+  Future<void> preloadShort(String id, {required int generation}) async {
+    if (!_visible ||
+        _disposed ||
+        !_networkState.online ||
+        _qualityPreference == VideoQualityPreference.dataSaver ||
+        request?.mode != PlaybackMode.short ||
+        generation != _shortPreloadGeneration) {
+      return;
+    }
+    try {
+      final quality = AdaptiveQualityPolicy.fixedHeight(_qualityPreference);
+      final selected = await cache
+          .resolve(
+            id,
+            PlaybackMode.short,
+            quality: quality,
+            maxHeight: _qualityCap,
+          )
+          .timeout(const Duration(seconds: 8));
+      if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+        return;
+      }
+      final video =
+          selected.videos
+              .where(
+                (format) =>
+                    resolutionOf(format, PlaybackMode.short) <=
+                    (quality ?? _qualityCap),
+              )
+              .firstOrNull ??
+          selected.videos.last;
+      final videoUri = await relay.register(video);
+      final audioUri = await relay.register(selected.audio!);
+      await _runShortOperation(() async {
+        if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+          return;
+        }
+        if (_preparedShort?.id == id) return;
+        final old = _preparedShort;
+        _preparedShort = null;
+        if (old != null) await old.player.dispose();
+        if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+          return;
+        }
+        Player? next;
+        try {
+          next = Player();
+          final controller = VideoController(next);
+          WidgetsBinding.instance.ensureVisualUpdate();
+          _configurePlayer(next, shortBuffer: true);
+          await next.setVolume(0);
+          await next.setPlaylistMode(PlaylistMode.single);
+          await next.open(Media(videoUri.toString()), play: false);
+          await next.setAudioTrack(AudioTrack.uri(audioUri.toString()));
+          if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+            return;
+          }
+          _preparedShort = _PreparedShort(id, next, controller, audioUri);
+          _failedShortPreload = null;
+          next = null;
+        } finally {
+          if (next != null) await next.dispose();
+        }
+      });
+    } catch (error) {
+      if (generation == _shortPreloadGeneration) {
+        _failedShortPreload = id;
+        Logger.log('Shorts', error);
+      }
+    }
+  }
 
   Future<bool> playShort(String id) async {
     if (!_visible || _disposed) return false;
-    cancelShortPreloads();
+    final generation = _loadGuard.next();
+    final prepared = await _runShortOperation(() async {
+      final slot = _preparedShort;
+      if (slot?.id != id ||
+          !_visible ||
+          _disposed ||
+          !_loadGuard.isCurrent(generation)) {
+        return false;
+      }
+      final previousCommit = _commitTail;
+      final commitDone = Completer<void>();
+      _commitTail = commitDone.future;
+      try {
+        await previousCommit;
+        if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+          return false;
+        }
+        final previousPlayer = player;
+        return await handoffShortPlayer(
+          isCurrent: () =>
+              _visible && !_disposed && _loadGuard.isCurrent(generation),
+          pausePrevious: previousPlayer.pause,
+          promote: () async {
+            _preparedShort = null;
+            _shortQueue.begin();
+            _failureMonitor.cancel();
+            _seekController.dispose();
+            for (final subscription in _subscriptions) {
+              await subscription.cancel();
+            }
+            _subscriptions.clear();
+            _observedPlayers.remove(previousPlayer);
+            _frameWaitedControllers.remove(_controller);
+            _player = slot!.player;
+            _controller = slot.controller;
+            await previousPlayer.dispose();
+            request = PlayRequest.short(id);
+            state.videoId = id;
+            state.mode = PlaybackMode.short;
+            state.position = Duration.zero;
+            state.buffered = player.state.buffer;
+            state.duration = player.state.duration;
+            state.videoWidth = null;
+            state.videoHeight = null;
+            state.frameReadyId = null;
+            state.frozenFrame = null;
+            state.playing = false;
+            state.status = PlayerStatus.loading;
+            state.recovering = false;
+            state.error = null;
+            state.subtitleText = '';
+            state.captions = cache.captionTracks(id);
+            state.selectedCaption = null;
+            _currentAudioUri = slot.audio;
+            _activeFrameVideoId = null;
+            _playingLocalFile = false;
+            _videoTrackSuppressed = false;
+            _userPaused = false;
+            _switching = false;
+            _resumeAfterVisibility = false;
+            _budget.reset();
+            _seekController = _createSeekController();
+            _observeActivePlayer(player);
+            _listen();
+            _notify();
+          },
+          start: () async {
+            if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+              return;
+            }
+            final focus = await _activateAudioFocus();
+            if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+              return;
+            }
+            if (focus) {
+              await player.setVolume(
+                state.muted ? 0 : (state.volume == 0 ? 100 : state.volume),
+              );
+              if (_visible && !_disposed && _loadGuard.isCurrent(generation)) {
+                await player.play();
+              }
+            } else {
+              state.status = PlayerStatus.paused;
+              _notify();
+            }
+          },
+        );
+      } finally {
+        commitDone.complete();
+      }
+    });
+    if (prepared ||
+        !_visible ||
+        _disposed ||
+        !_loadGuard.isCurrent(generation)) {
+      return prepared;
+    }
+    if (_failedShortPreload == id) {
+      _failedShortPreload = null;
+      cache.invalidate(id);
+      await preloadShort(id, generation: _shortPreloadGeneration);
+      if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+        return false;
+      }
+      if (_preparedShort?.id == id) return playShort(id);
+      _failedShortPreload = null;
+    }
+    cancelShortPreloads(disposePlayer: true);
     await play(PlayRequest.short(id));
     return false;
   }
@@ -1104,7 +1344,7 @@ class PlaybackService extends ChangeNotifier {
             !_userPaused;
         await player.open(
           Media(video.toString(), start: value.startAt),
-          play: retainVideo ? false : shouldPlay,
+          play: false,
         );
         if (retainVideo) {
           await player.setVideoTrack(VideoTrack.no());
@@ -1119,6 +1359,12 @@ class PlaybackService extends ChangeNotifier {
           _debugLog('_load: calling player.setAudioTrack...');
           await player.setAudioTrack(AudioTrack.uri(audio.toString()));
           _debugLog('_load: player.setAudioTrack finished.');
+        }
+        if (!_loadGuard.isCurrent(generation)) return;
+        final focus = await _activateAudioFocus();
+        if (!_loadGuard.isCurrent(generation)) return;
+        if (shouldPlay && focus && !_userPaused && _visible) {
+          await player.play();
         }
         if (!_loadGuard.isCurrent(generation)) return;
         if (newRequest && value.mode != PlaybackMode.audio) {
@@ -1152,16 +1398,12 @@ class PlaybackService extends ChangeNotifier {
         if (caption != null) {
           unawaited(setCaption(caption));
         }
-        final focus = await _activateAudioFocus();
         _debugLog(
           '_load: shouldPlay=$shouldPlay (play=${value.play}, visible=$_visible, userPaused=$_userPaused) focus=$focus',
         );
         if (shouldPlay && focus && !_userPaused && _visible) {
           state.status = PlayerStatus.playing;
           _notify();
-          _debugLog('_load: calling player.play()...');
-          await player.play();
-          _debugLog('_load: player.play() finished.');
         } else {
           if (player.state.playing) await player.pause();
           state.playing = false;
@@ -1601,7 +1843,7 @@ class PlaybackService extends ChangeNotifier {
       );
     }
     _disposed = true;
-    _shortPreloadGeneration++;
+    cancelShortPreloads(disposePlayer: true);
     _seekController.dispose();
     _failureMonitor.cancel();
     _qualityTimer?.cancel();

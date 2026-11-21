@@ -69,6 +69,7 @@ class _FakePlayback extends Fake implements PlaybackService {
   final VideoController _controller;
   final snapshot = PlaybackSnapshot()..status = PlayerStatus.playing;
   bool stopped = false;
+  final List<Duration> seekRequests = [];
   @override
   PlayRequest? get request => null;
   @override
@@ -95,6 +96,11 @@ class _FakePlayback extends Fake implements PlaybackService {
   @override
   Future<void> stop() async {
     stopped = true;
+  }
+
+  @override
+  Future<void> seekTo(Duration position) async {
+    seekRequests.add(position);
   }
 }
 
@@ -185,6 +191,123 @@ class _FullscreenCaptionsUi extends PlayerUiController {
 }
 
 void main() {
+  testWidgets('fullscreen multi-tap seeks backward', (tester) async {
+    final service = _FakePlayback()
+      ..state.status = PlayerStatus.paused
+      ..state.position = const Duration(seconds: 40)
+      ..state.duration = const Duration(seconds: 120);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(() => _ProgressUi(true))],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                height: 203,
+                child: SharedPlayer(
+                  service: service,
+                  videoOverride: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final tap =
+        tester.getTopLeft(find.byType(SharedPlayer)) + const Offset(15, 100);
+    await tester.tapAt(tap);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(tap);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('-10s'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(service.seekRequests, [const Duration(seconds: 30)]);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('multi-tap seeks once without changing a paused player', (
+    tester,
+  ) async {
+    final service = _FakePlayback()
+      ..state.status = PlayerStatus.paused
+      ..state.playing = false
+      ..state.position = const Duration(seconds: 20)
+      ..state.duration = const Duration(seconds: 120);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerUiProvider.overrideWith(_FakeUi.new)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                height: 203,
+                child: SharedPlayer(
+                  service: service,
+                  videoOverride: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final player = find.byType(SharedPlayer);
+    final tap = tester.getTopLeft(player) + const Offset(345, 100);
+    for (var i = 0; i < 5; i++) {
+      await tester.tapAt(tap);
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('+50s'), findsOneWidget);
+    expect(service.seekRequests, isEmpty);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(find.byKey(const ValueKey('playerOverlay')))
+          .opacity,
+      1,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(service.seekRequests, [const Duration(seconds: 70)]);
+    expect(service.state.playing, isFalse);
+    expect(find.text('+50s'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('startup shows a spinner until playback is ready', (
+    tester,
+  ) async {
+    final service = _FakePlayback()..state.status = PlayerStatus.loading;
+    Widget player() => ProviderScope(
+      overrides: [playerUiProvider.overrideWith(_FakeUi.new)],
+      child: MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            height: 225,
+            child: SharedPlayer(
+              service: service,
+              videoOverride: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(player());
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byKey(const ValueKey('playerPlayPauseButton')), findsNothing);
+    expect(find.byTooltip('Previous'), findsNothing);
+    expect(find.byTooltip('Next'), findsNothing);
+
+    service.state.status = PlayerStatus.playing;
+    await tester.pumpWidget(player());
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const ValueKey('playerPlayPauseButton')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('fullscreen audio-only control follows Background play', (
     tester,
   ) async {
@@ -250,6 +373,7 @@ void main() {
       overrides: [
         playbackProvider.overrideWith(() => _FakePlaybackController(service)),
         appSettingsProvider.overrideWith(_AudioSettings.new),
+        watchPanelProvider.overrideWith(_OpenPanel.new),
       ],
     );
     addTearDown(container.dispose);
@@ -552,7 +676,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.widget<AnimatedOpacity>(overlay).opacity, 0);
     await tester.tapAt(tester.getTopLeft(overlay) + const Offset(15, 90));
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 450));
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.widget<AnimatedOpacity>(overlay).opacity, 1);
   });

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/playback/playback_service.dart';
 import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
-import '../../core/streams/stream_selector.dart';
 import '../../core/db/history_entry.dart';
 import '../../core/yt/models.dart';
 import '../../widgets/logger.dart';
@@ -36,10 +35,7 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
   Future<void>? _inFlight;
   int _generation = 0;
   PlaybackService? _warmedService;
-  String _warmedIds = '';
   bool _retryAfterFlight = false;
-  int _warmStartIndex = 0;
-  Future<void> _warmTask = Future<void>.value();
 
   @override
   ShortsFeedState build() {
@@ -47,9 +43,6 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
       if (previous != null && previous.prefsVersion != next.prefsVersion) {
         clear();
       }
-    });
-    ref.listen(playbackProvider, (_, service) {
-      if (service != null) _warmFirstWindow(service);
     });
     ref.onDispose(() {
       _warmedService?.cancelShortPreloads(disposePlayer: true);
@@ -59,20 +52,16 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
 
   void seed(List<ShortItem> items) {
     if (items.isEmpty || state.items.isNotEmpty) return;
-    _warmStartIndex = 0;
     state = ShortsFeedState(
       items: List.unmodifiable(items),
       isLoading: state.isLoading,
       hasLoaded: state.hasLoaded,
     );
-    _warmFirstWindow(ref.read(playbackProvider));
   }
 
   void adoptSelection(List<ShortItem> items, {int startIndex = 0}) {
     if (items.isEmpty) return;
-    _warmStartIndex = startIndex;
     if (_sameItems(state.items, items)) {
-      _warmFirstWindow(ref.read(playbackProvider));
       return;
     }
     state = ShortsFeedState(
@@ -80,8 +69,6 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
       isLoading: state.isLoading,
       hasLoaded: false,
     );
-    _warmedIds = '';
-    _warmFirstWindow(ref.read(playbackProvider));
   }
 
   Future<void> prefetch({List<ShortItem> seedItems = const []}) async {
@@ -92,9 +79,6 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
       'start items=${state.items.length} ms=${started.elapsedMilliseconds}',
     );
     await _startFetch(cursor: null, merge: true);
-    try {
-      await _warmTask;
-    } catch (_) {}
     Logger.log(
       'ShortsPrefetch',
       'done items=${state.items.length} ms=${started.elapsedMilliseconds}',
@@ -116,25 +100,27 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
 
   Future<void> refresh() => _startFetch(cursor: null, merge: true);
 
+  Future<void> refreshForTab() async {
+    final pending = _inFlight;
+    if (pending != null) await pending;
+    await _startFetch(cursor: null, merge: false);
+  }
+
   void clear() {
     _generation++;
     _retryAfterFlight = _inFlight != null;
     state = const ShortsFeedState();
-    _warmedIds = '';
-    _warmStartIndex = 0;
     _warmedService?.cancelShortPreloads(disposePlayer: true);
     _warmedService = null;
   }
 
   void releaseWarmWindow() {
-    _warmedIds = '';
     _warmedService?.cancelShortPreloads(disposePlayer: true);
     _warmedService = null;
   }
 
   void prepareCachedWindow({int startIndex = 0}) {
-    _warmStartIndex = startIndex;
-    _warmFirstWindow(ref.read(playbackProvider));
+    _warmedService = ref.read(playbackProvider);
   }
 
   Future<void> _startFetch({required String? cursor, required bool merge}) {
@@ -247,7 +233,9 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
       final filteredItems = rankedIds.map((id) => byId[id]!).toList();
       if (generation != _generation) return;
 
-      final existing = merge ? state.items : const <ShortItem>[];
+      final existing = merge || filteredItems.isEmpty
+          ? state.items
+          : const <ShortItem>[];
       final existingIds = existing.map((item) => item.id).toSet();
       final nextItems = [
         ...existing,
@@ -259,7 +247,6 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
         isLoading: false,
         hasLoaded: true,
       );
-      _warmFirstWindow(ref.read(playbackProvider));
     } catch (_) {
       if (generation != _generation) return;
       state = ShortsFeedState(
@@ -269,29 +256,6 @@ class ShortsFeedController extends Notifier<ShortsFeedState> {
         hasLoaded: true,
       );
     }
-  }
-
-  void _warmFirstWindow(PlaybackService? service) {
-    _warmWindow(service, state.items, _warmStartIndex);
-  }
-
-  void _warmWindow(
-    PlaybackService? service,
-    List<ShortItem> items,
-    int startIndex,
-  ) {
-    if (service == null || items.isEmpty || startIndex >= items.length) return;
-    final firstItems = items.skip(startIndex).take(3).toList(growable: false);
-    final ids = firstItems.map((item) => item.id).join('|');
-    if (identical(service, _warmedService) && ids == _warmedIds) return;
-    _warmedService = service;
-    _warmedIds = ids;
-    final cycle = service.beginShortPreloadCycle();
-    _warmTask = Future.wait([
-      for (final item in firstItems)
-        service.preResolve(item.id, PlaybackMode.short, generation: cycle),
-      service.preloadShort(firstItems.first.id, generation: cycle),
-    ]).then<void>((_) {});
   }
 
   bool _sameItems(List<ShortItem> left, List<ShortItem> right) =>

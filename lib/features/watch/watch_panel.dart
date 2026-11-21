@@ -22,9 +22,11 @@ import '../../core/settings/app_settings.dart';
 import '../../core/streams/stream_selector.dart';
 import '../../core/yt/models.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_sizes.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/player/player_controls.dart';
 import '../home/home_variety.dart';
 import 'mini_player_inset.dart';
@@ -56,15 +58,24 @@ final watchPanelProgressProvider = Provider<ValueNotifier<double>>((ref) {
 });
 
 class WatchPanelController extends Notifier<String?> {
+  bool audioOnly = false;
+
   @override
   String? build() => null;
-  void open(String id) => state = id;
-  void close() => state = null;
+  void open(String id, {bool audioOnly = false}) {
+    this.audioOnly = audioOnly;
+    state = id;
+  }
+
+  void close() {
+    audioOnly = false;
+    state = null;
+  }
 }
 
 /// Helper to open a video and expand the watch panel
-void openWatchPanel(WidgetRef ref, String id) {
-  ref.read(watchPanelProvider.notifier).open(id);
+void openWatchPanel(WidgetRef ref, String id, {bool audioOnly = false}) {
+  ref.read(watchPanelProvider.notifier).open(id, audioOnly: audioOnly);
   ref.read(watchPanelExpandProvider.notifier).expand();
   ref.read(playerUiProvider.notifier).setDismissed(false);
 }
@@ -159,8 +170,13 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   bool _skipHistory = false;
   bool _keepMini = false;
   bool _shellRouteUpdateScheduled = false;
+  bool _metadataScrolled = false;
+  late final MultiTapSeekSession _miniSeek;
+  int _miniSeekSeconds = 0;
+  String? _miniSeekVideoId;
 
   String? _started;
+  bool _startedAudioOnly = false;
   PlaybackService? _active;
   PlaybackController? _playbackController;
   Timer? _countdown;
@@ -183,6 +199,24 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
   @override
   void initState() {
     super.initState();
+    _miniSeek = MultiTapSeekSession(
+      gap: AppMotion.multiTapSeek,
+      onSingleTap: () {
+        if (mounted) _animate(1);
+      },
+      onFeedback: (step) {
+        if (mounted) setState(() => _miniSeekSeconds = step?.totalSeconds ?? 0);
+      },
+      onSeek: (target) {
+        final service = ref.read(playbackProvider);
+        if (mounted &&
+            !ref.read(playerUiProvider).locked &&
+            ref.read(watchPanelProvider) == _miniSeekVideoId &&
+            service != null) {
+          unawaited(service.seekTo(target));
+        }
+      },
+    );
     shellRouteVisible.addListener(_onShellRouteChanged);
     _progress = ref.read(watchPanelProgressProvider);
     // Start at 1 (expanded) when opened
@@ -198,6 +232,7 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
 
   @override
   void dispose() {
+    _miniSeek.cancel(notify: false);
     shellRouteVisible.removeListener(_onShellRouteChanged);
     _playbackController?.setOnVideoChanged(null);
     _countdown?.cancel();
@@ -265,15 +300,21 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     if (service == null) {
       return;
     }
-    final isAlreadyLoaded = _started == id && identical(_active, service);
+    final audioOnly = ref.read(watchPanelProvider.notifier).audioOnly;
+    final isAlreadyLoaded =
+        _started == id &&
+        identical(_active, service) &&
+        _startedAudioOnly == audioOnly;
     if (isAlreadyLoaded) {
       // This callback is scheduled after every WatchPanel build. Re-entering
       // resume here undoes a user pause when playback state rebuilds the panel.
       return;
     }
     _started = id;
+    _startedAudioOnly = audioOnly;
     _active = service;
     if (service.state.videoId == id &&
+        (!audioOnly || service.state.mode == PlaybackMode.audio) &&
         (service.state.mode == PlaybackMode.video ||
             service.state.mode == PlaybackMode.audio)) {
       return;
@@ -283,17 +324,27 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     }
     ref.read(playerUiProvider.notifier).setDismissed(false);
     final history = await ref.read(historyRepoProvider).recent();
-    if (!mounted || ref.read(watchPanelProvider) != id || _started != id) {
+    if (!mounted ||
+        ref.read(watchPanelProvider) != id ||
+        _started != id ||
+        ref.read(watchPanelProvider.notifier).audioOnly != audioOnly) {
       return;
     }
     final saved = history.where((entry) => entry.videoId == id).firstOrNull;
     final start = resumePosition(saved);
     await service.setLoop(false);
-    if (!mounted || ref.read(watchPanelProvider) != id || _started != id) {
+    if (!mounted ||
+        ref.read(watchPanelProvider) != id ||
+        _started != id ||
+        ref.read(watchPanelProvider.notifier).audioOnly != audioOnly) {
       return;
     }
     await service.playVideoRequest(
-      PlayRequest(videoId: id, mode: PlaybackMode.video, startAt: start),
+      PlayRequest(
+        videoId: id,
+        mode: audioOnly ? PlaybackMode.audio : PlaybackMode.video,
+        startAt: start,
+      ),
     );
   }
 
@@ -355,6 +406,8 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
     // React to panel id changes
     ref.listen<String?>(watchPanelProvider, (previous, next) {
       if (next != null && next != previous) {
+        _miniSeek.cancel();
+        _metadataScrolled = false;
         _panelActive = true;
         _publish(animation.value);
         ref
@@ -483,7 +536,10 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
               service,
               videoId: id,
             );
-            final portraitVideo = aspectRatio != null && aspectRatio < 1;
+            final portraitVideo =
+                aspectRatio != null &&
+                aspectRatio < 1 &&
+                (ui.isFullscreen || !_metadataScrolled);
             final maxPlayerWidth = wide
                 ? bounds.maxWidth * .64
                 : bounds.maxWidth;
@@ -608,6 +664,11 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                   placeholderVideo: true,
                   embedded: true,
                   deferHeavyContent: true,
+                  onMetadataScrollStarted: () {
+                    if (!_metadataScrolled) {
+                      setState(() => _metadataScrolled = true);
+                    }
+                  },
                   onMinimize: () => _animate(0),
                   navigatorContext: widget.navigatorContext,
                 ),
@@ -692,8 +753,24 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                       'miniPlayerDragSurface',
                                     ),
                                     behavior: HitTestBehavior.opaque,
-                                    onTap: () => _animate(1),
-                                    onPanStart: (_) => _snapCtrl.stop(),
+                                    onTapUp: (details) {
+                                      if (ui.locked) {
+                                        _animate(1);
+                                        return;
+                                      }
+                                      _miniSeekVideoId = id;
+                                      _miniSeek.tap(
+                                        forward:
+                                            details.localPosition.dx >=
+                                            miniWidth / 2,
+                                        position: service.state.position,
+                                        duration: service.state.duration,
+                                      );
+                                    },
+                                    onPanStart: (_) {
+                                      _miniSeek.cancel();
+                                      _snapCtrl.stop();
+                                    },
                                     onPanUpdate: (details) {
                                       final next =
                                           _miniPos.value + details.delta;
@@ -763,6 +840,27 @@ class _WatchPanelState extends ConsumerState<WatchPanel>
                                     },
                                     child: const SizedBox.expand(),
                                   ),
+                                  if (_miniSeekSeconds != 0)
+                                    IgnorePointer(
+                                      child: Align(
+                                        alignment: _miniSeekSeconds < 0
+                                            ? Alignment.centerLeft
+                                            : Alignment.centerRight,
+                                        child: FractionallySizedBox(
+                                          widthFactor: .5,
+                                          child: Center(
+                                            child: Text(
+                                              '${_miniSeekSeconds > 0 ? '+' : '-'}${_miniSeekSeconds.abs()}s',
+                                              style: AppTextStyles.bodyStrong
+                                                  .copyWith(
+                                                    color: AppColors
+                                                        .shortsForeground,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   Align(
                                     alignment: Alignment.topLeft,
                                     child: _MiniControlButton(

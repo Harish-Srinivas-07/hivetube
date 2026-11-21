@@ -15,6 +15,7 @@ import android.net.Uri
 import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.util.Rational
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -27,6 +28,7 @@ class MainActivity : AudioServiceActivity() {
     private var pipChannel: MethodChannel? = null
     private var pipEligible = false
     private var pipPlaying = false
+    private var pipAspect = 16.0 / 9.0
     private val pipAction = "com.hiveminds.hivetube.PIP_PLAY_PAUSE"
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -86,10 +88,17 @@ class MainActivity : AudioServiceActivity() {
                 "update" -> {
                     pipEligible = call.argument<Boolean>("eligible") == true
                     pipPlaying = call.argument<Boolean>("playing") == true
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
-                        setPictureInPictureParams(pipParams())
+                    val aspect = call.argument<Double>("aspect")
+                    pipAspect = if (aspect != null && aspect.isFinite()) aspect.coerceIn(0.42, 2.39) else 16.0 / 9.0
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            setPictureInPictureParams(pipParams())
+                        }
+                        result.success(null)
+                    } catch (error: RuntimeException) {
+                        Log.e("HivetubePip", "Failed to update picture-in-picture parameters", error)
+                        result.error("pip_update_failed", error.message, null)
                     }
-                    result.success(null)
                 }
                 else -> result.notImplemented()
             }
@@ -108,14 +117,25 @@ class MainActivity : AudioServiceActivity() {
         val icon = if (pipPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val label = if (pipPlaying) "Pause" else "Play"
         val action = RemoteAction(Icon.createWithResource(this, icon), label, label, pending)
-        return PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setActions(listOf(action)).build()
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational((pipAspect * 10000).toInt(), 10000))
+            .setActions(listOf(action))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(pipEligible).setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && pipEligible && !isInPictureInPictureMode && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pipEligible && !isInPictureInPictureMode && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
             pipChannel?.invokeMethod("entering", null)
-            val entered = try { enterPictureInPictureMode(pipParams()) } catch (_: RuntimeException) { false }
+            val entered = try {
+                enterPictureInPictureMode(pipParams())
+            } catch (error: RuntimeException) {
+                Log.e("HivetubePip", "Failed to enter picture-in-picture", error)
+                false
+            }
             if (!entered) pipChannel?.invokeMethod("changed", false)
         }
     }

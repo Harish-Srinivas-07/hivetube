@@ -6,6 +6,22 @@ import 'package:hivetube/core/yt/models.dart';
 import 'package:hivetube/features/watch/watch_rules.dart';
 
 void main() {
+  test('watch channel name falls back to the video author', () {
+    final info = parseWatchInfo({
+      'videoSecondaryInfoRenderer': {
+        'videoOwnerRenderer': {
+          'title': {'simpleText': ''},
+          'navigationEndpoint': {
+            'browseEndpoint': {'browseId': 'UCtest'},
+          },
+        },
+      },
+      'videoDetails': {'author': 'Channel name'},
+    }, 'video1');
+    expect(info.channelName, 'Channel name');
+    expect(info.channelId, 'UCtest');
+  });
+
   test('parses watch metadata, related videos and chapters', () {
     final info = parseWatchInfo({
       'videoPrimaryInfoRenderer': {

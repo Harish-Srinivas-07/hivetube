@@ -118,8 +118,11 @@ class RelayServer {
     int end, {
     Duration timeout = const Duration(seconds: 6),
     bool isCancelled = false,
+    Future<void> Function()? onHeaders,
+    Future<void> Function(List<int>)? onChunk,
   }) async {
     final stopwatch = Stopwatch()..start();
+    var responseStarted = false;
     if (isCancelled) {
       throw const SocketException('Client connection closed');
     }
@@ -143,8 +146,14 @@ class RelayServer {
       request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
       final response = await request.close().timeout(timeout);
       final builder = BytesBuilder(copy: false);
+      if ((response.statusCode == 206 || response.statusCode == 200) &&
+          onHeaders != null) {
+        responseStarted = true;
+        await onHeaders();
+      }
       await for (final chunk in response) {
         builder.add(chunk);
+        if (responseStarted && onChunk != null) await onChunk(chunk);
       }
       return (status: response.statusCode, bytes: builder.takeBytes());
     }
@@ -157,6 +166,7 @@ class RelayServer {
       }
       return result;
     } catch (e) {
+      if (responseStarted) rethrow;
       if (isCancelled) {
         throw const SocketException('Client connection closed');
       }
@@ -241,56 +251,68 @@ class RelayServer {
       return;
     }
 
-    // First chunk before head (with 6s timeout)
     final startChunk = start ~/ _ChunkCache.chunkSize;
+    Socket? downstream;
+    bool clientClosed = false;
+    Future<void> startResponse() async {
+      downstream = await response.detachSocket(writeHeaders: false);
+      downstream!.done.then((_) => clientClosed = true).ignore();
+      downstream!.write(
+        'HTTP/1.1 ${range == null ? '200 OK' : '206 Partial Content'}\r\n'
+        'Content-Type: ${format.mimeType.split(';').first}\r\n'
+        'Content-Length: ${end - start + 1}\r\n'
+        'Accept-Ranges: bytes\r\n'
+        '${range == null ? '' : 'Content-Range: bytes $start-$end/$size\r\n'}'
+        'Connection: close\r\n\r\n',
+      );
+    }
 
-    Uint8List firstChunkData;
     final cachedFirst = cache.get(startChunk);
+    Uint8List firstChunkData;
     if (cachedFirst != null) {
       firstChunkData = cachedFirst;
+      try {
+        await startResponse();
+      } catch (_) {
+        return;
+      }
     } else {
       final chunkStart = startChunk * _ChunkCache.chunkSize;
       final chunkEnd = min(size - 1, chunkStart + _ChunkCache.chunkSize - 1);
-      final firstRes = await _fetchRange(
-        format,
-        chunkStart,
-        chunkEnd,
-        timeout: const Duration(seconds: 6),
-      );
-      if (firstRes.status != 206 && firstRes.status != 200) {
-        response.statusCode = firstRes.status >= 400 && firstRes.status < 500
-            ? firstRes.status
-            : 502;
-        await response.close();
+      var offset = chunkStart;
+      try {
+        final firstRes = await _fetchRange(
+          format,
+          chunkStart,
+          chunkEnd,
+          onHeaders: startResponse,
+          onChunk: (bytes) async {
+            if (clientClosed) {
+              throw const SocketException('Client disconnected');
+            }
+            final from = max(0, start - offset);
+            final to = min(bytes.length, end - offset + 1);
+            if (from < to) {
+              downstream!.add(bytes.sublist(from, to));
+              await downstream!.flush();
+            }
+            offset += bytes.length;
+          },
+        );
+        if (firstRes.status != 206 && firstRes.status != 200) {
+          response.statusCode = firstRes.status >= 400 && firstRes.status < 500
+              ? firstRes.status
+              : 502;
+          await response.close();
+          return;
+        }
+        firstChunkData = firstRes.bytes;
+        cache.put(startChunk, firstChunkData);
+      } catch (_) {
+        downstream?.destroy();
         return;
       }
-      cache.put(startChunk, firstRes.bytes);
-      firstChunkData = firstRes.bytes;
     }
-
-    Socket? downstream;
-    bool clientClosed = false;
-
-    try {
-      downstream = await response.detachSocket(writeHeaders: false);
-      downstream.done.then((_) => clientClosed = true).ignore();
-    } catch (_) {
-      clientClosed = true;
-    }
-
-    if (clientClosed || downstream == null) {
-      return;
-    }
-
-    // Write initial HTTP response headers
-    downstream.write(
-      'HTTP/1.1 ${range == null ? '200 OK' : '206 Partial Content'}\r\n'
-      'Content-Type: ${format.mimeType.split(';').first}\r\n'
-      'Content-Length: ${end - start + 1}\r\n'
-      'Accept-Ranges: bytes\r\n'
-      '${range == null ? '' : 'Content-Range: bytes $start-$end/$size\r\n'}'
-      'Connection: close\r\n\r\n',
-    );
 
     Future<Uint8List> getOrFetchChunk(int chunkIdx) async {
       if (chunkIdx == startChunk) {
@@ -346,22 +368,24 @@ class RelayServer {
         final sliceStart = max(0, start - chunkBase);
         final sliceEnd = min(chunkData.length, end - chunkBase + 1);
 
-        if (sliceStart < sliceEnd && sliceStart < chunkData.length) {
+        if ((chunkIdx != startChunk || cachedFirst != null) &&
+            sliceStart < sliceEnd &&
+            sliceStart < chunkData.length) {
           final toSend = chunkData.sublist(
             sliceStart,
             min(sliceEnd, chunkData.length),
           );
-          downstream.add(toSend);
-          await downstream.flush();
+          downstream!.add(toSend);
+          await downstream!.flush();
         }
       }
       if (!clientClosed) {
-        await downstream.close();
+        await downstream!.close();
       }
     } catch (_) {
       clientClosed = true;
       try {
-        downstream.destroy();
+        downstream?.destroy();
       } catch (_) {}
     }
   }

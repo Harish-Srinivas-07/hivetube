@@ -22,6 +22,7 @@ class _RecordingHome extends HomeController {
   final HomeData initialData;
   final calls = <String>[];
   final remembered = <String>[];
+  Completer<void>? refreshGate;
 
   @override
   HomeData build() => initialData;
@@ -45,7 +46,19 @@ class _RecordingHome extends HomeController {
   }
 
   @override
-  Future<void> refresh() async => calls.add('refresh');
+  Future<void> refresh() async {
+    calls.add('refresh');
+    final previous = state.value!;
+    state = AsyncData(previous.copy(isRefreshing: true));
+    await refreshGate?.future;
+    state = AsyncData(previous.copy(isRefreshing: false));
+  }
+
+  @override
+  void applyFreshFeed() {
+    calls.add('applyFreshFeed');
+    state = AsyncData(initialData.copy(hasFreshFeed: false));
+  }
 
   @override
   Future<void> loadMore() async => calls.add('loadMore');
@@ -162,6 +175,39 @@ void main() {
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
+  testWidgets('fresh feed button applies the waiting feed', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final mounted = await _mount(
+      tester,
+      data: _data().copy(hasFreshFeed: true),
+    );
+    expect(find.text('Video 0'), findsWidgets);
+    expect(find.text('Refresh feed'), findsOneWidget);
+    final button = find.byWidgetPredicate(
+      (widget) => widget is AppButton && widget.label == 'Refresh feed',
+    );
+    final initial = tester.getRect(button);
+    expect(
+      initial.width,
+      lessThan(tester.getSize(find.byType(Scaffold).first).width),
+    );
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -200),
+    );
+    await tester.pump();
+    expect(tester.getTopLeft(button).dy, lessThan(initial.top));
+    await tester.tap(find.text('Refresh feed'));
+    await tester.pump();
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    expect(home.calls, contains('applyFreshFeed'));
+    expect(find.text('Refresh feed'), findsNothing);
+  });
+
   testWidgets('video tap records interaction and opens the watch panel', (
     tester,
   ) async {
@@ -255,6 +301,23 @@ void main() {
 
     await _mount(tester, data: _data(errors: const ['source-a', 'source-b']));
     expect(find.text('Some sources could not load'), findsOneWidget);
+  });
+
+  testWidgets('partial failure retry shows progress and keeps videos', (
+    tester,
+  ) async {
+    final mounted = await _mount(tester, data: _data(errors: const ['Feed']));
+    final home =
+        mounted.container.read(homeProvider.notifier) as _RecordingHome;
+    home.refreshGate = Completer<void>();
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(home.calls.where((call) => call == 'refresh').length, 1);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Video 0'), findsWidgets);
+    home.refreshGate!.complete();
+    await tester.pump();
+    expect(find.text('Retry'), findsOneWidget);
   });
 
   testWidgets('avatar completion does not rebuild feed cards', (tester) async {

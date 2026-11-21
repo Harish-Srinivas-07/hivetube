@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,6 +50,48 @@ void main() {
       'mimeType': 'video/mp4',
     }, Uri.parse('http://127.0.0.1:${upstream.port}/$path')),
   );
+  test('forwards a short before the upstream response finishes', () async {
+    final release = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.statusCode = 206;
+      request.response.contentLength = 8;
+      request.response.add([1, 2, 3, 4]);
+      await request.response.flush();
+      await release.future;
+      request.response.add([5, 6, 7, 8]);
+      await request.response.close();
+    });
+    final client = HttpClient();
+    try {
+      final uri = await relay.register(
+        StreamFormat({
+          'contentLength': '8',
+          'mimeType': 'video/mp4',
+        }, Uri.parse('http://127.0.0.1:${server.port}/short')),
+      );
+      final response = await (await client.getUrl(
+        uri,
+      )).close().timeout(const Duration(seconds: 2));
+      final chunks = StreamIterator(response);
+      expect(
+        await chunks.moveNext().timeout(const Duration(seconds: 2)),
+        isTrue,
+      );
+      expect(chunks.current, [1, 2, 3, 4]);
+      expect(release.isCompleted, isFalse);
+      release.complete();
+      final remainder = <int>[];
+      while (await chunks.moveNext()) {
+        remainder.addAll(chunks.current);
+      }
+      expect(remainder, [5, 6, 7, 8]);
+    } finally {
+      if (!release.isCompleted) release.complete();
+      client.close(force: true);
+      await server.close(force: true);
+    }
+  });
   test('ranges span chunk boundaries and HEAD reports length', () async {
     final uri = await register('ok');
     final client = HttpClient();
@@ -82,53 +125,61 @@ void main() {
     get.headers.set('range', 'bytes=0-');
     final response = await get.close();
     expect(response.statusCode, 206);
-    expect(response.headers.value('content-range'), 'bytes 0-${size - 1}/$size');
+    expect(
+      response.headers.value('content-range'),
+      'bytes 0-${size - 1}/$size',
+    );
     expect(response.contentLength, size);
     client.close(force: true);
   });
 
-  test('LRU chunk cache serves repeated requests without re-fetching upstream', () async {
-    int upstreamHits = 0;
-    final testServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    testServer.listen((req) async {
-      upstreamHits++;
-      req.response.statusCode = 206;
-      req.response.headers.set('content-range', 'bytes 0-1048575/$size');
-      req.response.add(Uint8List(1024 * 1024));
-      await req.response.close();
-    });
+  test(
+    'LRU chunk cache serves repeated requests without re-fetching upstream',
+    () async {
+      int upstreamHits = 0;
+      final testServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      testServer.listen((req) async {
+        upstreamHits++;
+        req.response.statusCode = 206;
+        req.response.headers.set('content-range', 'bytes 0-1048575/$size');
+        req.response.add(Uint8List(1024 * 1024));
+        await req.response.close();
+      });
 
-    final testUri = await relay.register(
-      StreamFormat({
-        'contentLength': '$size',
-        'mimeType': 'video/mp4',
-      }, Uri.parse('http://127.0.0.1:${testServer.port}/cached')),
-    );
+      final testUri = await relay.register(
+        StreamFormat({
+          'contentLength': '$size',
+          'mimeType': 'video/mp4',
+        }, Uri.parse('http://127.0.0.1:${testServer.port}/cached')),
+      );
 
-    final client = HttpClient();
-    final get1 = await client.getUrl(testUri);
-    get1.headers.set('range', 'bytes=0-100');
-    final res1 = await get1.close();
-    await res1.drain<void>();
+      final client = HttpClient();
+      final get1 = await client.getUrl(testUri);
+      get1.headers.set('range', 'bytes=0-100');
+      final res1 = await get1.close();
+      await res1.drain<void>();
 
-    final initialHits = upstreamHits;
-    expect(initialHits, greaterThan(0));
+      final initialHits = upstreamHits;
+      expect(initialHits, greaterThan(0));
 
-    // Second request within the same 1 MiB chunk should hit LRU cache
-    final get2 = await client.getUrl(testUri);
-    get2.headers.set('range', 'bytes=50-150');
-    final res2 = await get2.close();
-    await res2.drain<void>();
+      // Second request within the same 1 MiB chunk should hit LRU cache
+      final get2 = await client.getUrl(testUri);
+      get2.headers.set('range', 'bytes=50-150');
+      final res2 = await get2.close();
+      await res2.drain<void>();
 
-    expect(upstreamHits, equals(initialHits)); // No new upstream request
-    client.close(force: true);
-    await testServer.close(force: true);
-  });
+      expect(upstreamHits, equals(initialHits)); // No new upstream request
+      client.close(force: true);
+      await testServer.close(force: true);
+    },
+  );
 
   test('client early disconnect cancels gracefully', () async {
     final uri = await register('ok');
     final socket = await Socket.connect('127.0.0.1', uri.port);
-    socket.write('GET ${uri.path} HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=0-\r\n\r\n');
+    socket.write(
+      'GET ${uri.path} HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=0-\r\n\r\n',
+    );
     await socket.flush();
     await Future<void>.delayed(const Duration(milliseconds: 50));
     await socket.close();

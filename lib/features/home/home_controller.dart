@@ -26,6 +26,8 @@ class HomeData {
     this.continuations = const {},
     this.chip = 'All',
     this.loadingMore = false,
+    this.hasFreshFeed = false,
+    this.isRefreshing = false,
   });
   final List<VideoItem> videos, trending;
   final List<ShortItem> shorts;
@@ -33,6 +35,8 @@ class HomeData {
   final Map<String, String> continuations;
   final String chip;
   final bool loadingMore;
+  final bool hasFreshFeed;
+  final bool isRefreshing;
   HomeData copy({
     List<VideoItem>? videos,
     List<ShortItem>? shorts,
@@ -41,6 +45,8 @@ class HomeData {
     Map<String, String>? continuations,
     String? chip,
     bool? loadingMore,
+    bool? hasFreshFeed,
+    bool? isRefreshing,
   }) => HomeData(
     videos: videos ?? this.videos,
     shorts: shorts ?? this.shorts,
@@ -49,6 +55,8 @@ class HomeData {
     continuations: continuations ?? this.continuations,
     chip: chip ?? this.chip,
     loadingMore: loadingMore ?? this.loadingMore,
+    hasFreshFeed: hasFreshFeed ?? this.hasFreshFeed,
+    isRefreshing: isRefreshing ?? this.isRefreshing,
   );
 }
 
@@ -102,6 +110,8 @@ class HomeController extends AsyncNotifier<HomeData> {
   final Map<String, CancelToken> _tokensByChip = {};
   HomeMixer? _mixer;
   List<VideoItem> _pendingFresh = [];
+  HomeData? _pendingHome;
+  CancelToken? _stagingToken;
   String? _sessionKey;
   int _seed = DateTime.now().microsecondsSinceEpoch;
   Set<String> _refreshExcluded = {};
@@ -139,6 +149,8 @@ class HomeController extends AsyncNotifier<HomeData> {
       _generation++;
       _sessionKey = sessionKey;
       _pendingFresh = [];
+      _pendingHome = null;
+      _stagingToken = null;
       _rssCache.clear();
       _mixer = null;
       _sessionDataByChip.clear();
@@ -152,6 +164,7 @@ class HomeController extends AsyncNotifier<HomeData> {
         ? ref.read(initialHomeCacheProvider)
         : null;
     if (cache != null && (cache.videos.isNotEmpty || cache.shorts.isNotEmpty)) {
+      _stagingToken = _token;
       Future<void>(() => _backgroundRefresh());
       return HomeData(videos: cache.videos, shorts: cache.shorts);
     }
@@ -183,34 +196,32 @@ class HomeController extends AsyncNotifier<HomeData> {
   }
 
   Future<void> _backgroundRefresh() async {
+    if (!identical(_stagingToken, _token)) return;
     final generation = _generation;
     try {
       final fresh = await _fetch('All', _token);
       if (generation != _generation) return;
-      if (_refreshGuard.canApply) {
-        state = AsyncData(fresh);
+      final current = state.value;
+      if (current != null &&
+          current.chip == 'All' &&
+          (fresh.videos.isNotEmpty ||
+              fresh.shorts.isNotEmpty ||
+              fresh.trending.isNotEmpty)) {
+        _pendingHome = _sessionDataByChip['All'] ?? fresh;
+        state = AsyncData(current.copy(hasFreshFeed: true));
       } else {
+        _stagingToken = null;
+      }
+    } catch (error, stackTrace) {
+      if (generation == _generation) {
+        _stagingToken = null;
         final current = state.value;
         if (current != null && current.chip == 'All') {
-          final existing = current.videos.map((e) => e.id).toSet();
-          _pendingFresh = [];
-          _mixer?.exclude(existing);
           state = AsyncData(
-            current.copy(
-              videos: [
-                ...current.videos,
-                ...fresh.videos.where((v) => !existing.contains(v.id)),
-              ],
-              shorts: fresh.shorts,
-              trending: fresh.trending,
-              continuations: fresh.continuations.isNotEmpty
-                  ? const {'mixer': 'more'}
-                  : const {},
-            ),
+            current.copy(errors: {...current.errors, 'Feed'}.toList()),
           );
         }
       }
-    } catch (error, stackTrace) {
       dev.log(
         'Background Home refresh failed',
         name: 'HomeController',
@@ -218,6 +229,15 @@ class HomeController extends AsyncNotifier<HomeData> {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  void applyFreshFeed() {
+    final fresh = _pendingHome;
+    if (fresh == null) return;
+    _pendingHome = null;
+    _stagingToken = null;
+    _pendingFresh = [];
+    state = AsyncData(fresh.copy(hasFreshFeed: false));
   }
 
   Future<List<VideoItem>> _subscriptions(
@@ -372,7 +392,7 @@ class HomeController extends AsyncNotifier<HomeData> {
   Future<void> _finishShortsLoad({
     required String chip,
     required CancelToken token,
-    required Future<List<List<ShortItem>>> pagesFuture,
+    required Future<List<List<ShortItem>?>> pagesFuture,
     required Set<String> watched,
     required Set<String> preferred,
     required Set<String> hidden,
@@ -386,7 +406,7 @@ class HomeController extends AsyncNotifier<HomeData> {
       await Future<void>.delayed(Duration.zero);
       final pages = await pagesFuture;
       final unique = <String, ShortItem>{};
-      for (final item in pages.expand((page) => page)) {
+      for (final item in pages.expand((page) => page ?? const <ShortItem>[])) {
         unique.putIfAbsent(item.id, () => item);
       }
       final candidates = unique.values.take(48).toList();
@@ -445,7 +465,7 @@ class HomeController extends AsyncNotifier<HomeData> {
       final current = _sessionDataByChip[chip] ?? initial;
       final result = current.copy(
         shorts: shorts,
-        errors: pages.every((page) => page.isEmpty)
+        errors: pages.isNotEmpty && pages.every((page) => page == null)
             ? [...current.errors, 'Shorts']
             : current.errors,
       );
@@ -456,9 +476,13 @@ class HomeController extends AsyncNotifier<HomeData> {
             homeCacheKey(settings, chip: chip),
             HomeCache(result.videos, result.shorts, DateTime.now()).encode(),
           );
-      if (identical(token, _token) &&
+      if (identical(token, _stagingToken)) {
+        if (_pendingHome != null) _pendingHome = result;
+      } else if (identical(token, _token) &&
           (state.value == null || state.value?.chip == chip)) {
-        state = AsyncData(result);
+        state = AsyncData(
+          result.copy(isRefreshing: state.value?.isRefreshing ?? false),
+        );
       }
     } catch (error, stackTrace) {
       dev.log(
@@ -858,7 +882,7 @@ class HomeController extends AsyncNotifier<HomeData> {
       return items;
     }
 
-    final shortFuture = Future.wait(
+    final shortFuture = Future.wait<List<ShortItem>?>(
       queries.map((query) async {
         try {
           final result = await loadShorts(query);
@@ -870,7 +894,7 @@ class HomeController extends AsyncNotifier<HomeData> {
             error: error,
             stackTrace: stackTrace,
           );
-          return <ShortItem>[];
+          return null;
         }
       }),
     );
@@ -990,26 +1014,39 @@ class HomeController extends AsyncNotifier<HomeData> {
     _generation++;
     _debounce?.cancel();
     _pendingFresh = [];
+    _pendingHome = null;
+    _stagingToken = null;
   }
 
   Future<void> refresh() async {
-    final chip = state.value?.chip ?? 'All';
+    final previous = state.value;
+    if (previous?.isRefreshing == true) return;
+    final chip = previous?.chip ?? 'All';
     _sessionDataByChip.remove(chip);
     _mixersByChip.remove(chip);
     _tokensByChip.remove(chip)?.cancel();
     _refreshExcluded =
         state.value?.videos.take(10).map((v) => v.id).toSet() ?? {};
     _cancel();
+    if (previous != null) {
+      state = AsyncData(previous.copy(isRefreshing: true, hasFreshFeed: false));
+    }
     _seed = DateTime.now().microsecondsSinceEpoch;
     final generation = _generation;
     final token = _token;
     final result = await AsyncValue.guard(() => _fetch(chip, token));
-    if (generation == _generation) state = result;
-    _refreshExcluded = {};
+    if (generation == _generation) {
+      state = result.hasError && previous != null
+          ? AsyncData(previous.copy(isRefreshing: false, hasFreshFeed: false))
+          : result;
+      _refreshExcluded = {};
+    }
   }
 
   void select(String chip) {
     interact();
+    _pendingHome = null;
+    _stagingToken = null;
     final cached = _sessionDataByChip[chip];
     if (cached != null) {
       _debounce?.cancel();
@@ -1036,6 +1073,7 @@ class HomeController extends AsyncNotifier<HomeData> {
   Future<void> loadMore() async {
     final current = state.value;
     if (current == null ||
+        _stagingToken != null ||
         current.loadingMore ||
         current.continuations.isEmpty) {
       return;

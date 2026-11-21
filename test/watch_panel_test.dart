@@ -65,6 +65,7 @@ class _MockPlaybackService extends Fake implements PlaybackService {
   int toggleCalls = 0;
   int pauseCalls = 0;
   int resumeCalls = 0;
+  final List<Duration> seekRequests = [];
   final List<VoidCallback> _listeners = [];
 
   void _notifyListeners() {
@@ -131,6 +132,11 @@ class _MockPlaybackService extends Fake implements PlaybackService {
   @override
   Future<void> seek(Duration position) async {
     _snapshot.position = position;
+  }
+
+  @override
+  Future<void> seekTo(Duration position) async {
+    seekRequests.add(position);
   }
 
   @override
@@ -241,6 +247,77 @@ Widget _buildTestApp({
 }
 
 void main() {
+  testWidgets('audio download opens the watch panel in audio mode', (
+    tester,
+  ) async {
+    final service = _MockPlaybackService();
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      _buildTestApp(service: service, onRef: (ref) => capturedRef = ref),
+    );
+    capturedRef.read(watchPanelProvider.notifier).open('vid1', audioOnly: true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(service.request?.videoId, 'vid1');
+    expect(service.request?.mode, PlaybackMode.audio);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('scrolling watch details changes a portrait player to 16:9', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 840);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final service = _MockPlaybackService()..state.frameReadyId = 'vid1';
+    final player = service.player as _FakeMediaPlayer;
+    player._state.videoWidth = 800;
+    player._state.videoHeight = 1000;
+    late WidgetRef capturedRef;
+    final playerKey = GlobalKey();
+    const info = WatchInfo(
+      id: 'vid1',
+      title: 'Portrait video',
+      channelName: 'Channel',
+      channelId: 'channel',
+      avatar: '',
+      subscribers: '',
+      description: '',
+      likes: '',
+      views: '',
+      date: '',
+      handle: '',
+      commentsToken: null,
+      related: VideoPage([], null),
+      chapters: [],
+      chips: {},
+    );
+    await tester.pumpWidget(
+      _buildTestApp(
+        service: service,
+        onRef: (ref) => capturedRef = ref,
+        miniPlayerKey: playerKey,
+        savedInfo: info,
+      ),
+    );
+    capturedRef.read(watchPanelProvider.notifier).open('vid1');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final before = tester.getSize(find.byKey(playerKey));
+    expect(before.width / before.height, closeTo(.8, .001));
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -100),
+    );
+    await tester.pump();
+    final after = tester.getSize(find.byKey(playerKey));
+    expect(after.width / after.height, closeTo(16 / 9, .001));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('audio-only playback shows the saved video thumbnail', (
     tester,
   ) async {
@@ -583,6 +660,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('miniPlayerDragSurface')));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(WatchScreen), findsOneWidget);
 
@@ -592,6 +670,33 @@ void main() {
     await tester.tap(find.byTooltip('Pause'));
     await tester.pump();
     expect(service.toggleCalls, 1);
+  });
+
+  testWidgets('mini player multi-tap seeks without expanding', (tester) async {
+    final service = _MockPlaybackService();
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      _buildTestApp(service: service, onRef: (ref) => capturedRef = ref),
+    );
+    capturedRef.read(watchPanelProvider.notifier).open('vid1');
+    capturedRef.read(watchPanelExpandProvider.notifier).minimize();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    final rect = tester.getRect(
+      find.byKey(const ValueKey('miniPlayerDragSurface')),
+    );
+    final tap = rect.topLeft + Offset(rect.width * .8, rect.height * .65);
+    await tester.tapAt(tap);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(tap);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('+10s'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(service.seekRequests, [const Duration(seconds: 70)]);
+    expect(capturedRef.read(playerUiProvider).panelMode, PlayerPanelMode.mini);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets('swipe up expands watch panel', (tester) async {

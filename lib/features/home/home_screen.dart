@@ -143,6 +143,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
           value.value?.chip,
           value.value?.loadingMore,
           value.value?.continuations,
+          value.value?.hasFreshFeed,
+          value.value?.isRefreshing,
         ),
       ),
     );
@@ -243,6 +245,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                               : AppSizes.appBarHeight,
                         ),
                       ),
+                      if (home.value?.hasFreshFeed == true)
+                        AnimatedBuilder(
+                          animation: controller,
+                          builder: (context, child) {
+                            final chipOffset =
+                                landscape || !controller.hasClients
+                                ? AppSpacing.homeChipHeight
+                                : (AppSpacing.homeChipHeight -
+                                          controller.offset)
+                                      .clamp(
+                                        AppSpacing.none,
+                                        AppSpacing.homeChipHeight,
+                                      );
+                            return Positioned(
+                              top:
+                                  statusBarInset +
+                                  (landscape
+                                      ? AppSizes.buttonIconTouch
+                                      : AppSizes.appBarHeight) +
+                                  chipOffset +
+                                  AppSpacing.sm,
+                              left: AppSpacing.none,
+                              right: AppSpacing.none,
+                              child: Center(child: child),
+                            );
+                          },
+                          child: IntrinsicWidth(
+                            child: AppButton.filled(
+                              size: AppButtonSize.compact,
+                              label: 'Refresh feed',
+                              icon: LucideIcons.refreshCw,
+                              onPressed: () {
+                                if (controller.hasClients) controller.jumpTo(0);
+                                ref
+                                    .read(homeProvider.notifier)
+                                    .applyFreshFeed();
+                              },
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -351,9 +393,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                   style: AppTextStyles.bodySmall,
                 ),
               ),
-              TextButton(
+              AppButton.text(
+                label: 'Retry',
+                isLoading: data.isRefreshing,
                 onPressed: () => ref.read(homeProvider.notifier).refresh(),
-                child: const Text('Retry'),
               ),
             ],
           ),
@@ -379,23 +422,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
           ),
         ),
       ),
-    SliverToBoxAdapter(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
-          child: data.loadingMore
-              ? const CircularProgressIndicator()
-              : data.continuations.isEmpty
-              ? Text(
-                  'You’re all caught up',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+    if (data.loadingMore || data.continuations.isEmpty)
+      SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: data.loadingMore
+                ? const CircularProgressIndicator()
+                : Text(
+                    'You’re all caught up',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                )
-              : const SizedBox.shrink(),
+          ),
         ),
       ),
-    ),
     if (data.trending.isNotEmpty) _trendingShelf(data.trending, history),
     SliverBottomInset(
       extra: MediaQuery.sizeOf(context).width < AppSpacing.navigationBreakpoint

@@ -12,6 +12,7 @@ import '../../core/providers.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/playback/audio_handler.dart';
 import '../../core/playback/playback_service.dart';
+import '../../core/playback/picture_in_picture.dart';
 import '../../core/playback/player_ui_state.dart';
 import '../watch/watch_panel.dart';
 import '../../core/streams/stream_selector.dart';
@@ -103,6 +104,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     with WidgetsBindingObserver {
   List<ShortItem> items = [];
   String? cursor, activeId, prefetchedId;
+  String? _startingId;
   bool loading = false,
       failed = false,
       visible = false,
@@ -119,6 +121,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   Stopwatch? _tabOpenTimer;
   bool? _tabOpenCacheHit;
   bool _tabOpenLogged = false, _tabOpenLogScheduled = false;
+  bool _refreshingTab = false;
   int _selectionRequestId = 0;
   @override
   void initState() {
@@ -192,6 +195,9 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
         _playCurrent(ref.read(playbackProvider));
       });
     } else {
+      prefetchedId = null;
+      active?.cancelShortPreloads(disposePlayer: true);
+      _feedController.releaseWarmWindow();
       _restoreSystemUi();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || visible) return;
@@ -339,19 +345,35 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     await ref.read(shortsFeedProvider.notifier).refresh();
   }
 
+  Future<void> _refreshTab() async {
+    if (_refreshingTab || !visible) return;
+    _refreshingTab = true;
+    try {
+      await ref.read(shortsFeedProvider.notifier).refreshForTab();
+      if (!mounted || !visible || items.isEmpty) return;
+      setState(() => currentIndex = 0);
+      if (controller.hasClients) controller.jumpToPage(0);
+    } finally {
+      _refreshingTab = false;
+      if (mounted && visible) _playCurrent(ref.read(playbackProvider));
+    }
+  }
+
   Future<void> _load() => ref.read(shortsFeedProvider.notifier).loadMore();
 
   void _prefetchNext(PlaybackService service, int pageGeneration) {
     if (!mounted ||
         !visible ||
         pageGeneration != playbackGeneration ||
+        ref.read(pictureInPictureProvider) ||
         currentIndex + 1 >= items.length) {
       return;
     }
-    final preloadGeneration = service.beginShortPreloadCycle();
     final nextId = items[currentIndex + 1].id;
+    if (prefetchedId == nextId) return;
+    final preloadGeneration = service.beginShortPreloadCycle();
     prefetchedId = nextId;
-    for (var offset = 1; offset <= 2; offset++) {
+    for (var offset = 2; offset <= 2; offset++) {
       final index = currentIndex + offset;
       if (index < items.length) {
         unawaited(
@@ -399,7 +421,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
   }
 
   void _playCurrent(PlaybackService? service) {
-    if (!visible ||
+    if (_refreshingTab ||
+        !visible ||
         service == null ||
         items.isEmpty ||
         currentIndex >= items.length) {
@@ -407,6 +430,13 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     }
     final item = items[currentIndex];
     final id = item.id;
+    if (identical(active, service) &&
+        activeId == id &&
+        (service.request?.videoId == id || _startingId == id)) {
+      if (_startingId != id) _prefetchNext(service, playbackGeneration);
+      return;
+    }
+    if (prefetchedId != id) service.cancelShortPreloads(disposePlayer: true);
     active = service;
     _updateActiveShortMetadata(item);
     final pageGeneration = ++playbackGeneration;
@@ -415,6 +445,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
       return;
     }
     activeId = id;
+    _startingId = id;
     prefetchedId = null;
     muted = service.state.muted;
     unawaited(_startShort(service, id, pageGeneration));
@@ -436,13 +467,20 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
     String id,
     int pageGeneration,
   ) async {
-    await service.setVisible(true);
-    if (!_isCurrentPlayback(id, pageGeneration)) return;
-    await service.setLoop(true);
-    await service.playShort(id);
-    if (_isCurrentPlayback(id, pageGeneration)) {
-      _updateActiveShortMetadata(items[currentIndex]);
-      _prefetchNext(service, pageGeneration);
+    try {
+      await service.setVisible(true);
+      if (!_isCurrentPlayback(id, pageGeneration)) return;
+      await service.setLoop(true);
+      if (!_isCurrentPlayback(id, pageGeneration)) return;
+      await service.playShort(id);
+      if (_isCurrentPlayback(id, pageGeneration)) {
+        _updateActiveShortMetadata(items[currentIndex]);
+        _prefetchNext(service, pageGeneration);
+      }
+    } finally {
+      if (_startingId == id && playbackGeneration == pageGeneration) {
+        _startingId = null;
+      }
     }
   }
 
@@ -484,10 +522,17 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(pictureInPictureProvider, (_, inPip) {
+      if (inPip) {
+        prefetchedId = null;
+        active?.cancelShortPreloads(disposePlayer: true);
+        _feedController.releaseWarmWindow();
+      }
+    });
     ref.listen(tabRefreshProvider, (_, request) {
       if (request?.index == 1) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_refresh());
+          if (mounted) unawaited(_refreshTab());
         });
       }
     });

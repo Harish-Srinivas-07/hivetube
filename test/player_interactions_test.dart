@@ -6,6 +6,40 @@ import 'package:hivetube/core/playback/player_interactions.dart';
 import 'package:hivetube/core/playback/watch_session.dart';
 
 void main() {
+  test('multi-tap seek uses the requested steps, direction and bounds', () {
+    for (final entry in {2: 10, 3: 20, 4: 30, 5: 50, 6: 50}.entries) {
+      for (final forward in [true, false]) {
+        final step = multiTapSeek(
+          taps: entry.key,
+          forward: forward,
+          position: const Duration(seconds: 60),
+          duration: const Duration(seconds: 120),
+        );
+        final signed = forward ? entry.value : -entry.value;
+        expect(step.totalSeconds, signed);
+        expect(step.target, Duration(seconds: 60 + signed));
+      }
+    }
+    expect(
+      multiTapSeek(
+        taps: 5,
+        forward: false,
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 100),
+      ).target,
+      Duration.zero,
+    );
+    expect(
+      multiTapSeek(
+        taps: 5,
+        forward: true,
+        position: const Duration(seconds: 95),
+        duration: const Duration(seconds: 100),
+      ).target,
+      const Duration(seconds: 100),
+    );
+  });
+
   test('session tracks previous videos and chooses first unplayed', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

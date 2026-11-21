@@ -334,7 +334,11 @@ class _DownloadItem extends ConsumerWidget {
                           : null,
                       onTap: () {
                         if (row.status == 'completed') {
-                          openWatchPanel(ref, row.videoId);
+                          openWatchPanel(
+                            ref,
+                            row.videoId,
+                            audioOnly: row.kind == 'audio',
+                          );
                         } else {
                           showDownloadActions(
                             context,

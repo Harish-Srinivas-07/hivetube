@@ -105,6 +105,18 @@ final watchCommentsProvider = FutureProvider.family<CommentPage, String>(
       (await ref.watch(ytApiProvider.future)).comments.page(token),
 );
 
+final watchChannelFallbackProvider =
+    FutureProvider.family<ChannelPageData?, String>((ref, channelId) async {
+      if (channelId.isEmpty || ref.watch(isOfflineProvider)) return null;
+      try {
+        return await (await ref.watch(ytApiProvider.future)).browse.channelPage(
+          channelId,
+        );
+      } catch (_) {
+        return null;
+      }
+    });
+
 final dislikeCountProvider = FutureProvider.family<int?, String>((
   ref,
   id,
@@ -122,6 +134,7 @@ class WatchScreen extends ConsumerStatefulWidget {
     this.embedded = false,
     this.deferHeavyContent = false,
     this.onMinimize,
+    this.onMetadataScrollStarted,
     this.navigatorContext,
   });
   final String id;
@@ -130,6 +143,7 @@ class WatchScreen extends ConsumerStatefulWidget {
   final bool embedded;
   final bool deferHeavyContent;
   final VoidCallback? onMinimize;
+  final VoidCallback? onMetadataScrollStarted;
   final BuildContext? Function()? navigatorContext;
   @override
   ConsumerState<WatchScreen> createState() => _WatchScreenState();
@@ -168,6 +182,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   int seconds = 5;
   Brightness shellBrightness = Brightness.light;
   bool _wasFullscreen = false;
+  bool _metadataScrolled = false;
 
   static const _playerOverlayStyle = SystemUiOverlayStyle(
     statusBarColor: AppColors.transparent,
@@ -196,6 +211,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       countdownFor = null;
       setState(() {
         id = widget.id;
+        _metadataScrolled = false;
         started = null;
         extra.clear();
         continuation = null;
@@ -273,6 +289,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     countdownFor = null;
     setState(() {
       id = next;
+      _metadataScrolled = false;
       started = null;
       extra.clear();
       continuation = null;
@@ -549,7 +566,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       service,
       videoId: id,
     );
-    final inlineAspectRatio = videoAspectRatio != null && videoAspectRatio < 1
+    final inlineAspectRatio =
+        !_metadataScrolled && videoAspectRatio != null && videoAspectRatio < 1
         ? videoAspectRatio
         : AppSpacing.thumbnailRatio;
     Widget player = widget.placeholderVideo
@@ -604,11 +622,22 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   )
                 : const CircularProgressIndicator(),
           )
-        : _details(
-            info,
-            related,
-            heavyContentReady: heavyContentReady,
-            isOffline: isOffline,
+        : NotificationListener<ScrollStartNotification>(
+            onNotification: (notification) {
+              if (notification.depth == 0 &&
+                  notification.dragDetails != null &&
+                  !_metadataScrolled) {
+                setState(() => _metadataScrolled = true);
+                widget.onMetadataScrollStarted?.call();
+              }
+              return false;
+            },
+            child: _details(
+              info,
+              related,
+              heavyContentReady: heavyContentReady,
+              isOffline: isOffline,
+            ),
           );
     return Focus(
       autofocus: true,
@@ -890,7 +919,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       ref.read(playbackProvider),
       videoId: id,
     );
-    final aspectRatio = videoAspectRatio != null && videoAspectRatio < 1
+    final aspectRatio =
+        !_metadataScrolled && videoAspectRatio != null && videoAspectRatio < 1
         ? videoAspectRatio
         : AppSpacing.thumbnailRatio;
     final wide = viewport.width >= 900 || viewport.width > viewport.height;
@@ -913,7 +943,19 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     List<VideoItem> related, {
     required bool heavyContentReady,
     required bool isOffline,
-  }) => CustomScrollView(
+  }) {
+    final fallback = info.channelName.trim().isEmpty && info.channelId.isNotEmpty
+        ? ref.watch(watchChannelFallbackProvider(info.channelId)).value
+        : null;
+    final resolvedChannelName = info.channelName.trim().isNotEmpty
+        ? info.channelName
+        : fallback?.name.trim().isNotEmpty == true
+        ? fallback!.name
+        : info.handle.isNotEmpty
+        ? info.handle
+        : '';
+    final channelName = resolvedChannelName.isEmpty ? 'Channel' : resolvedChannelName;
+    return CustomScrollView(
     controller: scroll,
     slivers: [
       SliverToBoxAdapter(
@@ -985,8 +1027,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         ? () => _openChannel(info.channelId)
                         : null,
                     child: ChannelAvatar(
-                      name: info.channelName,
-                      url: info.avatar,
+                      name: channelName,
+                      url: info.avatar.isNotEmpty ? info.avatar : (fallback?.avatarUrl ?? ''),
                       size: AppSizes.avatar,
                     ),
                   ),
@@ -1000,7 +1042,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            info.channelName,
+                            channelName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.bodyStrong,
@@ -1031,8 +1073,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                                 .setSubscribed(
                                   info.channelId,
                                   value,
-                                  name: info.channelName,
-                                  avatarUrl: info.avatar,
+                                  name: resolvedChannelName,
+                                  avatarUrl: info.avatar.isNotEmpty ? info.avatar : (fallback?.avatarUrl ?? ''),
                                   handle: info.handle,
                                 );
                             if (mounted) setState(() => subscribed = value);
@@ -1289,7 +1331,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               children: [
                 for (final label in [
                   'All',
-                  if (info.channelName.isNotEmpty) 'From ${info.channelName}',
+                  if (resolvedChannelName.isNotEmpty) 'From $resolvedChannelName',
                   ...info.chips.keys,
                 ])
                   Padding(
@@ -1314,7 +1356,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
       ),
     ],
-  );
+    );
+  }
   Future<void> _selectRelated(WatchInfo info, String label) async {
     setState(() {
       relatedFilter = label;

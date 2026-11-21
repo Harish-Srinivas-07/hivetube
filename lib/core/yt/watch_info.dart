@@ -111,7 +111,10 @@ WatchInfo parseWatchInfo(dynamic json, String id) {
   return WatchInfo(
     id: id,
     title: watchText(primary is Map ? primary['title'] : null),
-    channelName: watchText(owner is Map ? owner['title'] : null),
+    channelName: [
+      watchText(owner is Map ? owner['title'] : null),
+      watchText(videoDetails is Map ? videoDetails['author'] : null),
+    ].firstWhere((value) => value.trim().isNotEmpty, orElse: () => ''),
     channelId:
         findAll(
           owner,

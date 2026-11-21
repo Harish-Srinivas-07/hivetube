@@ -234,12 +234,12 @@ Overlay layout over video (scrim black@40% flat, fades 200ms):
 - Top: collapse chevron-down (left) | spacer | captions (cc) | settings (gear) — icons 24 white, touch 48.
 - Center: previous | play/pause (56 icon, 72 touch) | next. Buffering = spinner replaces play (32).
 - Bottom: time "0:12 / 3:45" 12 white left | spacer | fullscreen icon 24. Seek bar full width directly above, edge to edge.
-Behavior: single tap toggles overlay. Auto-hide 3s after last interaction when playing. Double-tap left/right third = seek -10/+10 with expanding ripple + "10 seconds" label, 400ms. Long-press hold = 2x speed (indicator top-center "2x"). Swipe down on inline player = minimize to mini player (follows finger, snap threshold 25% or velocity).
+Behavior: single tap toggles overlay. Auto-hide 3s after last interaction when playing. Multi-tap left/right half seeks back/forward from the starting position: 2/3/4/5+ taps = 10/20/30/50 seconds, committed after a 400ms gap with signed feedback on that side. The mini player uses the same seek gesture; a single tap expands it. Disable multi-tap seek while locked and on Shorts. Long-press hold = 2x speed (indicator top-center "2x"). Swipe down on inline player = minimize to mini player (follows finger, snap threshold 25% or velocity).
 Fullscreen controls (landscape):
 - Top: title and channel, Autoplay, captions when available, and Settings.
 - Center: Previous, Play/Pause/Replay, Next; unavailable Previous/Next are dimmed.
 - Bottom: seek bar, time chip, and fullscreen exit.
-- Keep the flat scrim, double-tap seek, long-press 2x, brightness/volume drag, lock, system-back exit, and swipe-down exit.
+- Keep the flat scrim, multi-tap seek, long-press 2x, brightness/volume drag, lock, system-back exit, and swipe-down exit.
 Settings sheet rows: Quality (max 1080p), Playback speed, Captions, Audio only, Loop.
 
 ### 4.21 SeekBar

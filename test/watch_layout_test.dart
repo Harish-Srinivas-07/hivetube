@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -83,6 +85,54 @@ class _FixtureYtApi extends Fake implements YtApi {
 }
 
 void main() {
+  testWidgets('missing watch channel name loads from the channel page', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final channel = Completer<ChannelPageData?>();
+    const info = WatchInfo(
+      id: 'video',
+      title: 'Video',
+      channelName: '',
+      channelId: 'UCtest',
+      avatar: '',
+      subscribers: '',
+      description: '',
+      likes: '',
+      views: '',
+      date: '',
+      handle: '',
+      commentsToken: null,
+      related: VideoPage([], null),
+      chapters: [],
+      chips: {},
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dbProvider.overrideWithValue(db),
+          playbackProvider.overrideWith(_NoPlayer.new),
+          watchInfoProvider('video').overrideWith((ref) async => info),
+          watchChannelFallbackProvider(
+            'UCtest',
+          ).overrideWith((ref) => channel.future),
+          dislikeCountProvider('video').overrideWith((ref) async => null),
+        ],
+        child: const MaterialApp(home: WatchScreen(id: 'video')),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Channel'), findsOneWidget);
+    channel.complete(
+      const ChannelPageData(id: 'UCtest', name: 'Actual channel'),
+    );
+    await tester.pump();
+    expect(find.text('Actual channel'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets(
     'downloaded video offers export and removal from the watch screen',
     (tester) async {

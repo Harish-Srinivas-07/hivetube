@@ -16,6 +16,7 @@ import 'package:hivetube/core/providers.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
 import 'package:hivetube/features/downloads/downloads_screen.dart';
 import 'package:hivetube/features/watch/watch_screen.dart';
+import 'package:hivetube/features/watch/watch_panel.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _NoPlayback extends PlaybackController {
@@ -43,6 +44,62 @@ class _ArtworkAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  testWidgets('opening an audio download requests audio playback', (
+    tester,
+  ) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db
+        .into(db.media)
+        .insert(
+          MediaCompanion.insert(
+            videoId: 'audio',
+            title: 'Saved audio',
+            channelId: 'channel',
+            channelName: 'Channel',
+            thumbUrl: '',
+            updatedAt: 1,
+          ),
+        );
+    await db
+        .into(db.downloads)
+        .insert(
+          DownloadsCompanion.insert(
+            videoId: 'audio',
+            kind: 'audio',
+            status: const Value('completed'),
+            createdAt: 1,
+          ),
+        );
+    final manager = DownloadManager(
+      db,
+      () async => throw StateError('offline'),
+    );
+    addTearDown(manager.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        dbProvider.overrideWithValue(db),
+        playbackProvider.overrideWith(_NoPlayback.new),
+        downloadManagerProvider.overrideWithValue(manager),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: DownloadsScreen()),
+      ),
+    );
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Saved audio'));
+    await tester.pump();
+    expect(container.read(watchPanelProvider), 'audio');
+    expect(container.read(watchPanelProvider.notifier).audioOnly, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test(
     'export copies video and audio with their real extension and suffix',
     () async {

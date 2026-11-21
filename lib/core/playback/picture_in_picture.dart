@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/watch/watch_panel.dart';
+import '../../widgets/logger.dart';
 import '../settings/app_settings.dart';
 import '../streams/stream_selector.dart';
 import 'playback_service.dart';
@@ -23,6 +25,7 @@ class PictureInPictureController extends Notifier<bool> {
     final service = ref.read(playbackProvider);
     final settings = ref.read(appSettingsProvider);
     return settings.pictureInPicture &&
+        ref.read(watchPanelProvider) != null &&
         !settings.audioOnly &&
         service?.state.mode == PlaybackMode.video &&
         service?.state.playing == true;
@@ -34,6 +37,7 @@ class PictureInPictureController extends Notifier<bool> {
     _channel.setMethodCallHandler(_handleMethod);
     ref.listen(playbackProvider, (_, _) => _sync());
     ref.listen(appSettingsProvider, (_, _) => _sync());
+    ref.listen(watchPanelProvider, (_, _) => _sync());
     ref.onDispose(() => _channel.setMethodCallHandler(null));
     scheduleMicrotask(_sync);
     return false;
@@ -41,13 +45,19 @@ class PictureInPictureController extends Notifier<bool> {
 
   void _sync() {
     final service = ref.read(playbackProvider);
+    final width = service?.controller.player.state.width;
+    final height = service?.controller.player.state.height;
+    final aspect = width != null && width > 0 && height != null && height > 0
+        ? width / height
+        : 16 / 9;
     unawaited(
       _channel
           .invokeMethod<void>('update', {
             'eligible': eligible,
             'playing': service?.state.playing == true,
+            'aspect': aspect,
           })
-          .catchError((Object _) {}),
+          .catchError((Object error) => Logger.log('PiP', error)),
     );
   }
 

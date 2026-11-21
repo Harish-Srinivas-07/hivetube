@@ -110,10 +110,11 @@ class SharedPlayer extends ConsumerStatefulWidget {
 }
 
 class _SharedPlayerState extends ConsumerState<SharedPlayer> {
-  Timer? hideTimer, seekTimer, hudTimer, _doubleTapCommitTimer;
+  Timer? hideTimer, hudTimer;
+  late final MultiTapSeekSession _multiTapSeek;
   late PlayerSettingsSession _settingsSession;
   int seekTotal = 0;
-  Duration? seekTarget;
+  String? _seekVideoId;
   bool sheetOpen = false, longPress = false;
   double? oldRate, dragStartValue;
   String? hud;
@@ -192,6 +193,30 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   @override
   void initState() {
     super.initState();
+    _multiTapSeek = MultiTapSeekSession(
+      gap: AppMotion.multiTapSeek,
+      onSingleTap: () {
+        if (mounted && !ref.read(playerUiProvider).locked) _toggleOverlay();
+      },
+      onFeedback: (step) {
+        if (!mounted) return;
+        if (step != null && _videoZoomed) {
+          _multiTapSeek.cancel();
+          _resetVideoZoom();
+          return;
+        }
+        setState(() => seekTotal = step?.totalSeconds ?? 0);
+      },
+      onSeek: (target) {
+        if (mounted &&
+            !ref.read(playerUiProvider).locked &&
+            _seekVideoId ==
+                (widget.requestVideoId ?? widget.service.state.videoId)) {
+          unawaited(widget.service.seekTo(target));
+          _scheduleHide();
+        }
+      },
+    );
     _videoTransform.addListener(_onVideoTransformChanged);
     widget.service.addListener(_changed);
     _settingsSession = PlayerSettingsSession(widget.service);
@@ -202,6 +227,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   void didUpdateWidget(covariant SharedPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.service != widget.service) {
+      _multiTapSeek.cancel();
       oldWidget.service.removeListener(_changed);
       _settingsSession.dispose();
       _settingsSession = PlayerSettingsSession(widget.service);
@@ -209,6 +235,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
       lastStatus = null;
       _lastLoggedVideoSize = null;
       _changed();
+    }
+    if (oldWidget.requestVideoId != widget.requestVideoId) {
+      _multiTapSeek.cancel();
     }
   }
 
@@ -252,37 +281,6 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   void _toggleOverlay() {
     final notifier = ref.read(playerUiProvider.notifier);
     notifier.setOverlayVisible(!ref.read(playerUiProvider).overlayVisible);
-    _scheduleHide();
-  }
-
-  void _seekBy(int seconds) {
-    final s = widget.service;
-    final step = accumulateSeek(
-      position: s.state.position,
-      duration: s.state.duration,
-      seconds: seconds,
-      previousSeconds: seekTotal,
-      previousTarget: seekTarget,
-    );
-    seekTarget = step.target;
-    setState(() => seekTotal = step.totalSeconds);
-
-    _doubleTapCommitTimer?.cancel();
-    _doubleTapCommitTimer = Timer(const Duration(milliseconds: 400), () {
-      if (seekTarget != null) {
-        unawaited(s.seekTo(seekTarget!));
-      }
-    });
-
-    seekTimer?.cancel();
-    seekTimer = Timer(const Duration(milliseconds: 600), () {
-      if (mounted) {
-        setState(() {
-          seekTotal = 0;
-          seekTarget = null;
-        });
-      }
-    });
     _scheduleHide();
   }
 
@@ -794,8 +792,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
   @override
   void dispose() {
     hideTimer?.cancel();
-    seekTimer?.cancel();
-    _doubleTapCommitTimer?.cancel();
+    _multiTapSeek.cancel(notify: false);
     hudTimer?.cancel();
     _videoTransform.removeListener(_onVideoTransformChanged);
     _videoTransform.dispose();
@@ -811,6 +808,9 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
     final notifier = ref.read(playerUiProvider.notifier);
     final service = widget.service;
     final state = service.state;
+    final initialLoading =
+        state.status == PlayerStatus.idle ||
+        state.status == PlayerStatus.loading;
     final requestVideoId = widget.requestVideoId ?? state.videoId;
     final thumbnailUrl = widget.thumbnailUrl?.isNotEmpty == true
         ? widget.thumbnailUrl!
@@ -842,19 +842,23 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
           RepaintBoundary(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: compact ? null : _toggleOverlay,
-              onDoubleTapDown: compact
+              onTapUp: compact || ui.locked
                   ? null
-                  : (d) => dragX = d.localPosition.dx / constraints.maxWidth,
-              onDoubleTap: compact
-                  ? null
-                  : () {
-                      if (_videoZoomed) {
-                        _resetVideoZoom();
-                      } else {
-                        if (dragX < 1 / 3) _seekBy(-10);
-                        if (dragX > 2 / 3) _seekBy(10);
+                  : (details) {
+                      if (widget.short) {
+                        _toggleOverlay();
+                        return;
                       }
+                      _seekVideoId =
+                          widget.requestVideoId ?? service.state.videoId;
+                      hideTimer?.cancel();
+                      _multiTapSeek.tap(
+                        forward:
+                            details.localPosition.dx >=
+                            constraints.maxWidth / 2,
+                        position: service.state.position,
+                        duration: service.state.duration,
+                      );
                     },
               onLongPressStart: compact
                   ? null
@@ -966,7 +970,7 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
               fit: fillVerticalFullscreen ? BoxFit.cover : BoxFit.contain,
               gaplessPlayback: true,
             ),
-          if (!compact) ...[
+          if (!compact && !initialLoading) ...[
             if (ui.isFullscreen)
               _fullscreenOverlay(
                 context: context,
@@ -1432,8 +1436,8 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                               color: AppColors.shortsForeground,
                             ),
                             Text(
-                              '${seekTotal.abs()} seconds',
-                              style: const TextStyle(
+                              '${seekTotal > 0 ? '+' : '-'}${seekTotal.abs()}s',
+                              style: AppTextStyles.bodyStrong.copyWith(
                                 color: AppColors.shortsForeground,
                               ),
                             ),
@@ -1475,6 +1479,21 @@ class _SharedPlayerState extends ConsumerState<SharedPlayer> {
                 ),
               ),
           ],
+          if (initialLoading)
+            const AbsorbPointer(
+              child: ColoredBox(
+                color: AppColors.black,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: AppSizes.icon,
+                    child: CircularProgressIndicator(
+                      strokeWidth: AppSizes.seekTrack,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

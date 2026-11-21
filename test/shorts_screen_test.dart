@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hivetube/app/router.dart';
 import 'package:hivetube/core/db/app_db.dart';
 import 'package:hivetube/core/playback/playback_service.dart';
@@ -27,6 +28,25 @@ class _NoFetchShortsFeed extends ShortsFeedController {
   Future<void> refresh() async {}
   @override
   Future<void> loadMore() async {}
+}
+
+class _RetapShortsFeed extends _NoFetchShortsFeed {
+  int refreshes = 0;
+
+  @override
+  ShortsFeedState build() => const ShortsFeedState(
+    items: [ShortItem(id: 'old', thumbUrl: '', title: 'Old short')],
+    hasLoaded: true,
+  );
+
+  @override
+  Future<void> refreshForTab() async {
+    refreshes++;
+    state = const ShortsFeedState(
+      items: [ShortItem(id: 'new', thumbUrl: '', title: 'New short')],
+      hasLoaded: true,
+    );
+  }
 }
 
 class _SelectedShorts extends ShortsSelectionController {
@@ -64,6 +84,43 @@ class _VideoApi extends Fake implements YtApi {
 }
 
 void main() {
+  testWidgets('re-tapping Shorts replaces the visible feed', (tester) async {
+    final db = AppDb(NativeDatabase.memory());
+    addTearDown(db.close);
+    final router = GoRouter(
+      routes: [GoRoute(path: '/', builder: (_, _) => const ShortsScreen())],
+    );
+    addTearDown(router.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        dbProvider.overrideWithValue(db),
+        playbackProvider.overrideWith(_NoPlayback.new),
+        shortsFeedProvider.overrideWith(_RetapShortsFeed.new),
+        shortMetadataProvider('old').overrideWith((ref) async => null),
+        shortMetadataProvider('new').overrideWith((ref) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('old')), findsOneWidget);
+    container.read(tabRefreshProvider.notifier).request(1);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('new')), findsOneWidget);
+    expect(
+      (container.read(shortsFeedProvider.notifier) as _RetapShortsFeed)
+          .refreshes,
+      1,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('a routed Short with channel details has a Material ancestor', (
     tester,
   ) async {
