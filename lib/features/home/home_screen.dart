@@ -1,0 +1,824 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:material_ui/material_ui.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../../theme/app_sizes.dart';
+import '../../theme/app_text_styles.dart';
+import '../shorts/shorts_screen.dart';
+import '../downloads/downloads_screen.dart';
+import '../shorts/shorts_feed_provider.dart';
+import '../watch/watch_panel.dart';
+import '../watch/mini_player_inset.dart';
+import '../../core/playback/player_ui_state.dart';
+import '../../core/settings/app_settings.dart';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/yt/models.dart';
+import '../../core/db/app_db.dart';
+import '../../core/providers.dart';
+import '../../core/orientation/orientation_policy.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
+import '../../widgets/ui/ui.dart';
+import '../../widgets/home_top_bar.dart';
+import 'home_controller.dart';
+import 'home_variety.dart';
+import '../../core/update/update_controller.dart';
+import '../../core/downloads/download_notifications.dart';
+import '../../widgets/content_language_sheet.dart';
+import '../../widgets/update_dialog.dart';
+
+final homeHistoryProvider = FutureProvider<List<HistoryEntry>>(
+  (ref) => ref.watch(historyRepoProvider).recent(),
+);
+final homeHistoryByIdProvider = Provider<Map<String, HistoryEntry>>((ref) {
+  final entries =
+      ref.watch(homeHistoryProvider).value ?? const <HistoryEntry>[];
+  return {for (final entry in entries) entry.videoId: entry};
+});
+
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({super.key, this.onCardBuilt});
+  @visibleForTesting
+  final void Function(String id)? onCardBuilt;
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
+  final controller = ScrollController();
+  ModalRoute<dynamic>? _route;
+  String chip = 'All';
+  bool _shortsPrefetchStarted = false;
+  Timer? _updateCheckTimer;
+  Timer? _notifPermissionTimer;
+  static const chips = homeChips;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route == null || identical(route, _route)) return;
+    if (_route != null) homeRouteObserver.unsubscribe(this);
+    _route = route;
+    homeRouteObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPush() => setHomeScreenOrientationEnabled(true);
+
+  @override
+  void didPopNext() => setHomeScreenOrientationEnabled(true);
+
+  @override
+  void didPushNext() => setHomeScreenOrientationEnabled(false);
+
+  @override
+  void didPop() => setHomeScreenOrientationEnabled(false);
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      _updateCheckTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          unawaited(ref.read(updateControllerProvider.notifier).check());
+        }
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _notifPermissionTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted) {
+          unawaited(
+            runHomeFirstLaunchSequence(
+              db: ref.read(dbProvider),
+              notifications: ref.read(downloadNotificationsProvider),
+              showLanguageSheet: () => showContentLanguageSheet(context, ref),
+              isMounted: () => mounted,
+            ),
+          );
+        }
+      });
+    });
+    controller.addListener(() {
+      if (controller.offset > 0) ref.read(homeProvider.notifier).interact();
+      if (controller.position.extentAfter < AppSpacing.xxxl) {
+        ref.read(homeProvider.notifier).loadMore();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _updateCheckTimer?.cancel();
+    _notifPermissionTimer?.cancel();
+    homeRouteObserver.unsubscribe(this);
+    setHomeScreenOrientationEnabled(false);
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(updateControllerProvider, (previous, next) {
+      if (next case UpdateAvailable(:final info, automatic: true)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) showUpdateDialog(context, ref, info);
+        });
+      }
+    });
+    ref.listen(contentPrefsProvider, (previous, next) {
+      if (previous != null && previous.prefsVersion != next.prefsVersion) {
+        _shortsPrefetchStarted = false;
+      }
+    });
+    ref.listen(homeProvider, (_, next) {
+      final shorts = next.asData?.value.shorts ?? const <ShortItem>[];
+      if (shorts.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) ref.read(shortsFeedProvider.notifier).seed(shorts);
+        });
+      }
+    });
+    ref.listen(tabRefreshProvider, (_, request) {
+      if (request?.index != 0) return;
+      if (controller.hasClients) controller.jumpTo(0);
+      unawaited(ref.read(homeProvider.notifier).refresh());
+    });
+    ref.watch(
+      homeProvider.select(
+        (value) => (
+          value.isLoading,
+          value.error,
+          value.value?.videos,
+          value.value?.shorts,
+          value.value?.trending,
+          value.value?.errors,
+          value.value?.chip,
+          value.value?.loadingMore,
+          value.value?.continuations,
+          value.value?.hasFreshFeed,
+          value.value?.isRefreshing,
+        ),
+      ),
+    );
+    final home = ref.read(homeProvider);
+    final initialData = home.asData?.value;
+    if (!_shortsPrefetchStarted && initialData != null) {
+      _shortsPrefetchStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(
+            ref
+                .read(shortsFeedProvider.notifier)
+                .prefetch(seedItems: initialData.shorts),
+          );
+        }
+      });
+    }
+    final historyById = ref.watch(homeHistoryByIdProvider);
+    final offline = ref.watch(isOfflineProvider);
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        final landscape = orientation == Orientation.landscape;
+        final statusBarInset = MediaQuery.viewPaddingOf(context).top;
+        return SafeArea(
+          left: landscape,
+          right: landscape,
+          top: false,
+          bottom: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Listener(
+                onPointerDown: (_) =>
+                    ref.read(homeProvider.notifier).interact(),
+                child: Scaffold(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  body: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          Expanded(
+                            child: home.when(
+                              skipLoadingOnRefresh: false,
+                              skipLoadingOnReload: false,
+                              loading: () => offline
+                                  ? _offlineHome(statusBarInset)
+                                  : Padding(
+                                      padding: EdgeInsets.only(
+                                        top:
+                                            statusBarInset +
+                                            AppSizes.appBarHeight,
+                                      ),
+                                      child: FeedSkeleton(),
+                                    ),
+                              error: (_, _) => offline
+                                  ? _offlineHome(statusBarInset)
+                                  : Padding(
+                                      padding: EdgeInsets.only(
+                                        top:
+                                            statusBarInset +
+                                            AppSizes.appBarHeight,
+                                      ),
+                                      child: ErrorRetry(
+                                        message: 'Unable to load Home',
+                                        onRetry: () => ref
+                                            .read(homeProvider.notifier)
+                                            .refresh(),
+                                      ),
+                                    ),
+                              data: (data) => RefreshIndicator(
+                                onRefresh: () =>
+                                    ref.read(homeProvider.notifier).refresh(),
+                                child: CustomScrollView(
+                                  controller: controller,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  slivers: _feedSlivers(
+                                    data,
+                                    historyById,
+                                    offline: offline,
+                                    landscape: landscape,
+                                    availableWidth: constraints.maxWidth,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Positioned(
+                        top: AppSpacing.none,
+                        left: AppSpacing.none,
+                        right: AppSpacing.none,
+                        child: HomeTopBar(
+                          scrollController: controller,
+                          topInset: statusBarInset,
+                          barHeight: landscape
+                              ? AppSizes.buttonIconTouch
+                              : AppSizes.appBarHeight,
+                        ),
+                      ),
+                      if (home.value?.hasFreshFeed == true)
+                        AnimatedBuilder(
+                          animation: controller,
+                          builder: (context, child) {
+                            final chipOffset =
+                                landscape || !controller.hasClients
+                                ? AppSpacing.homeChipHeight
+                                : (AppSpacing.homeChipHeight -
+                                          controller.offset)
+                                      .clamp(
+                                        AppSpacing.none,
+                                        AppSpacing.homeChipHeight,
+                                      );
+                            return Positioned(
+                              top:
+                                  statusBarInset +
+                                  (landscape
+                                      ? AppSizes.buttonIconTouch
+                                      : AppSizes.appBarHeight) +
+                                  chipOffset +
+                                  AppSpacing.sm,
+                              left: AppSpacing.none,
+                              right: AppSpacing.none,
+                              child: Center(child: child),
+                            );
+                          },
+                          child: IntrinsicWidth(
+                            child: AppButton.filled(
+                              size: AppButtonSize.compact,
+                              label: 'Refresh feed',
+                              icon: LucideIcons.refreshCw,
+                              onPressed: () {
+                                if (controller.hasClients) controller.jumpTo(0);
+                                ref
+                                    .read(homeProvider.notifier)
+                                    .applyFreshFeed();
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _offlineHome(double statusBarInset) => Padding(
+    padding: EdgeInsets.only(top: statusBarInset + AppSizes.appBarHeight),
+    child: Center(child: _downloadsButton()),
+  );
+
+  Widget _downloadsButton() => AppButton.tonal(
+    label: 'Go to downloads',
+    icon: LucideIcons.download,
+    onPressed: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const DownloadsScreen())),
+  );
+
+  List<Widget> _feedSlivers(
+    HomeData data,
+    Map<String, HistoryEntry> history, {
+    required bool landscape,
+    required double availableWidth,
+    required bool offline,
+  }) => [
+    if (landscape)
+      SliverPersistentHeader(
+        pinned: true,
+        delegate: _LandscapeHomeHeaderDelegate(
+          extent:
+              MediaQuery.viewPaddingOf(context).top +
+              AppSizes.buttonIconTouch +
+              AppSpacing.homeChipHeight,
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: Column(
+              children: [
+                SizedBox(
+                  height:
+                      MediaQuery.viewPaddingOf(context).top +
+                      AppSizes.buttonIconTouch,
+                ),
+                SizedBox(
+                  height: AppSpacing.homeChipHeight,
+                  child: _CompactChipRow(
+                    selected: chip,
+                    chips: chips,
+                    onSelected: (item) {
+                      setState(() => chip = item);
+                      ref.read(homeProvider.notifier).select(item);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      )
+    else ...[
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: AppSizes.appBarHeight + MediaQuery.viewPaddingOf(context).top,
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: _ChipRow(
+          selected: chip,
+          chips: chips,
+          onSelected: (item) {
+            setState(() => chip = item);
+            ref.read(homeProvider.notifier).select(item);
+          },
+        ),
+      ),
+    ],
+    if (offline)
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _downloadsButton(),
+          ),
+        ),
+      ),
+    if (data.errors.isNotEmpty && data.videos.isNotEmpty)
+      SliverToBoxAdapter(
+        child: Container(
+          margin: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: AppRadius.mdBorder,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Some sources could not load',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ),
+              AppButton.text(
+                label: 'Retry',
+                isLoading: data.isRefreshing,
+                onPressed: () => ref.read(homeProvider.notifier).refresh(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    if (landscape)
+      ..._landscapeVideoSlivers(data, history, availableWidth)
+    else
+      _grid(data, history),
+    if (data.videos.isEmpty && data.trending.isEmpty && data.shorts.isEmpty)
+      SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(LucideIcons.videoOff),
+              const Text('No videos found'),
+              TextButton(
+                onPressed: () => ref.read(homeProvider.notifier).refresh(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    if (data.loadingMore || data.continuations.isEmpty)
+      SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: data.loadingMore
+                ? const CircularProgressIndicator()
+                : Text(
+                    'You’re all caught up',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    if (data.trending.isNotEmpty) _trendingShelf(data.trending, history),
+    SliverBottomInset(
+      extra: MediaQuery.sizeOf(context).width < AppSpacing.navigationBreakpoint
+          ? AppSpacing.navHeight +
+                AppSpacing.xl +
+                MediaQuery.paddingOf(context).bottom
+          : AppSpacing.lg,
+    ),
+  ];
+
+  List<Widget> _landscapeVideoSlivers(
+    HomeData data,
+    Map<String, HistoryEntry> history,
+    double availableWidth,
+  ) {
+    final firstCount = data.videos.length < 4 ? data.videos.length : 4;
+    final hasShorts = data.shorts.isNotEmpty;
+    return [
+      if (firstCount > 0)
+        _landscapeVideoGrid(
+          data.videos,
+          history,
+          0,
+          firstCount,
+          availableWidth,
+        ),
+      if (hasShorts)
+        SliverToBoxAdapter(
+          child: ShortsShelf(
+            items: data.shorts,
+            cardWidth: AppSpacing.homeLandscapeShortWidth,
+            onTap: (index) {
+              ref.read(homeProvider.notifier).interact();
+              unawaited(
+                ref
+                    .read(homeProvider.notifier)
+                    .rememberChannel(
+                      data.shorts[index].id,
+                      data.shorts[index].channelName ?? '',
+                      isShort: true,
+                    ),
+              );
+              if (ref.read(watchPanelProvider) != null) {
+                ref.read(watchPanelProvider.notifier).close();
+                ref.read(playerUiProvider.notifier).setDismissed(true);
+              }
+              ref
+                  .read(shortsSelectionProvider.notifier)
+                  .open(data.shorts, index);
+              context.go('/shorts');
+            },
+          ),
+        ),
+      if (data.videos.length > firstCount)
+        _landscapeVideoGrid(
+          data.videos,
+          history,
+          firstCount,
+          data.videos.length,
+          availableWidth,
+        ),
+    ];
+  }
+
+  Widget _landscapeVideoGrid(
+    List<VideoItem> items,
+    Map<String, HistoryEntry> history,
+    int start,
+    int end,
+    double availableWidth,
+  ) => SliverLayoutBuilder(
+    builder: (context, constraints) {
+      final availableGridWidth = constraints.crossAxisExtent < availableWidth
+          ? constraints.crossAxisExtent
+          : availableWidth;
+      final gridWidth = availableGridWidth - AppSpacing.md * 2;
+      final columns =
+          (gridWidth / (AppSpacing.homeLandscapeCardMaxWidth + AppSpacing.md))
+              .ceil()
+              .clamp(1, items.length);
+      final itemWidth = (gridWidth - AppSpacing.md * (columns - 1)) / columns;
+      final itemHeight =
+          itemWidth / AppSpacing.thumbnailRatio + AppSpacing.cardInfoHeight;
+      return SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        sliver: SliverGrid(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) =>
+                _videoCard(items[start + index], history, gridMode: true),
+            childCount: end - start,
+            addAutomaticKeepAlives: false,
+          ),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: AppSpacing.homeLandscapeCardMaxWidth,
+            mainAxisExtent: itemHeight,
+            crossAxisSpacing: AppSpacing.md,
+            mainAxisSpacing: AppSpacing.md,
+          ),
+        ),
+      );
+    },
+  );
+
+  Widget _grid(
+    HomeData data,
+    Map<String, HistoryEntry> history,
+  ) => SliverLayoutBuilder(
+    builder: (context, constraints) {
+      final items = data.videos;
+      final wide =
+          MediaQuery.sizeOf(context).width >= AppSpacing.navigationBreakpoint;
+      Widget card(int index) {
+        final item = items[index];
+        return _videoCard(item, history, gridMode: wide);
+      }
+
+      final columns =
+          ((constraints.crossAxisExtent - AppSpacing.lg * 2) /
+                  AppSpacing.videoMaxWidth)
+              .ceil();
+      final count = wide && columns > 1 ? columns : 1;
+      final first = items.length < 4 ? items.length : 4;
+      final beforeRows = (first / count).ceil();
+      final afterRows = ((items.length - first) / count).ceil();
+      final hasShorts = data.shorts.isNotEmpty;
+      return SliverList.builder(
+        addAutomaticKeepAlives: false,
+        itemCount: beforeRows + afterRows + (hasShorts ? 1 : 0),
+        itemBuilder: (context, row) {
+          if (hasShorts && row == beforeRows) {
+            return ShortsShelf(
+              items: data.shorts,
+              onTap: (index) {
+                ref.read(homeProvider.notifier).interact();
+                unawaited(
+                  ref
+                      .read(homeProvider.notifier)
+                      .rememberChannel(
+                        data.shorts[index].id,
+                        data.shorts[index].channelName ?? '',
+                        isShort: true,
+                      ),
+                );
+                if (ref.read(watchPanelProvider) != null) {
+                  ref.read(watchPanelProvider.notifier).close();
+                  ref.read(playerUiProvider.notifier).setDismissed(true);
+                }
+                ref
+                    .read(shortsSelectionProvider.notifier)
+                    .open(data.shorts, index);
+                context.go('/shorts');
+              },
+            );
+          }
+          final after = row >= beforeRows;
+          final rowIndex = after ? row - beforeRows - (hasShorts ? 1 : 0) : row;
+          final start = after ? first + rowIndex * count : rowIndex * count;
+          final end = after ? items.length : first;
+          if (!wide) return card(start);
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var col = 0; col < count; col++) ...[
+                  if (col > 0) const SizedBox(width: AppSpacing.lg),
+                  Expanded(
+                    child: start + col < end
+                        ? card(start + col)
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  Widget _videoCard(
+    VideoItem item,
+    Map<String, HistoryEntry> history, {
+    required bool gridMode,
+  }) {
+    widget.onCardBuilt?.call(item.id);
+    final hist = history[item.id];
+    final progress =
+        hist != null &&
+            hist.position > Duration.zero &&
+            hist.duration > Duration.zero
+        ? (hist.position.inMilliseconds / hist.duration.inMilliseconds).clamp(
+            0.0,
+            1.0,
+          )
+        : null;
+    return RepaintBoundary(
+      key: ValueKey(item.id),
+      child: VideoCard(
+        video: item,
+        mode: gridMode ? VideoCardMode.grid : VideoCardMode.feed,
+        progress: progress,
+        onTap: () {
+          ref.read(homeProvider.notifier).interact();
+          unawaited(
+            ref
+                .read(homeProvider.notifier)
+                .rememberChannel(item.id, item.channelName),
+          );
+          openWatchPanel(ref, item.id);
+        },
+      ),
+    );
+  }
+
+  Widget _trendingShelf(
+    List<VideoItem> items,
+    Map<String, HistoryEntry> history,
+  ) {
+    final shelfItems = items.take(5).toList();
+    final cardHeight =
+        AppSpacing.homeTrendingWidth / AppSpacing.thumbnailRatio +
+        (AppSpacing.cardInfoHeight *
+            MediaQuery.textScalerOf(context).scale(1.0));
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Text(
+              'Trending',
+              style: AppTextStyles.homeShelfTitle.copyWith(
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: cardHeight,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              scrollDirection: Axis.horizontal,
+              itemCount: shelfItems.length,
+              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
+              itemBuilder: (context, index) {
+                final item = shelfItems[index];
+                final hist = history[item.id];
+                final progress =
+                    hist != null &&
+                        hist.position > Duration.zero &&
+                        hist.duration > Duration.zero
+                    ? (hist.position.inMilliseconds /
+                              hist.duration.inMilliseconds)
+                          .clamp(0.0, 1.0)
+                    : null;
+                return RepaintBoundary(
+                  key: ValueKey('trending:${item.id}'),
+                  child: SizedBox(
+                    width: AppSpacing.homeTrendingWidth,
+                    child: VideoCard(
+                      video: item,
+                      mode: VideoCardMode.grid,
+                      progress: progress,
+                      onTap: () {
+                        ref.read(homeProvider.notifier).interact();
+                        unawaited(
+                          ref
+                              .read(homeProvider.notifier)
+                              .rememberChannel(item.id, item.channelName),
+                        );
+                        openWatchPanel(ref, item.id);
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({
+    required this.selected,
+    required this.chips,
+    required this.onSelected,
+  });
+  final String selected;
+  final List<String> chips;
+  final ValueChanged<String> onSelected;
+  @override
+  Widget build(BuildContext context) {
+    return AppChipBar(
+      children: [
+        for (final item in chips)
+          AppChip(
+            label: item,
+            selected: item == selected,
+            onTap: () => onSelected(item),
+          ),
+      ],
+    );
+  }
+}
+
+class _CompactChipRow extends StatelessWidget {
+  const _CompactChipRow({
+    required this.selected,
+    required this.chips,
+    required this.onSelected,
+  });
+
+  final String selected;
+  final List<String> chips;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => ListView.separated(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.md,
+      vertical: AppSpacing.xxs,
+    ),
+    itemCount: chips.length,
+    separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+    itemBuilder: (context, index) {
+      final item = chips[index];
+      return AppChip(
+        label: item,
+        selected: item == selected,
+        onTap: () => onSelected(item),
+      );
+    },
+  );
+}
+
+class _LandscapeHomeHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _LandscapeHomeHeaderDelegate({
+    required this.extent,
+    required this.child,
+  });
+
+  final double extent;
+  final Widget child;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => child;
+
+  @override
+  bool shouldRebuild(_LandscapeHomeHeaderDelegate oldDelegate) =>
+      extent != oldDelegate.extent || child != oldDelegate.child;
+}

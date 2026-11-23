@@ -1,0 +1,2118 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:drift/drift.dart' show BooleanExpressionOperators;
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
+import '../providers.dart';
+import '../settings/app_settings.dart';
+import 'load_guard.dart';
+import 'playback_failure_monitor.dart';
+import 'playback_network_state.dart';
+import 'seek_controller.dart';
+import 'audio_handler.dart';
+import '../db/app_db.dart';
+import '../streams/player_client.dart';
+import '../streams/adaptive_quality_controller.dart';
+import '../streams/adaptive_quality_policy.dart';
+import '../streams/bandwidth_estimator.dart';
+import '../streams/relay_server.dart';
+import '../streams/stream_cache.dart';
+import '../streams/stream_selector.dart';
+import '../streams/net_family.dart';
+import '../innertube/innertube_http.dart';
+import '../yt/captions.dart';
+import '../yt/models.dart';
+import '../../widgets/logger.dart';
+import 'session_queue.dart';
+import 'watch_session.dart';
+import 'player_interactions.dart';
+
+enum PlayerStatus {
+  idle,
+  loading,
+  buffering,
+  ready,
+  playing,
+  paused,
+  ended,
+  error,
+}
+
+enum SeekState { idle, seeking, buffering, ready }
+
+class PlayRequest {
+  const PlayRequest({
+    required this.videoId,
+    required this.mode,
+    this.startAt = Duration.zero,
+    this.play = true,
+    this.saveHistory = true,
+  });
+  const PlayRequest.short(String id)
+    : this(videoId: id, mode: PlaybackMode.short, saveHistory: false);
+  final String videoId;
+  final PlaybackMode mode;
+  final Duration startAt;
+  final bool play;
+  final bool saveHistory;
+}
+
+@visibleForTesting
+Future<String?> findLocalPlaybackPath(
+  AppDb db,
+  String videoId,
+  PlaybackMode mode,
+) async => (await findLocalPlaybackSource(db, videoId, mode))?.path;
+
+@visibleForTesting
+Future<({String path, bool hasVideo})?> findLocalPlaybackSource(
+  AppDb db,
+  String videoId,
+  PlaybackMode mode,
+) async {
+  if (mode == PlaybackMode.short) return null;
+  final rows =
+      await (db.select(db.downloads)..where(
+            (row) =>
+                row.videoId.equals(videoId) & row.status.equals('completed'),
+          ))
+          .get();
+  for (final kind
+      in mode == PlaybackMode.audio ? ['video', 'audio'] : ['video']) {
+    for (final row in rows.reversed) {
+      final path = row.path;
+      if (row.kind == kind && path != null && await File(path).exists()) {
+        return (path: path, hasVideo: kind == 'video');
+      }
+    }
+  }
+  return null;
+}
+
+@visibleForTesting
+Future<void> savePlaybackHistory(
+  HistoryRepo history,
+  PlayRequest? request,
+  Duration position,
+  Duration duration,
+) async {
+  if (request == null || !request.saveHistory) return;
+  await history.save(HistoryEntry(request.videoId, position, duration));
+}
+
+class PlaybackSnapshot {
+  PlayerStatus status = PlayerStatus.idle;
+  String? videoId;
+  PlaybackMode? mode;
+  String subtitleText = '';
+  bool playing = false;
+  SeekState seekState = SeekState.idle;
+  Duration? seekTarget;
+  Duration position = Duration.zero,
+      buffered = Duration.zero,
+      duration = Duration.zero;
+  double rate = 1, volume = 100;
+  int? videoWidth, videoHeight;
+  int? quality;
+  int? autoQualityHeight;
+  bool muted = false, loop = false;
+  bool recovering = false;
+  StreamError? error;
+  List<int> heights = [];
+  List<Map<String, dynamic>> captions = [];
+  int? selectedCaption;
+  bool captionError = false;
+  Uint8List? frozenFrame;
+  String? frameReadyId;
+
+  Duration get displayPosition => seekTarget ?? position;
+}
+
+@visibleForTesting
+Future<PlayRequest?> switchRetainedVideoTrack({
+  required PlaybackSnapshot snapshot,
+  required PlayRequest current,
+  required bool audioOnly,
+  required Future<void> Function(VideoTrack) setTrack,
+  required bool Function() isCurrent,
+  required bool Function() isPaused,
+}) async {
+  await setTrack(audioOnly ? VideoTrack.no() : VideoTrack.auto());
+  if (!isCurrent()) return null;
+  return PlayRequest(
+    videoId: current.videoId,
+    mode: audioOnly ? PlaybackMode.audio : PlaybackMode.video,
+    startAt: snapshot.position,
+    play: !isPaused(),
+    saveHistory: current.saveHistory,
+  );
+}
+
+class _PreparedShort {
+  _PreparedShort(this.id, this.player, this.controller, this.audio);
+  final String id;
+  final Player player;
+  final VideoController controller;
+  final Uri audio;
+}
+
+@visibleForTesting
+class ShortPreloadQueue {
+  int generation = 0;
+  Future<void> _tail = Future.value();
+
+  int begin() => ++generation;
+
+  Future<T> run<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+}
+
+@visibleForTesting
+Future<bool> handoffShortPlayer({
+  required bool Function() isCurrent,
+  required Future<void> Function() pausePrevious,
+  required Future<void> Function() promote,
+  required Future<void> Function() start,
+}) async {
+  if (!isCurrent()) return false;
+  await pausePrevious();
+  if (!isCurrent()) return false;
+  await promote();
+  if (isCurrent()) await start();
+  return true;
+}
+
+class PlaybackService extends ChangeNotifier {
+  PlaybackService(
+    this.cache,
+    this.relay,
+    this.history, {
+    this.bandwidthEstimator,
+    this.onQualityPreferenceChanged,
+    this.completedDownloadPath,
+    this.prepareStreaming,
+    this.audioOnlyPreference,
+  }) {
+    _seekController = _createSeekController();
+    _configurePlayer(player, shortBuffer: false);
+    _observeActivePlayer(player);
+    _listen();
+    _startAdaptiveTimer();
+    _audioFocus.setMethodCallHandler(_onAudioFocus);
+  }
+
+  void _debugLog(String msg) {
+    stdout.writeln('[PlaybackService] $msg');
+  }
+
+  SeekController _createSeekController() => SeekController(
+    player: player,
+    getDuration: () => state.duration,
+    getPosition: () => state.position,
+    getStatus: () => state.status,
+    isUserPaused: () => _userPaused,
+    onSeekStateChanged: (s, target) {
+      state.seekState = s;
+      state.seekTarget = target;
+      _notify();
+    },
+    onRecovery: _recover,
+    onAudioSyncCheck: () async {
+      if (_currentAudioUri != null) {
+        final platform = player.platform;
+        if (platform is NativePlayer) {
+          final coreIdle = await platform.getProperty('core-idle');
+          if (coreIdle == 'yes' && player.state.playing) {
+            _debugLog(
+              'audio core-idle detected after seek; re-attaching audio track',
+            );
+            await player.setAudioTrack(
+              AudioTrack.uri(_currentAudioUri.toString()),
+            );
+          }
+        }
+      }
+    },
+    onPlaybackResume: () async {
+      state.status = PlayerStatus.playing;
+      if (!_userPaused && _visible && await _activateAudioFocus()) {
+        await player.play();
+      }
+      _notify();
+    },
+  );
+
+  void _configurePlayer(Player target, {required bool shortBuffer}) {
+    final platform = target.platform;
+    if (platform is! NativePlayer) return;
+    unawaited(
+      platform.setProperty(
+        'demuxer-max-bytes',
+        shortBuffer ? '33554432' : '268435456',
+      ),
+    );
+    unawaited(platform.setProperty('cache-secs', shortBuffer ? '30' : '300'));
+    unawaited(platform.setProperty('keep-open', 'yes'));
+    unawaited(platform.setProperty('audio-wake-lock', 'yes'));
+    unawaited(platform.setProperty('audio-display', 'no'));
+  }
+
+  void _observeActivePlayer(Player target) {
+    if (!_observedPlayers.add(target)) return;
+    final platform = target.platform;
+    if (platform is! NativePlayer) return;
+    unawaited(
+      platform.observeProperty('seeking', (value) async {
+        if (!identical(_player, target)) return;
+        _mpvSeeking = value == 'yes';
+        _seekController.updateMpvProperties(seeking: _mpvSeeking);
+      }),
+    );
+    unawaited(
+      platform.observeProperty('paused-for-cache', (value) async {
+        if (!identical(_player, target)) return;
+        _seekController.updateMpvProperties(pausedForCache: value == 'yes');
+      }),
+    );
+  }
+
+  final StreamCache cache;
+  final RelayServer relay;
+  final HistoryRepo history;
+  final Future<({String path, bool hasVideo})?> Function(
+    String videoId,
+    PlaybackMode mode,
+  )?
+  completedDownloadPath;
+  final Future<void> Function()? prepareStreaming;
+  final bool Function()? audioOnlyPreference;
+  final BandwidthEstimator? bandwidthEstimator;
+  final Future<void> Function(VideoQualityPreference)?
+  onQualityPreferenceChanged;
+  Player _player = Player();
+  late VideoController _controller = VideoController(_player);
+  Player get player => _player;
+  VideoController get controller => _controller;
+  final _shortQueue = ShortPreloadQueue();
+  int get _shortPreloadGeneration => _shortQueue.generation;
+  _PreparedShort? _preparedShort;
+  String? _failedShortPreload;
+  final Set<Player> _observedPlayers = {};
+  final Set<VideoController> _frameWaitedControllers = {};
+  final PlaybackSnapshot state = PlaybackSnapshot();
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  PlayRequest? request;
+  final _loadGuard = LoadGuard();
+  final _budget = RecoveryBudget();
+  final _failureMonitor = PlaybackFailureMonitor();
+  final _networkState = PlaybackNetworkState();
+  late SeekController _seekController;
+  bool _switching = false, _disposed = false, _userPaused = false;
+  bool _visible = true, _resumeAfterVisibility = false;
+  bool _resumeAfterFocus = false;
+  double? _volumeBeforeDuck;
+  bool _mpvSeeking = false;
+  VideoQualityPreference _qualityPreference = VideoQualityPreference.auto;
+  bool _wifiNetwork = false, _mobileNetwork = false;
+  final AdaptiveQualityController _adaptiveQuality =
+      AdaptiveQualityController();
+  Timer? _adaptiveTimer;
+  Uri? _currentAudioUri;
+  bool _playingLocalFile = false;
+  bool _videoTrackSuppressed = false;
+  Future<void>? _backgroundTrackChange;
+  String? _activeFrameVideoId;
+  PlayRequest? _backgroundVideoRequest;
+  static const _audioFocus = MethodChannel('hivetube/audio_focus');
+
+  VideoQualityPreference get qualityPreference => _qualityPreference;
+
+  int get _qualityCap => AdaptiveQualityPolicy.capForPreference(
+    _qualityPreference,
+    wifi: _wifiNetwork,
+    mobile: _mobileNetwork,
+  );
+
+  bool get _automaticQualityEnabled =>
+      state.quality == null &&
+      (_qualityPreference == VideoQualityPreference.auto ||
+          _qualityPreference == VideoQualityPreference.dataSaver);
+
+  bool get _shouldResumeCurrent =>
+      !_userPaused &&
+      (state.playing ||
+          player.state.playing ||
+          state.status == PlayerStatus.ready ||
+          state.status == PlayerStatus.loading ||
+          state.status == PlayerStatus.buffering ||
+          state.status == PlayerStatus.playing);
+
+  bool get _preferenceUsesAdaptiveQuality =>
+      _qualityPreference == VideoQualityPreference.auto ||
+      _qualityPreference == VideoQualityPreference.dataSaver;
+
+  void updateQualityPolicy({
+    required VideoQualityPreference preference,
+    required bool wifiNetwork,
+    required bool mobileNetwork,
+    bool online = true,
+  }) {
+    final recoverNow = _networkState.updateOnline(online);
+    final oldCap = _qualityCap;
+    final oldPreference = _qualityPreference;
+    final changed =
+        _qualityPreference != preference ||
+        _wifiNetwork != wifiNetwork ||
+        _mobileNetwork != mobileNetwork;
+    if (!changed) {
+      if (recoverNow) unawaited(_recover());
+      return;
+    }
+    cancelShortPreloads(disposePlayer: true);
+    _qualityPreference = preference;
+    _wifiNetwork = wifiNetwork;
+    _mobileNetwork = mobileNetwork;
+    if (recoverNow) {
+      unawaited(_recover());
+      return;
+    }
+    if (request != null &&
+        state.quality == null &&
+        (oldCap != _qualityCap || oldPreference != _qualityPreference)) {
+      _reloadForQualityPolicy();
+    } else {
+      _notify();
+    }
+  }
+
+  Future<void> setQualityPreference(VideoQualityPreference preference) async {
+    if (_qualityPreference == preference && state.quality == null) return;
+    cancelShortPreloads(disposePlayer: true);
+    _qualityPreference = preference;
+    state.quality = null;
+    state.autoQualityHeight = null;
+    _adaptiveQuality.reset(null, DateTime.now());
+    _notify();
+    await onQualityPreferenceChanged?.call(preference);
+    _reloadForQualityPolicy();
+  }
+
+  void _reloadForQualityPolicy() {
+    if (!_networkState.online) return;
+    final current = request;
+    if (current == null) return;
+    state.autoQualityHeight = null;
+    _adaptiveQuality.reset(null, DateTime.now());
+    unawaited(
+      _load(
+        PlayRequest(
+          videoId: current.videoId,
+          mode: current.mode,
+          startAt: state.position,
+          play: _shouldResumeCurrent,
+          saveHistory: current.saveHistory,
+        ),
+        qualitySwitch: true,
+      ),
+    );
+  }
+
+  Future<int> _initialQualityFor(String id, PlaybackMode mode) async {
+    final cap = _qualityCap;
+    final fixed = AdaptiveQualityPolicy.fixedHeight(_qualityPreference);
+    if (fixed != null) return fixed;
+    if (!_preferenceUsesAdaptiveQuality) return cap;
+    try {
+      final candidates = await cache.candidates(id, mode, maxHeight: cap);
+      final probeFormat =
+          candidates.videos
+              .where((format) => resolutionOf(format, mode) <= cap)
+              .firstOrNull ??
+          candidates.videos.lastOrNull;
+      if (probeFormat == null) return cap;
+      final estimate = await bandwidthEstimator?.probe(probeFormat);
+      return estimate == null ? cap : pickHeight(estimate, cap);
+    } catch (_) {
+      return cap;
+    }
+  }
+
+  void _startAdaptiveTimer() {
+    _adaptiveTimer = Timer.periodic(
+      AdaptiveQualityPolicy.adaptationCheckInterval,
+      (_) => _evaluateAdaptiveQuality(),
+    );
+  }
+
+  void _evaluateAdaptiveQuality() {
+    if (_disposed ||
+        _switching ||
+        request == null ||
+        !_automaticQualityEnabled ||
+        state.status != PlayerStatus.playing) {
+      return;
+    }
+    final current = state.autoQualityHeight;
+    if (current == null) return;
+    final next = _adaptiveQuality.stepUpIfSupported(
+      now: DateTime.now(),
+      estimateMbps: bandwidthEstimator?.ewmaMbps,
+      currentHeight: current,
+      cap: _qualityCap,
+    );
+    if (next != null) _switchAutomaticQuality(next);
+  }
+
+  void _recordAdaptiveStall() {
+    if (!_networkState.online || !_automaticQualityEnabled) return;
+    final current = state.autoQualityHeight ?? state.heights.firstOrNull;
+    if (current == null) return;
+    final lower = _adaptiveQuality.recordStall(
+      now: DateTime.now(),
+      currentHeight: current,
+      cap: _qualityCap,
+    );
+    if (lower != null) _switchAutomaticQuality(lower);
+  }
+
+  void _switchAutomaticQuality(int height) {
+    if (!_networkState.online) return;
+    final current = request;
+    if (current == null || _switching || !_automaticQualityEnabled) return;
+    unawaited(
+      _load(
+        PlayRequest(
+          videoId: current.videoId,
+          mode: current.mode,
+          startAt: state.position,
+          play: _shouldResumeCurrent,
+          saveHistory: current.saveHistory,
+        ),
+        qualitySwitch: true,
+        adaptiveHeight: height,
+      ),
+    );
+  }
+
+  Future<void> _onAudioFocus(MethodCall call) async {
+    if (call.method == 'focusDuck') {
+      _volumeBeforeDuck ??= player.state.volume;
+      await player.setVolume(_volumeBeforeDuck! * .3);
+    } else if (call.method == 'focusLoss') {
+      _resumeAfterFocus = player.state.playing && !_userPaused;
+      if (_resumeAfterFocus) await player.pause();
+    } else if (call.method == 'focusGain') {
+      final volume = _volumeBeforeDuck;
+      _volumeBeforeDuck = null;
+      if (volume != null) await player.setVolume(volume);
+      if (_resumeAfterFocus &&
+          !_userPaused &&
+          request != null &&
+          (_visible || request?.mode == PlaybackMode.audio)) {
+        _resumeAfterFocus = false;
+        await player.play();
+      }
+    } else if (call.method == 'noisy') {
+      _resumeAfterFocus = false;
+      await pause();
+    }
+  }
+
+  Future<bool> _activateAudioFocus() async {
+    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      return true;
+    }
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      return await _audioFocus.invokeMethod<bool>('activate') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  String? _captionLanguage;
+  DateTime? _lastWrite;
+  Timer? _qualityTimer;
+  Future<void> _commitTail = Future.value();
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  bool isFrameReadyFor(String videoId) => _activeFrameVideoId == videoId;
+
+  void _listen() {
+    final activePlayer = player;
+    state.subtitleText = activePlayer.state.subtitle
+        .where((line) => line.trim().isNotEmpty)
+        .join('\n');
+    _subscriptions.add(
+      activePlayer.stream.subtitle.listen((lines) {
+        if (!identical(player, activePlayer)) return;
+        state.subtitleText = lines
+            .where((line) => line.trim().isNotEmpty)
+            .join('\n');
+        _notify();
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.position.listen((value) {
+        if (_switching || !identical(player, activePlayer)) return;
+        if (request?.mode == PlaybackMode.short && value > Duration.zero) {
+          _activeFrameVideoId = request?.videoId;
+          state.frameReadyId = request?.videoId;
+          _frameWaitedControllers.add(_controller);
+        }
+        final gap = (value - state.position).abs();
+        if (gap > const Duration(seconds: 2)) {
+          _debugLog(
+            'position stream gap: old=${state.position} new=$value (gap=${gap.inMilliseconds}ms)',
+          );
+        }
+        if (state.frozenFrame != null &&
+            value != state.position &&
+            activePlayer.state.playing) {
+          state.frozenFrame = null;
+        }
+        _failureMonitor.positionChanged(value);
+        if (state.status == PlayerStatus.error &&
+            value != state.position &&
+            activePlayer.state.playing) {
+          state.status = PlayerStatus.playing;
+          state.error = null;
+        }
+        state.position = value;
+        if (state.status == PlayerStatus.playing) {
+          _budget.tick(DateTime.now());
+        }
+        if (request?.saveHistory == true &&
+            (_lastWrite == null ||
+                DateTime.now().difference(_lastWrite!) >=
+                    const Duration(seconds: 5))) {
+          _lastWrite = DateTime.now();
+          unawaited(
+            savePlaybackHistory(history, request, value, state.duration),
+          );
+        }
+        _notify();
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.width.listen((value) {
+        if (!identical(player, activePlayer)) return;
+        state.videoWidth = value;
+        _notify();
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.height.listen((value) {
+        if (!identical(player, activePlayer)) return;
+        state.videoHeight = value;
+        _notify();
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.duration.listen((v) {
+        if (!identical(player, activePlayer)) return;
+        if (v > Duration.zero) {
+          state.duration = v;
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.buffer.listen((v) {
+        if (!_switching && identical(player, activePlayer)) {
+          state.buffered = v;
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.playing.listen((v) {
+        if (!identical(player, activePlayer)) return;
+        state.playing = v;
+        try {
+          unawaited(
+            WakelockPlus.toggle(
+              enable: v && _visible && state.mode != PlaybackMode.audio,
+            ).catchError((_) {}),
+          );
+        } catch (_) {}
+        if (!_switching &&
+            state.status != PlayerStatus.error &&
+            (v || state.status != PlayerStatus.ended)) {
+          state.status = v ? PlayerStatus.playing : PlayerStatus.paused;
+          if (v) {
+            _budget.playing(DateTime.now());
+          } else {
+            _budget.paused();
+          }
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.buffering.listen((v) {
+        if (!identical(player, activePlayer)) return;
+        if (!_switching && state.status != PlayerStatus.error && v) {
+          final wasPlaying = state.playing || activePlayer.state.playing;
+          state.status = PlayerStatus.buffering;
+          if (wasPlaying) _recordAdaptiveStall();
+          _notify();
+        } else if (!_switching &&
+            state.status == PlayerStatus.buffering &&
+            !v) {
+          state.status = activePlayer.state.playing
+              ? PlayerStatus.playing
+              : PlayerStatus.paused;
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.completed.listen((v) {
+        if (!identical(player, activePlayer)) return;
+        if (v && !_switching && !state.loop) {
+          _failureMonitor.cancel();
+          state.status = PlayerStatus.ended;
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      activePlayer.stream.error.listen((v) {
+        if (!identical(player, activePlayer)) return;
+        _debugLog('player stream error: $v');
+        if (v.contains('audio device') || v.contains('no sound')) return;
+        final current = request;
+        if (_playingLocalFile && !_switching && current != null) {
+          _playingLocalFile = false;
+          if (current.mode == PlaybackMode.audio) {
+            state.status = PlayerStatus.error;
+            state.error = StreamError.extractionFailed;
+            _notify();
+            return;
+          }
+          unawaited(
+            _load(
+              PlayRequest(
+                videoId: current.videoId,
+                mode: current.mode,
+                startAt: state.position,
+                play: !_userPaused,
+                saveHistory: current.saveHistory,
+              ),
+              skipLocalFile: true,
+            ),
+          );
+          return;
+        }
+        if (!_switching &&
+            current != null &&
+            !_userPaused &&
+            state.status != PlayerStatus.error) {
+          if (!_networkState.online) {
+            _networkState.deferRecovery();
+            return;
+          }
+          _failureMonitor.report(state.position, () {
+            if (!_disposed &&
+                !_switching &&
+                !_userPaused &&
+                identical(request, current)) {
+              unawaited(_recover());
+            }
+          });
+        }
+      }),
+    );
+  }
+
+  Future<void> play(PlayRequest value) async {
+    _qualityTimer?.cancel();
+    final generation = _loadGuard.next();
+    state.frameReadyId = null;
+    _activeFrameVideoId = null;
+    state.frozenFrame = null;
+    _notify();
+    if (value.mode != PlaybackMode.short) {
+      cancelShortPreloads(disposePlayer: true);
+    }
+    if (request?.videoId != value.videoId) {
+      state.quality = null;
+      state.autoQualityHeight = null;
+      _adaptiveQuality.reset(null, DateTime.now());
+    }
+    await _saveProgress();
+    if (!_loadGuard.isCurrent(generation)) return;
+    _failureMonitor.cancel();
+    _userPaused = false;
+    _visible = true;
+    _resumeAfterVisibility = false;
+    _budget.reset();
+    await _load(value, newRequest: true, requestGeneration: generation);
+  }
+
+  Future<void> playVideoRequest(PlayRequest value) async {
+    final backgroundVideo = _backgroundVideoRequest;
+    if (value.mode == PlaybackMode.video &&
+        (audioOnlyPreference?.call() ?? false)) {
+      await play(
+        PlayRequest(
+          videoId: value.videoId,
+          mode: PlaybackMode.audio,
+          startAt: value.startAt,
+          play: value.play,
+          saveHistory: value.saveHistory,
+        ),
+      );
+      return;
+    }
+    if (backgroundVideo == null || value.mode != PlaybackMode.video) {
+      await play(value);
+      return;
+    }
+    _backgroundVideoRequest = value;
+    await play(
+      PlayRequest(
+        videoId: value.videoId,
+        mode: PlaybackMode.audio,
+        startAt: value.startAt,
+        play: value.play,
+        saveHistory: value.saveHistory,
+      ),
+    );
+  }
+
+  Future<void> setAudioOnly(bool enabled) async {
+    final current = request;
+    if (current == null || current.mode == PlaybackMode.short) return;
+    final mode = enabled ? PlaybackMode.audio : PlaybackMode.video;
+    _backgroundVideoRequest = null;
+    if (current.mode == mode) return;
+    final localVideoTrackAvailable =
+        _playingLocalFile &&
+        player.state.tracks.video.any(
+          (track) => track.id != 'auto' && track.id != 'no',
+        );
+    if (current.mode == PlaybackMode.video ||
+        _videoTrackSuppressed ||
+        localVideoTrackAvailable) {
+      await _setRetainedVideoTrack(current, enabled);
+      return;
+    }
+    await _load(
+      PlayRequest(
+        videoId: current.videoId,
+        mode: mode,
+        startAt: state.position,
+        play: !_userPaused && _shouldResumeCurrent,
+        saveHistory: current.saveHistory,
+      ),
+      qualitySwitch: true,
+    );
+  }
+
+  Future<void> _setRetainedVideoTrack(
+    PlayRequest current,
+    bool audioOnly,
+  ) async {
+    final next = await switchRetainedVideoTrack(
+      snapshot: state,
+      current: current,
+      audioOnly: audioOnly,
+      setTrack: player.setVideoTrack,
+      isCurrent: () => identical(request, current),
+      isPaused: () => _userPaused,
+    );
+    if (next == null) return;
+    _videoTrackSuppressed = audioOnly;
+    request = next;
+    state.mode = request!.mode;
+    state.frozenFrame = null;
+    if (!audioOnly) {
+      state.frameReadyId = current.videoId;
+      _activeFrameVideoId = current.videoId;
+    }
+    unawaited(
+      WakelockPlus.toggle(
+        enable: !audioOnly && _visible && state.playing,
+      ).catchError((_) {}),
+    );
+    _notify();
+  }
+
+  int beginShortPreloadCycle() => _shortQueue.begin();
+
+  Future<T> _runShortOperation<T>(Future<T> Function() action) {
+    return _shortQueue.run(action);
+  }
+
+  void cancelShortPreloads({bool disposePlayer = false}) {
+    _shortQueue.begin();
+    if (disposePlayer) {
+      unawaited(
+        _runShortOperation(() async {
+          final prepared = _preparedShort;
+          _preparedShort = null;
+          if (prepared != null) await prepared.player.dispose();
+        }),
+      );
+    }
+  }
+
+  Future<void> preResolve(
+    String id,
+    PlaybackMode mode, {
+    int? generation,
+  }) async {
+    if (generation != null && generation != _shortPreloadGeneration) return;
+    if (mode == PlaybackMode.short &&
+        (!_networkState.online ||
+            _qualityPreference == VideoQualityPreference.dataSaver)) {
+      return;
+    }
+    try {
+      await cache.resolve(
+        id,
+        mode,
+        quality: AdaptiveQualityPolicy.fixedHeight(_qualityPreference),
+        maxHeight: _qualityCap,
+      );
+    } catch (error) {
+      if (generation == null || generation == _shortPreloadGeneration) {
+        Logger.log('Shorts', error);
+      }
+    }
+  }
+
+  Future<void> preloadShort(String id, {required int generation}) async {
+    if (!_visible ||
+        _disposed ||
+        !_networkState.online ||
+        _qualityPreference == VideoQualityPreference.dataSaver ||
+        request?.mode != PlaybackMode.short ||
+        generation != _shortPreloadGeneration) {
+      return;
+    }
+    try {
+      final quality = AdaptiveQualityPolicy.fixedHeight(_qualityPreference);
+      final selected = await cache
+          .resolve(
+            id,
+            PlaybackMode.short,
+            quality: quality,
+            maxHeight: _qualityCap,
+          )
+          .timeout(const Duration(seconds: 8));
+      if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+        return;
+      }
+      final video =
+          selected.videos
+              .where(
+                (format) =>
+                    resolutionOf(format, PlaybackMode.short) <=
+                    (quality ?? _qualityCap),
+              )
+              .firstOrNull ??
+          selected.videos.last;
+      final videoUri = await relay.register(video);
+      final audioUri = await relay.register(selected.audio!);
+      await _runShortOperation(() async {
+        if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+          return;
+        }
+        if (_preparedShort?.id == id) return;
+        final old = _preparedShort;
+        _preparedShort = null;
+        if (old != null) await old.player.dispose();
+        if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+          return;
+        }
+        Player? next;
+        try {
+          next = Player();
+          final controller = VideoController(next);
+          WidgetsBinding.instance.ensureVisualUpdate();
+          _configurePlayer(next, shortBuffer: true);
+          await next.setVolume(0);
+          await next.setPlaylistMode(PlaylistMode.single);
+          await next.open(Media(videoUri.toString()), play: false);
+          await next.setAudioTrack(AudioTrack.uri(audioUri.toString()));
+          if (!_visible || _disposed || generation != _shortPreloadGeneration) {
+            return;
+          }
+          _preparedShort = _PreparedShort(id, next, controller, audioUri);
+          _failedShortPreload = null;
+          next = null;
+        } finally {
+          if (next != null) await next.dispose();
+        }
+      });
+    } catch (error) {
+      if (generation == _shortPreloadGeneration) {
+        _failedShortPreload = id;
+        Logger.log('Shorts', error);
+      }
+    }
+  }
+
+  Future<bool> playShort(String id) async {
+    if (!_visible || _disposed) return false;
+    final generation = _loadGuard.next();
+    final prepared = await _runShortOperation(() async {
+      final slot = _preparedShort;
+      if (slot?.id != id ||
+          !_visible ||
+          _disposed ||
+          !_loadGuard.isCurrent(generation)) {
+        return false;
+      }
+      final previousCommit = _commitTail;
+      final commitDone = Completer<void>();
+      _commitTail = commitDone.future;
+      try {
+        await previousCommit;
+        if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+          return false;
+        }
+        final previousPlayer = player;
+        return await handoffShortPlayer(
+          isCurrent: () =>
+              _visible && !_disposed && _loadGuard.isCurrent(generation),
+          pausePrevious: previousPlayer.pause,
+          promote: () async {
+            _preparedShort = null;
+            _shortQueue.begin();
+            _failureMonitor.cancel();
+            _seekController.dispose();
+            for (final subscription in _subscriptions) {
+              await subscription.cancel();
+            }
+            _subscriptions.clear();
+            _observedPlayers.remove(previousPlayer);
+            _frameWaitedControllers.remove(_controller);
+            _player = slot!.player;
+            _controller = slot.controller;
+            await previousPlayer.dispose();
+            request = PlayRequest.short(id);
+            state.videoId = id;
+            state.mode = PlaybackMode.short;
+            state.position = Duration.zero;
+            state.buffered = player.state.buffer;
+            state.duration = player.state.duration;
+            state.videoWidth = null;
+            state.videoHeight = null;
+            state.frameReadyId = null;
+            state.frozenFrame = null;
+            state.playing = false;
+            state.status = PlayerStatus.loading;
+            state.recovering = false;
+            state.error = null;
+            state.subtitleText = '';
+            state.captions = cache.captionTracks(id);
+            state.selectedCaption = null;
+            _currentAudioUri = slot.audio;
+            _activeFrameVideoId = null;
+            _playingLocalFile = false;
+            _videoTrackSuppressed = false;
+            _userPaused = false;
+            _switching = false;
+            _resumeAfterVisibility = false;
+            _budget.reset();
+            _seekController = _createSeekController();
+            _observeActivePlayer(player);
+            _listen();
+            _notify();
+          },
+          start: () async {
+            if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+              return;
+            }
+            final focus = await _activateAudioFocus();
+            if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+              return;
+            }
+            if (focus) {
+              await player.setVolume(
+                state.muted ? 0 : (state.volume == 0 ? 100 : state.volume),
+              );
+              if (_visible && !_disposed && _loadGuard.isCurrent(generation)) {
+                await player.play();
+              }
+            } else {
+              state.status = PlayerStatus.paused;
+              _notify();
+            }
+          },
+        );
+      } finally {
+        commitDone.complete();
+      }
+    });
+    if (prepared ||
+        !_visible ||
+        _disposed ||
+        !_loadGuard.isCurrent(generation)) {
+      return prepared;
+    }
+    if (_failedShortPreload == id) {
+      _failedShortPreload = null;
+      cache.invalidate(id);
+      await preloadShort(id, generation: _shortPreloadGeneration);
+      if (!_visible || _disposed || !_loadGuard.isCurrent(generation)) {
+        return false;
+      }
+      if (_preparedShort?.id == id) return playShort(id);
+      _failedShortPreload = null;
+    }
+    cancelShortPreloads(disposePlayer: true);
+    await play(PlayRequest.short(id));
+    return false;
+  }
+
+  Future<void> _load(
+    PlayRequest value, {
+    bool newRequest = false,
+    bool recovery = false,
+    bool qualitySwitch = false,
+    bool skipLocalFile = false,
+    int? adaptiveHeight,
+    int? requestGeneration,
+  }) async {
+    _configurePlayer(player, shortBuffer: value.mode == PlaybackMode.short);
+    final generation =
+        requestGeneration ?? _loadGuard.next(intentional: qualitySwitch);
+    if (qualitySwitch) {
+      _seekController.beginIntentionalSwitch();
+      _failureMonitor.beginIntentionalSwitch();
+      unawaited(_saveProgress());
+    }
+    _switching = true;
+    if (!newRequest && state.position > Duration.zero) {
+      Uint8List? frame;
+      try {
+        frame = await player
+            .screenshot(format: 'image/png')
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      if (!_loadGuard.isCurrent(generation)) return;
+      state.frozenFrame = frame;
+    }
+    request = value;
+    state.videoId = value.videoId;
+    state.mode = value.mode;
+    state.status = recovery || qualitySwitch
+        ? PlayerStatus.buffering
+        : PlayerStatus.loading;
+    state.recovering = recovery && !qualitySwitch;
+    state.error = null;
+    if (newRequest) {
+      _activeFrameVideoId = null;
+      state.frameReadyId = null;
+      state.frozenFrame = null;
+      state.subtitleText = '';
+      state.position = value.startAt;
+      state.playing = false;
+      state.videoWidth = null;
+      state.videoHeight = null;
+      state.duration = Duration.zero;
+      state.buffered = Duration.zero;
+      state.captions = [];
+      state.selectedCaption = null;
+      state.captionError = false;
+    }
+    _notify();
+    if (player.state.playing) {
+      await player.pause();
+    }
+    if (!_loadGuard.isCurrent(generation)) return;
+    try {
+      _playingLocalFile = false;
+      _videoTrackSuppressed = false;
+      if (!skipLocalFile &&
+          value.mode != PlaybackMode.short &&
+          completedDownloadPath != null) {
+        String? localPath;
+        try {
+          final source = await completedDownloadPath!(
+            value.videoId,
+            value.mode,
+          );
+          final path = source?.path;
+          localPath = path;
+          if (!_loadGuard.isCurrent(generation)) return;
+          if (path != null && await File(path).exists()) {
+            final previous = _commitTail;
+            final done = Completer<void>();
+            _commitTail = done.future;
+            try {
+              await previous;
+              if (!_loadGuard.isCurrent(generation)) return;
+              await player.setPlaylistMode(
+                state.loop ? PlaylistMode.single : PlaylistMode.none,
+              );
+              final shouldPlay =
+                  value.play &&
+                  (_visible || value.mode == PlaybackMode.audio) &&
+                  !_userPaused;
+              await player.open(
+                Media(Uri.file(path).toString(), start: value.startAt),
+                play: value.mode == PlaybackMode.audio ? false : shouldPlay,
+              );
+              if (!_loadGuard.isCurrent(generation)) return;
+              await player.setVideoTrack(
+                value.mode == PlaybackMode.audio
+                    ? VideoTrack.no()
+                    : VideoTrack.auto(),
+              );
+              _videoTrackSuppressed =
+                  value.mode == PlaybackMode.audio && source!.hasVideo;
+              _currentAudioUri = null;
+              if (shouldPlay && value.mode == PlaybackMode.video) {
+                final ready = await _waitForRequestFrame(
+                  videoId: value.videoId,
+                  startAt: value.startAt,
+                  generation: generation,
+                );
+                if (!_loadGuard.isCurrent(generation)) return;
+                if (!ready) throw StateError('Local video did not open');
+                state.frameReadyId = value.videoId;
+              }
+              state.heights = [];
+              state.captions = [];
+              state.selectedCaption = null;
+              state.duration = player.state.duration;
+              _switching = false;
+              _playingLocalFile = true;
+              state.recovering = false;
+              final focus = await _activateAudioFocus();
+              if (shouldPlay &&
+                  focus &&
+                  !_userPaused &&
+                  (_visible || value.mode == PlaybackMode.audio)) {
+                await player.play();
+                state.status = PlayerStatus.playing;
+              } else {
+                if (player.state.playing) await player.pause();
+                state.playing = false;
+                state.status = PlayerStatus.paused;
+              }
+              _notify();
+              return;
+            } finally {
+              done.complete();
+            }
+          }
+        } catch (error) {
+          if (localPath != null && value.mode == PlaybackMode.audio) rethrow;
+          _debugLog('Local playback failed; resolving stream: $error');
+          if (!_loadGuard.isCurrent(generation)) return;
+        }
+      }
+      await prepareStreaming?.call();
+      if (!_loadGuard.isCurrent(generation)) return;
+      _debugLog('_load: resolving streams for ${value.videoId}...');
+      var requestedQuality =
+          state.quality ?? adaptiveHeight ?? state.autoQualityHeight;
+      if (value.mode != PlaybackMode.audio &&
+          state.quality == null &&
+          requestedQuality == null) {
+        requestedQuality = await _initialQualityFor(value.videoId, value.mode);
+      }
+      final maxHeight = state.quality == null
+          ? _qualityCap
+          : AdaptiveQualityPolicy.maxVideoHeight;
+      var retainVideo = value.mode == PlaybackMode.audio;
+      late SelectedStreams selected;
+      try {
+        selected = await cache.resolve(
+          value.videoId,
+          retainVideo ? PlaybackMode.video : value.mode,
+          quality: requestedQuality,
+          maxHeight: maxHeight,
+        );
+      } on StreamException {
+        if (!retainVideo) rethrow;
+        retainVideo = false;
+        selected = await cache.resolve(value.videoId, PlaybackMode.audio);
+      }
+      _debugLog('_load: resolved streams for ${value.videoId}.');
+      if (!_loadGuard.isCurrent(generation)) return;
+      final availableStreams = value.mode == PlaybackMode.audio
+          ? null
+          : await cache.candidates(
+              value.videoId,
+              value.mode,
+              maxHeight: AdaptiveQualityPolicy.maxVideoHeight,
+            );
+      if (!_loadGuard.isCurrent(generation)) return;
+      state.heights = (availableStreams?.videos ?? const <StreamFormat>[])
+          .map((format) => resolutionOf(format, value.mode))
+          .toList();
+      final videoFormat = value.mode == PlaybackMode.audio && !retainVideo
+          ? null
+          : selected.videos
+                    .where(
+                      (format) =>
+                          resolutionOf(format, value.mode) <=
+                          (requestedQuality ?? _qualityCap),
+                    )
+                    .firstOrNull ??
+                selected.videos.lastOrNull;
+      if (state.quality == null && _preferenceUsesAdaptiveQuality) {
+        state.autoQualityHeight = videoFormat == null
+            ? null
+            : resolutionOf(videoFormat, value.mode);
+        _adaptiveQuality.updateCurrentHeight(state.autoQualityHeight);
+        if (newRequest || !qualitySwitch && !recovery) {
+          _adaptiveQuality.reset(state.autoQualityHeight, DateTime.now());
+        }
+      } else {
+        state.autoQualityHeight = null;
+      }
+      state.captions = cache.captionTracks(value.videoId);
+      if (_captionLanguage != null) {
+        final matches =
+            state.captions
+                .asMap()
+                .entries
+                .where((e) => e.value['languageCode'] == _captionLanguage)
+                .toList()
+              ..sort(
+                (a, b) => (a.value['kind'] == 'asr' ? 1 : 0).compareTo(
+                  b.value['kind'] == 'asr' ? 1 : 0,
+                ),
+              );
+        if (matches.isNotEmpty) state.selectedCaption = matches.first.key;
+      }
+      if (state.captions.isEmpty) {
+        unawaited(
+          _transcript(value.videoId)
+              .then((vtt) {
+                if (request?.videoId == value.videoId && vtt.isNotEmpty) {
+                  state.captions = [
+                    {'languageCode': cache.player.hl, 'transcriptVtt': vtt},
+                  ];
+                  _notify();
+                }
+              })
+              .catchError((Object _) {}),
+        );
+      }
+      final format = value.mode == PlaybackMode.audio && !retainVideo
+          ? selected.audio!
+          : videoFormat!;
+      _debugLog('_load: registering video on relay...');
+      final video = await relay.register(format);
+      _debugLog('_load: registered video: $video');
+      final audio = value.mode == PlaybackMode.audio && !retainVideo
+          ? null
+          : await relay.register(selected.audio!);
+      _currentAudioUri = audio;
+      _debugLog('_load: registered audio: $audio');
+      if (!_loadGuard.isCurrent(generation)) return;
+      final previous = _commitTail;
+      final done = Completer<void>();
+      _commitTail = done.future;
+      try {
+        await previous;
+        if (!_loadGuard.isCurrent(generation)) return;
+        final isShort = value.mode == PlaybackMode.short;
+        await player.setPlaylistMode(
+          (isShort || state.loop) ? PlaylistMode.single : PlaylistMode.none,
+        );
+        if (player.platform is NativePlayer) {
+          unawaited(
+            (player.platform as NativePlayer).setProperty(
+              'loop-file',
+              (isShort || state.loop) ? 'inf' : 'no',
+            ),
+          );
+        }
+        _debugLog('_load: calling player.open($video)...');
+        final shouldPlay =
+            (value.play ||
+                qualitySwitch && (state.playing || player.state.playing)) &&
+            (_visible || value.mode == PlaybackMode.audio) &&
+            !_userPaused;
+        await player.open(
+          Media(video.toString(), start: value.startAt),
+          play: false,
+        );
+        if (retainVideo) {
+          await player.setVideoTrack(VideoTrack.no());
+          _videoTrackSuppressed = true;
+        }
+        if (value.mode != PlaybackMode.audio) {
+          await player.setVideoTrack(VideoTrack.auto());
+        }
+        _debugLog('_load: player.open finished.');
+        if (!_loadGuard.isCurrent(generation)) return;
+        if (audio != null) {
+          _debugLog('_load: calling player.setAudioTrack...');
+          await player.setAudioTrack(AudioTrack.uri(audio.toString()));
+          _debugLog('_load: player.setAudioTrack finished.');
+        }
+        if (!_loadGuard.isCurrent(generation)) return;
+        final focus = await _activateAudioFocus();
+        if (!_loadGuard.isCurrent(generation)) return;
+        if (shouldPlay &&
+            focus &&
+            !_userPaused &&
+            (_visible || value.mode == PlaybackMode.audio)) {
+          await player.play();
+        }
+        if (!_loadGuard.isCurrent(generation)) return;
+        if (newRequest && value.mode != PlaybackMode.audio) {
+          final isFrameReady = await _waitForRequestFrame(
+            videoId: value.videoId,
+            startAt: value.startAt,
+            generation: generation,
+          );
+          if (!_loadGuard.isCurrent(generation)) return;
+          if (isFrameReady) {
+            state.frameReadyId = value.videoId;
+            if (value.mode == PlaybackMode.short) {
+              _activeFrameVideoId = value.videoId;
+            }
+          }
+        }
+        if (!_loadGuard.isCurrent(generation)) return;
+        _switching = false;
+        state.recovering = false;
+        state.status = PlayerStatus.ready;
+        if (player.state.duration > Duration.zero) {
+          state.duration = player.state.duration;
+        } else {
+          final fallbackSec = cache.durationSeconds(value.videoId);
+          if (fallbackSec != null && fallbackSec > 0) {
+            state.duration = Duration(seconds: fallbackSec);
+          }
+        }
+        _notify();
+        final caption = state.selectedCaption;
+        if (caption != null) {
+          unawaited(setCaption(caption));
+        }
+        _debugLog(
+          '_load: shouldPlay=$shouldPlay (play=${value.play}, visible=$_visible, userPaused=$_userPaused) focus=$focus',
+        );
+        if (shouldPlay &&
+            focus &&
+            !_userPaused &&
+            (_visible || value.mode == PlaybackMode.audio)) {
+          state.status = PlayerStatus.playing;
+          _notify();
+        } else {
+          if (player.state.playing) await player.pause();
+          state.playing = false;
+          state.status = PlayerStatus.paused;
+          _notify();
+        }
+      } finally {
+        done.complete();
+      }
+    } catch (e) {
+      debugPrint('Playback load failed: $e');
+      if (!_loadGuard.isCurrent(generation)) return;
+      _switching = false;
+      if (_loadGuard.isIntentional(generation)) {
+        state.recovering = false;
+        state.playing = player.state.playing && !_userPaused;
+        state.status = state.playing
+            ? PlayerStatus.playing
+            : PlayerStatus.paused;
+        state.error = null;
+        _notify();
+        return;
+      }
+      final code = e is StreamException ? e.code : StreamError.extractionFailed;
+      final permanent = [
+        StreamError.ageRestricted,
+        StreamError.geoRestricted,
+        StreamError.unavailable,
+        StreamError.noStreams,
+        StreamError.noVideo,
+        StreamError.botCheck,
+      ].contains(code);
+      if (recovery && !permanent && _budget.attempts < 3) {
+        state.status = PlayerStatus.buffering;
+        _notify();
+        scheduleMicrotask(_recover);
+      } else {
+        state.status = PlayerStatus.error;
+        state.recovering = false;
+        state.error = code;
+        _notify();
+      }
+    }
+  }
+
+  Future<bool> _waitForRequestFrame({
+    required String videoId,
+    required Duration startAt,
+    required int generation,
+  }) async {
+    final targetPlayer = player;
+    final targetController = controller;
+    if (!_loadGuard.isCurrent(generation)) return false;
+
+    if (_frameWaitedControllers.add(targetController)) {
+      try {
+        await targetController.waitUntilFirstFrameRendered.timeout(
+          const Duration(seconds: 8),
+        );
+        if (_loadGuard.isCurrent(generation) &&
+            identical(player, targetPlayer) &&
+            request?.videoId == videoId) {
+          return true;
+        }
+      } on TimeoutException {
+        // Position advancement below is the per-request fallback signal.
+      } catch (_) {
+        // Position advancement below is the per-request fallback signal.
+      }
+    }
+
+    if (targetPlayer.state.position > startAt) {
+      return _loadGuard.isCurrent(generation) &&
+          identical(player, targetPlayer) &&
+          request?.videoId == videoId;
+    }
+    try {
+      await targetPlayer.stream.position
+          .firstWhere((position) => position > startAt)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      return false;
+    }
+    return _loadGuard.isCurrent(generation) &&
+        identical(player, targetPlayer) &&
+        request?.videoId == videoId;
+  }
+
+  Future<void> _recover() async {
+    if (_switching || request == null) return;
+    _debugLog(
+      'recovery event: attempts=${_budget.attempts} videoId=${request?.videoId} position=${state.position}',
+    );
+    if (!_budget.take()) {
+      state.status = PlayerStatus.error;
+      state.recovering = false;
+      state.error = StreamError.extractionFailed;
+      _notify();
+      return;
+    }
+    cache.clearCache();
+    await _load(
+      PlayRequest(
+        videoId: request!.videoId,
+        mode: request!.mode,
+        startAt: state.position,
+        saveHistory: request!.saveHistory,
+      ),
+      recovery: true,
+    );
+  }
+
+  Future<void> retry() async {
+    if (request != null) {
+      _budget.reset();
+      cache.clearCache();
+      await _load(
+        PlayRequest(
+          videoId: request!.videoId,
+          mode: request!.mode,
+          startAt: state.position,
+          saveHistory: request!.saveHistory,
+        ),
+      );
+    }
+  }
+
+  Future<void> setVisible(bool visible) async {
+    if (_visible == visible) return;
+    _visible = visible;
+    unawaited(
+      WakelockPlus.toggle(
+        enable: visible && state.playing && state.mode != PlaybackMode.audio,
+      ).catchError((_) {}),
+    );
+    if (!visible) {
+      cancelShortPreloads(disposePlayer: true);
+      _resumeAfterVisibility = request != null && !_userPaused;
+      _failureMonitor.cancel();
+      await player.pause();
+    } else if (_resumeAfterVisibility &&
+        request != null &&
+        !_switching &&
+        !_userPaused &&
+        state.status != PlayerStatus.error) {
+      _resumeAfterVisibility = false;
+      await player.play();
+    }
+  }
+
+  Future<void> enterBackgroundAudioMode() async {
+    final current = request;
+    if (current == null || current.mode != PlaybackMode.video || _userPaused) {
+      return;
+    }
+    _backgroundVideoRequest = current;
+    final changing = _setRetainedVideoTrack(current, true);
+    _backgroundTrackChange = changing;
+    try {
+      await changing;
+    } finally {
+      if (identical(_backgroundTrackChange, changing)) {
+        _backgroundTrackChange = null;
+      }
+    }
+  }
+
+  Future<void> restoreBackgroundVideo() async {
+    final changing = _backgroundTrackChange;
+    if (changing != null) await changing;
+    final original = _backgroundVideoRequest;
+    if (original == null) return;
+    _backgroundVideoRequest = null;
+    if (audioOnlyPreference?.call() ?? false) return;
+    final current = request;
+    if (_videoTrackSuppressed &&
+        current != null &&
+        current.videoId == original.videoId) {
+      await _setRetainedVideoTrack(current, false);
+      return;
+    }
+    await _load(
+      PlayRequest(
+        videoId: original.videoId,
+        mode: original.mode,
+        startAt: state.position,
+        play: !_userPaused && _shouldResumeCurrent,
+        saveHistory: original.saveHistory,
+      ),
+      qualitySwitch: true,
+    );
+  }
+
+  Future<void> pause() async {
+    _userPaused = true;
+    _resumeAfterFocus = false;
+    _failureMonitor.cancel();
+    _budget.paused();
+    state.playing = false;
+    state.status = PlayerStatus.paused;
+    _notify();
+    await player.pause();
+    await _saveProgress();
+  }
+
+  void setFallbackDuration(Duration d) {
+    if (d > Duration.zero && state.duration == Duration.zero) {
+      state.duration = d;
+      _notify();
+    }
+  }
+
+  Future<void> togglePlay() async {
+    if (state.status == PlayerStatus.ended || player.state.completed) {
+      await seek(Duration.zero);
+      await resume();
+    } else if (state.playing ||
+        (!_userPaused &&
+            (state.status == PlayerStatus.ready ||
+                state.status == PlayerStatus.loading ||
+                state.status == PlayerStatus.buffering))) {
+      await pause();
+    } else {
+      await resume();
+    }
+  }
+
+  Future<void> togglePlayPause() => togglePlay();
+
+  Future<void> resume() async {
+    _userPaused = false;
+    _resumeAfterFocus = false;
+    if (!_visible) {
+      _resumeAfterVisibility = true;
+      return;
+    }
+    if (state.status == PlayerStatus.error) {
+      await retry();
+    } else {
+      if (!await _activateAudioFocus()) {
+        state.status = PlayerStatus.paused;
+        _notify();
+        return;
+      }
+      await player.play();
+    }
+  }
+
+  Future<void> seek(Duration v) => seekTo(v);
+
+  Future<void> seekTo(Duration v) => _seekController.seekTo(v);
+
+  Future<void> setRate(double v) async {
+    state.rate = v;
+    await player.setRate(v);
+    _notify();
+  }
+
+  Future<void> setVolume(double v) async {
+    state.volume = v.clamp(0, 100);
+    state.muted = state.volume == 0;
+    await player.setVolume(state.volume);
+    _notify();
+  }
+
+  Future<void> setMuted(bool v) async {
+    state.muted = v;
+    await player.setVolume(
+      v
+          ? 0
+          : state.volume == 0
+          ? 100
+          : state.volume,
+    );
+    _notify();
+  }
+
+  Future<void> setLoop(bool v) async {
+    state.loop = v;
+    await player.setPlaylistMode(v ? PlaylistMode.single : PlaylistMode.none);
+    _notify();
+  }
+
+  Future<String> _transcript(String id) async {
+    final config = cache.player.clients['WEB_REMIX'];
+    final bytes = utf8.encode(id);
+    if (bytes.length > 127) return '';
+    final params = base64Encode([10, bytes.length, ...bytes]);
+    final uri = Uri.https('music.youtube.com', '/youtubei/v1/get_transcript', {
+      'prettyPrint': 'false',
+    });
+    final req = await cache.player.network.client.postUrl(uri);
+    req.headers.contentType = ContentType.json;
+    req.headers.set(HttpHeaders.userAgentHeader, config['ua']);
+    req.write(
+      jsonEncode({
+        'context': {
+          'client': {
+            'clientName': config['clientName'],
+            'clientVersion': config['clientVersion'],
+            'hl': 'en',
+            'gl': cache.player.gl,
+          },
+        },
+        'params': params,
+      }),
+    );
+    final response = await req.close().timeout(const Duration(seconds: 15));
+    final body = await utf8.decodeStream(response);
+    if (response.statusCode != 200) return '';
+    return transcriptToVtt(jsonDecode(body));
+  }
+
+  Future<void> setCaption(int? index) async {
+    if (index == null) {
+      await player.setSubtitleTrack(SubtitleTrack.no());
+      state.selectedCaption = null;
+      _captionLanguage = null;
+      state.captionError = false;
+      _notify();
+      return;
+    }
+    if (index < 0 || index >= state.captions.length) return;
+    final current = request;
+    final track = state.captions[index];
+    try {
+      if (track['transcriptVtt'] is String) {
+        await player.setSubtitleTrack(
+          SubtitleTrack.data(
+            track['transcriptVtt'] as String,
+            language: track['languageCode'] as String?,
+          ),
+        );
+        state.selectedCaption = index;
+        _captionLanguage = track['languageCode'] as String?;
+        state.captionError = false;
+        _notify();
+        return;
+      }
+      final base = Uri.parse(track['baseUrl'] as String);
+      final uri = base.replace(
+        queryParameters: {...base.queryParameters, 'fmt': 'vtt'},
+      );
+      final httpRequest = await cache.player.network.client.getUrl(uri);
+      httpRequest.headers.set(
+        HttpHeaders.userAgentHeader,
+        cache.player.clients['VISIONOS']['ua'],
+      );
+      final response = await httpRequest.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final body = await utf8.decodeStream(response);
+      if (response.statusCode != 200 || !body.trimLeft().startsWith('WEBVTT')) {
+        throw const FormatException();
+      }
+      if (!identical(current, request)) return;
+      await player.setSubtitleTrack(
+        SubtitleTrack.data(
+          cleanVtt(body),
+          language: track['languageCode'] as String?,
+        ),
+      );
+      state.selectedCaption = index;
+      _captionLanguage = track['languageCode'] as String?;
+      state.captionError = false;
+    } catch (_) {
+      if (!identical(current, request)) return;
+      try {
+        final vtt = current == null ? '' : await _transcript(current.videoId);
+        if (!identical(current, request)) return;
+        if (vtt.isEmpty) throw const FormatException();
+        await player.setSubtitleTrack(SubtitleTrack.data(vtt));
+        state.selectedCaption = index;
+        state.captionError = false;
+      } catch (_) {
+        state.captionError = true;
+      }
+    }
+    _notify();
+  }
+
+  void setQuality(int? value) {
+    _qualityTimer?.cancel();
+    if (value == null) {
+      unawaited(setQualityPreference(VideoQualityPreference.auto));
+      return;
+    }
+    state.quality = value;
+    state.autoQualityHeight = null;
+    _notify();
+    _qualityTimer = Timer(const Duration(milliseconds: 300), () {
+      if (request == null) return;
+      final current = request!;
+      unawaited(
+        _load(
+          PlayRequest(
+            videoId: current.videoId,
+            mode: current.mode,
+            startAt: state.position,
+            play: _shouldResumeCurrent,
+            saveHistory: current.saveHistory,
+          ),
+          qualitySwitch: true,
+        ),
+      );
+    });
+  }
+
+  Future<void> stop() async {
+    cancelShortPreloads(disposePlayer: true);
+    _failureMonitor.cancel();
+    final generation = _loadGuard.next();
+    _switching = false;
+    await _saveProgress();
+    if (!_loadGuard.isCurrent(generation)) return;
+    request = null;
+    state.videoId = null;
+    state.frameReadyId = null;
+    _activeFrameVideoId = null;
+    state.mode = null;
+    state.subtitleText = '';
+    state.playing = false;
+    state.frozenFrame = null;
+    await player.stop();
+    state.status = PlayerStatus.idle;
+    _notify();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_saveProgress());
+    unawaited(WakelockPlus.disable());
+    _audioFocus.setMethodCallHandler(null);
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(
+        _audioFocus.invokeMethod<void>('deactivate').catchError((Object _) {}),
+      );
+    }
+    _disposed = true;
+    cancelShortPreloads(disposePlayer: true);
+    _seekController.dispose();
+    _failureMonitor.cancel();
+    _qualityTimer?.cancel();
+    _adaptiveTimer?.cancel();
+    for (final s in _subscriptions) {
+      unawaited(s.cancel());
+    }
+    unawaited(player.dispose());
+    unawaited(relay.close());
+    super.dispose();
+  }
+
+  Future<void> _saveProgress() async {
+    final current = request;
+    if (current != null && state.duration > Duration.zero) {
+      await savePlaybackHistory(
+        history,
+        current,
+        state.position,
+        state.duration,
+      );
+    }
+  }
+}
+
+final _hasCompletedDownloadProvider = FutureProvider<bool>((ref) async {
+  final db = ref.watch(dbProvider);
+  return (db.select(db.downloads)
+        ..where((row) => row.status.equals('completed')))
+      .get()
+      .then((rows) => rows.isNotEmpty);
+});
+
+final playbackProvider = NotifierProvider<PlaybackController, PlaybackService?>(
+  PlaybackController.new,
+);
+
+class PlaybackController extends Notifier<PlaybackService?> {
+  PlaybackService? _service;
+  HiveAudioHandler? _handler;
+  NetworkFamily? _network;
+  InnertubeHttp? _currentHttp;
+  VoidCallback? _networkHook, _networkPrevious;
+  List<VideoItem> _relatedVideos = const [];
+  Future<void> Function(String videoId)? _onVideoChanged;
+
+  @override
+  bool updateShouldNotify(PlaybackService? previous, PlaybackService? next) =>
+      true;
+
+  @override
+  PlaybackService? build() {
+    ref.listen(innertubeProvider, (_, _) => _ensureService());
+    ref.listen(networkFamilyProvider, (_, _) => _ensureService());
+    ref.listen(visitorDataProvider, (_, _) => _ensureService());
+    ref.listen(_hasCompletedDownloadProvider, (_, _) => _ensureService());
+    ref.listen(appSettingsProvider, (_, _) => _refreshQualityPolicy());
+    ref.listen(connectivityProvider, (_, _) => _refreshQualityPolicy());
+    ref.onDispose(() {
+      final service = _service;
+      if (service != null) {
+        service.removeListener(_changed);
+        _handler?.unbind(service);
+        service.dispose();
+      }
+      _handler?.onNext = null;
+      _handler?.onPrevious = null;
+      final network = _network;
+      if (network != null && identical(network.onChanged, _networkHook)) {
+        network.onChanged = _networkPrevious;
+      }
+    });
+    return _createService();
+  }
+
+  void updateRelatedVideos(List<VideoItem> videos) {
+    _relatedVideos = List.unmodifiable(videos);
+  }
+
+  void setOnVideoChanged(Future<void> Function(String videoId)? callback) {
+    _onVideoChanged = callback;
+  }
+
+  Future<void> skipToNext() async {
+    final service = _service;
+    if (service == null) return;
+    final queued = ref.read(sessionQueueProvider.notifier).takeNext();
+    final nextVideo = queued?.video ?? _nextRelatedVideo();
+    if (nextVideo == null) return;
+    final currentId = service.request?.videoId;
+    ref.read(watchSessionProvider.notifier).opened(currentId, nextVideo.id);
+    await service.playVideoRequest(
+      PlayRequest(videoId: nextVideo.id, mode: PlaybackMode.video),
+    );
+    _handler?.setMetadata(
+      nextVideo.id,
+      nextVideo.title,
+      nextVideo.channelName,
+      artUri: Uri.tryParse(nextVideo.thumbUrl),
+    );
+    await _onVideoChanged?.call(nextVideo.id);
+  }
+
+  Future<void> skipToPrevious() async {
+    final service = _service;
+    if (service == null) return;
+    if (service.state.position > const Duration(seconds: 3)) {
+      await service.seek(Duration.zero);
+      return;
+    }
+    final previous = ref.read(watchSessionProvider.notifier).popPrevious();
+    if (previous == null) return;
+    ref
+        .read(watchSessionProvider.notifier)
+        .opened(service.request?.videoId, previous, record: false);
+    final history = await ref.read(historyRepoProvider).recent();
+    final saved = history
+        .where((entry) => entry.videoId == previous)
+        .firstOrNull;
+    await service.playVideoRequest(
+      PlayRequest(
+        videoId: previous,
+        mode: PlaybackMode.video,
+        startAt: resumePosition(saved),
+      ),
+    );
+    await _onVideoChanged?.call(previous);
+  }
+
+  VideoItem? _nextRelatedVideo() {
+    final watched = ref.read(watchSessionProvider).watched;
+    final currentId = _service?.request?.videoId;
+    for (final video in _relatedVideos) {
+      if (video.id != currentId && !watched.contains(video.id)) return video;
+    }
+    return null;
+  }
+
+  void _changed() => state = _service;
+
+  void _ensureService() {
+    if (_service != null) {
+      final http = ref.read(innertubeProvider).value;
+      if (http != null && !identical(_currentHttp, http)) {
+        _currentHttp = http;
+        _service!.cache.player.gl = http.gl;
+        _service!.cache.clearCache();
+      }
+      _installNetworkHook();
+      return;
+    }
+    final service = _createService();
+    if (service != null) state = service;
+  }
+
+  void _refreshQualityPolicy() {
+    final service = _service;
+    if (service == null) return;
+    final preference = ref.read(appSettingsProvider).videoQualityPreference;
+    final connectivity =
+        ref.read(connectivityProvider).value ?? const <ConnectivityResult>[];
+    final wifi = connectivity.contains(ConnectivityResult.wifi);
+    final mobile = !wifi && connectivity.contains(ConnectivityResult.mobile);
+    service.updateQualityPolicy(
+      preference: preference,
+      wifiNetwork: wifi,
+      mobileNetwork: mobile,
+      online: !connectivity.contains(ConnectivityResult.none),
+    );
+  }
+
+  PlaybackService? _createService() {
+    if (_service != null) return _service;
+    final http = ref.read(innertubeProvider).value;
+    final network = ref.read(networkFamilyProvider).value;
+    if (http == null ||
+        network == null ||
+        (ref.read(visitorDataProvider).value == null &&
+            ref.read(_hasCompletedDownloadProvider).value != true)) {
+      return null;
+    }
+    _currentHttp = http;
+    final client = PlayerClient(
+      network,
+      http.clients,
+      () => _currentHttp?.visitorData,
+      () async {
+        await _currentHttp?.refreshVisitor?.call();
+      },
+      hl: http.hl,
+      gl: http.gl,
+    );
+    final estimator = ref.read(bandwidthEstimatorProvider);
+    final preference = ref.read(appSettingsProvider).videoQualityPreference;
+    final connectivity =
+        ref.read(connectivityProvider).value ?? const <ConnectivityResult>[];
+    final wifi = connectivity.contains(ConnectivityResult.wifi);
+    final mobile = !wifi && connectivity.contains(ConnectivityResult.mobile);
+    final cache = StreamCache(client, bandwidthEstimator: estimator);
+    final service = PlaybackService(
+      cache,
+      RelayServer(
+        network,
+        http.clients['VISIONOS']['ua'],
+        bandwidthEstimator: estimator,
+      ),
+      ref.read(historyRepoProvider),
+      prepareStreaming: () async {
+        await ref.read(visitorDataProvider.future);
+      },
+      audioOnlyPreference: () => ref.read(appSettingsProvider).audioOnly,
+      completedDownloadPath: (videoId, mode) =>
+          findLocalPlaybackSource(ref.read(dbProvider), videoId, mode),
+      bandwidthEstimator: estimator,
+      onQualityPreferenceChanged: (value) => ref
+          .read(appSettingsProvider.notifier)
+          .setVideoQualityPreference(value),
+    );
+    service.updateQualityPolicy(
+      preference: preference,
+      wifiNetwork: wifi,
+      mobileNetwork: mobile,
+      online: !connectivity.contains(ConnectivityResult.none),
+    );
+    final handler = ref.read(audioHandlerProvider);
+    _handler = handler;
+    handler?.bind(service);
+    handler?.onNext = skipToNext;
+    handler?.onPrevious = skipToPrevious;
+    _service = service;
+    _network = network;
+    _installNetworkHook();
+    service.addListener(_changed);
+    return service;
+  }
+
+  void _installNetworkHook() {
+    final network = _network;
+    final service = _service;
+    if (network == null ||
+        service == null ||
+        identical(network.onChanged, _networkHook)) {
+      return;
+    }
+    final previous = network.onChanged;
+    _networkPrevious = previous;
+    void changed() {
+      previous?.call();
+      service.cache.clearCache();
+    }
+
+    _networkHook = changed;
+    network.onChanged = changed;
+  }
+}

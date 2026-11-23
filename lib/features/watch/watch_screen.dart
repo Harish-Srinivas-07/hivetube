@@ -1,0 +1,1927 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:drift/drift.dart' show Value;
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../core/playback/playback_service.dart';
+import '../../core/downloads/download_manager.dart';
+import '../../core/playback/player_interactions.dart';
+import '../../core/playback/player_ui_state.dart';
+import '../../core/playback/session_queue.dart';
+import '../../core/providers.dart';
+import '../../core/settings/app_settings.dart';
+import '../../core/streams/stream_selector.dart';
+import '../../core/yt/models.dart';
+import '../../core/yt/watch_info.dart';
+import '../../core/yt/yt_comments.dart';
+import '../../core/yt/ryd.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_sizes.dart';
+import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import 'mini_player_inset.dart';
+import '../../widgets/ui/ui.dart';
+import '../../widgets/player/player_controls.dart';
+import '../../widgets/video_options_menu.dart';
+import 'watch_panel.dart';
+import 'offline_watch.dart';
+import 'watch_rules.dart';
+import 'queue_sheet.dart';
+import '../home/home_variety.dart';
+import '../downloads/downloads_screen.dart';
+import '../playlist/save_to_playlist_sheet.dart';
+import '../../core/db/app_db.dart';
+
+Future<WatchInfo> _savedOfflineWatchInfo(Ref ref, String id) async {
+  final db = ref.read(dbProvider);
+  final downloads =
+      await (db.select(db.downloads)
+            ..where((row) => row.videoId.equals(id))
+            ..where((row) => row.status.equals('completed')))
+          .get();
+  if (downloads.isEmpty) throw StateError('No saved video metadata');
+  final media = await (db.select(
+    db.media,
+  )..where((row) => row.videoId.equals(id))).getSingleOrNull();
+  if (media == null) throw StateError('No saved video metadata');
+  final metadata = await ref.read(downloadManagerProvider).metadata.read(id);
+  String saved(String key) => metadata[key] as String? ?? '';
+  return WatchInfo(
+    id: id,
+    title: media.title,
+    channelName: media.channelName,
+    channelId: media.channelId,
+    thumbnail: saved('thumbnail').isNotEmpty
+        ? saved('thumbnail')
+        : media.thumbUrl,
+    durationSec: metadata['durationSec'] as int? ?? media.durationSec ?? 0,
+    avatar: saved('avatar'),
+    subscribers: saved('subscribers'),
+    description: saved('description'),
+    likes: saved('likes'),
+    views: saved('views'),
+    date: saved('date'),
+    handle: saved('handle'),
+    commentsToken: null,
+    related: const VideoPage([], null),
+    chapters: (metadata['chapters'] as List? ?? [])
+        .whereType<List>()
+        .where(
+          (chapter) =>
+              chapter.length == 2 && chapter[0] is String && chapter[1] is int,
+        )
+        .map(
+          (chapter) => WatchChapter(
+            chapter[0] as String,
+            Duration(milliseconds: chapter[1] as int),
+          ),
+        )
+        .toList(),
+    chips: const {},
+  );
+}
+
+final watchInfoProvider = FutureProvider.family<WatchInfo, String>((
+  ref,
+  id,
+) async {
+  ref.watch(contentPrefsProvider.select((prefs) => prefs.prefsVersion));
+  if (ref.watch(isOfflineProvider)) return _savedOfflineWatchInfo(ref, id);
+  try {
+    return await (await ref.watch(ytApiProvider.future)).next.watch(id);
+  } catch (_) {
+    return _savedOfflineWatchInfo(ref, id);
+  }
+});
+final watchCommentsProvider = FutureProvider.family<CommentPage, String>(
+  (ref, token) async =>
+      (await ref.watch(ytApiProvider.future)).comments.page(token),
+);
+
+final watchChannelFallbackProvider =
+    FutureProvider.family<ChannelPageData?, String>((ref, channelId) async {
+      if (channelId.isEmpty || ref.watch(isOfflineProvider)) return null;
+      try {
+        return await (await ref.watch(
+          ytApiProvider.future,
+        )).browse.channelPage(channelId);
+      } catch (_) {
+        return null;
+      }
+    });
+
+final dislikeCountProvider = FutureProvider.family<int?, String>((
+  ref,
+  id,
+) async {
+  final api = await ref.watch(innertubeProvider.future);
+  return RydService(api.dio, ref.watch(dbProvider)).dislikes(id);
+});
+
+class WatchScreen extends ConsumerStatefulWidget {
+  const WatchScreen({
+    super.key,
+    required this.id,
+    this.videoOverride,
+    this.placeholderVideo = false,
+    this.embedded = false,
+    this.deferHeavyContent = false,
+    this.onMinimize,
+    this.onMetadataScrollStarted,
+    this.navigatorContext,
+  });
+  final String id;
+  final Widget? videoOverride;
+  final bool placeholderVideo;
+  final bool embedded;
+  final bool deferHeavyContent;
+  final VoidCallback? onMinimize;
+  final VoidCallback? onMetadataScrollStarted;
+  final BuildContext? Function()? navigatorContext;
+  @override
+  ConsumerState<WatchScreen> createState() => _WatchScreenState();
+}
+
+class _WatchScreenState extends ConsumerState<WatchScreen> {
+  BuildContext get _routerContext => widget.navigatorContext?.call() ?? context;
+
+  void _openChannel(String channelId) {
+    widget.onMinimize?.call();
+    _routerContext.push('/channel/${Uri.encodeComponent(channelId)}');
+  }
+
+  late String id;
+  String? started;
+  final Set<String> _metadataWritten = {};
+  final Set<String> _subscriptionChecksStarted = {};
+  final Set<String> _reactionChecksStarted = {};
+  PlaybackService? _activeService;
+  bool _contentSheetOpen = false;
+  bool subscribed = false;
+  int reaction = 0;
+  final previous = <String>[];
+  final finished = <String>{};
+  final reactions = <String, int>{};
+  final extra = <VideoItem>[];
+  String? continuation;
+  bool paging = false;
+  String relatedFilter = 'All';
+  List<VideoItem>? filtered;
+  String? filteredContinuation;
+  final scroll = ScrollController();
+  Timer? countdown;
+  String? countdownFor;
+  String? cancelledFor;
+  int seconds = 5;
+  Brightness shellBrightness = Brightness.light;
+  bool _wasFullscreen = false;
+  bool _metadataScrolled = false;
+
+  static const _playerOverlayStyle = SystemUiOverlayStyle(
+    statusBarColor: AppColors.transparent,
+    systemNavigationBarColor: AppColors.transparent,
+    systemNavigationBarContrastEnforced: false,
+    systemStatusBarContrastEnforced: false,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarIconBrightness: Brightness.light,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    shellBrightness = Theme.of(context).brightness;
+    if (!widget.embedded) {
+      SystemChrome.setSystemUIOverlayStyle(_playerOverlayStyle);
+    }
+  }
+
+  @override
+  void didUpdateWidget(WatchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.id != id) {
+      countdown?.cancel();
+      countdownFor = null;
+      setState(() {
+        id = widget.id;
+        _metadataScrolled = false;
+        started = null;
+        extra.clear();
+        continuation = null;
+        reaction = reactions[widget.id] ?? 0;
+        filtered = null;
+        filteredContinuation = null;
+        relatedFilter = 'All';
+      });
+      if (scroll.hasClients) {
+        scroll.jumpTo(0);
+      }
+      if (!widget.embedded) {
+        unawaited(_start(ref.read(playbackProvider)));
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    id = widget.id;
+    scroll.addListener(() {
+      if (scroll.position.extentAfter < 400) unawaited(_loadMore());
+    });
+    if (!widget.embedded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(watchPanelProvider.notifier).close();
+        ref.read(playerUiProvider.notifier).setPanelMode(PlayerPanelMode.mini);
+        unawaited(_start(ref.read(playbackProvider)));
+      });
+    }
+  }
+
+  Future<void> _start(PlaybackService? service) async {
+    if (service == null || started == id) return;
+    final current = id;
+    started = current;
+    _activeService = service;
+    if (service.state.videoId == current &&
+        (service.state.mode == PlaybackMode.video ||
+            service.state.mode == PlaybackMode.audio)) {
+      return;
+    }
+    final history = await ref.read(historyRepoProvider).recent();
+    if (!mounted || current != id) return;
+    finished.addAll(
+      history
+          .where(
+            (h) =>
+                h.duration.inMilliseconds > 0 &&
+                h.position.inMilliseconds / h.duration.inMilliseconds >= .9,
+          )
+          .map((h) => h.videoId),
+    );
+    final saved = history.where((h) => h.videoId == current).firstOrNull;
+    await service.setLoop(false);
+    await service.playVideoRequest(
+      PlayRequest(
+        videoId: current,
+        mode: PlaybackMode.video,
+        startAt: resumePosition(saved),
+      ),
+    );
+  }
+
+  void _open(String next, {bool record = true}) {
+    if (id == next) return;
+    if (widget.embedded) {
+      openWatchPanel(ref, next);
+      return;
+    }
+    if (record) previous.add(id);
+    countdown?.cancel();
+    countdownFor = null;
+    setState(() {
+      id = next;
+      _metadataScrolled = false;
+      started = null;
+      extra.clear();
+      continuation = null;
+      reaction = reactions[next] ?? 0;
+      filtered = null;
+      filteredContinuation = null;
+      relatedFilter = 'All';
+    });
+    if (scroll.hasClients) {
+      scroll.jumpTo(0);
+    }
+    unawaited(_start(ref.read(playbackProvider)));
+  }
+
+  void _cancelCountdownForReplay() {
+    countdown?.cancel();
+    countdown = null;
+    cancelledFor = id;
+    if (mounted) setState(() => countdownFor = null);
+  }
+
+  Future<void> _loadMore() async {
+    final token = relatedFilter == 'All' ? continuation : filteredContinuation;
+    if (paging || token == null) return;
+    paging = true;
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final prefs = ref.read(contentPrefsProvider);
+      final page = relatedFilter.startsWith('From ')
+          ? await api.browse.channelVideos(
+              ref.read(watchInfoProvider(id)).value?.channelId ?? '',
+              continuation: token,
+            )
+          : await api.next.related(id, continuation: token);
+      if (!mounted ||
+          token !=
+              (relatedFilter == 'All' ? continuation : filteredContinuation)) {
+        return;
+      }
+      setState(() {
+        final target = relatedFilter == 'All' ? extra : filtered!;
+        final seen = target.map((v) => v.id).toSet();
+        final ranked = rankHomeItems(
+          page.items.where((item) => !item.isShort),
+          preferred: prefs.contentLanguages,
+          hidden: prefs.hiddenLanguages,
+          seen: const {},
+          strictHome: false,
+          source: 'watch_related',
+          random: Random(id.hashCode ^ prefs.prefsVersion ^ page.items.length),
+        );
+        target.addAll(ranked.where((item) => seen.add(item.id)));
+        if (relatedFilter == 'All') {
+          continuation = page.continuation == token ? null : page.continuation;
+        } else {
+          filteredContinuation = page.continuation == token
+              ? null
+              : page.continuation;
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          if (relatedFilter == 'All') {
+            continuation = null;
+          } else {
+            filteredContinuation = null;
+          }
+        });
+      }
+    } finally {
+      paging = false;
+    }
+  }
+
+  Future<void> _back() async {
+    if (_contentSheetOpen) {
+      await Navigator.of(context).maybePop();
+      return;
+    }
+    final ui = ref.read(playerUiProvider);
+    if (ui.locked) {
+      ref.read(playerUiProvider.notifier).setOverlayVisible(true);
+      return;
+    }
+    if (ui.isFullscreen) {
+      ref.read(playerUiProvider.notifier).setFullscreen(false);
+      await setPlayerFullscreenOrientation(false);
+      return;
+    }
+    if (widget.embedded) {
+      widget.onMinimize?.call();
+      return;
+    }
+    if (mounted && _routerContext.canPop()) {
+      _routerContext.pop();
+    } else if (mounted) {
+      _routerContext.go('/home');
+    }
+  }
+
+  @override
+  void dispose() {
+    countdown?.cancel();
+    scroll.dispose();
+    if (!widget.embedded) {
+      unawaited(_activeService?.stop());
+      if (_wasFullscreen) {
+        unawaited(setPlayerFullscreenOrientation(false));
+      }
+      SystemChrome.setSystemUIOverlayStyle(
+        SystemUiOverlayStyle(
+          statusBarColor: AppColors.transparent,
+          systemNavigationBarColor: AppColors.transparent,
+          systemNavigationBarContrastEnforced: false,
+          systemStatusBarContrastEnforced: false,
+          statusBarIconBrightness: shellBrightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+          statusBarBrightness: shellBrightness,
+          systemNavigationBarIconBrightness: shellBrightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+        ),
+      );
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = ref.watch(contentPrefsProvider);
+    final isOffline = ref.watch(isOfflineProvider);
+    final offlineVideos = isOffline
+        ? ref.watch(offlineWatchVideosProvider).asData?.value ??
+              const <VideoItem>[]
+        : const <VideoItem>[];
+    final service = ref.watch(playbackProvider);
+    ref.listen<PlaybackService?>(playbackProvider, (_, current) {
+      if (current != null) unawaited(_start(current));
+    });
+    final ui = ref.watch(playerUiProvider);
+    _wasFullscreen = ui.isFullscreen;
+    final heavyContentReady =
+        !widget.deferHeavyContent || ui.panelMode == PlayerPanelMode.expanded;
+    final infoState = ref.watch(watchInfoProvider(id));
+    final info = infoState.value;
+    if (info != null && continuation == null && extra.isEmpty) {
+      continuation = info.related.continuation;
+    }
+    if (info != null) {
+      if (_metadataWritten.add(info.id)) {
+        unawaited(
+          ref
+              .read(dbProvider)
+              .historyDao
+              .updateMediaMetadata(
+                videoId: info.id,
+                title: info.title,
+                channelId: info.channelId,
+                channelName: info.channelName,
+                thumbUrl: info.thumbnail.isNotEmpty
+                    ? info.thumbnail
+                    : 'https://i.ytimg.com/vi/${info.id}/hqdefault.jpg',
+                durationSec: info.durationSec,
+              ),
+        );
+      }
+      if (info.durationSec > 0) {
+        service?.setFallbackDuration(Duration(seconds: info.durationSec));
+      }
+      if (_subscriptionChecksStarted.add(info.id)) {
+        ref.read(subscriptionRepoProvider).channelIds().then((ids) {
+          if (mounted &&
+              id == info.id &&
+              subscribed != ids.contains(info.channelId)) {
+            setState(() => subscribed = ids.contains(info.channelId));
+          }
+        });
+      }
+      if (_reactionChecksStarted.add(info.id)) {
+        ref.read(dbProvider).reactionsDao.getReaction(info.id).then((value) {
+          if (mounted && id == info.id && value != null && reaction != value) {
+            setState(() => reaction = value);
+          }
+        });
+      }
+    }
+    final relatedCandidates = isOffline
+        ? offlineVideos
+        : relatedFilter == 'All'
+        ? [
+            if (info != null) ...info.related.items.where((v) => !v.isShort),
+            ...extra,
+          ]
+        : filtered ?? <VideoItem>[];
+    final related = rankHomeItems(
+      relatedCandidates,
+      preferred: prefs.contentLanguages,
+      hidden: prefs.hiddenLanguages,
+      seen: const {},
+      strictHome: false,
+      source: 'watch_related',
+      random: Random(id.hashCode ^ prefs.prefsVersion),
+    );
+    final queueEntries = ref.watch(sessionQueueProvider);
+    final queue = queueEntries.map((entry) => entry.video).toList();
+    final next = isOffline
+        ? selectOfflineUpNext(
+            queue: queue,
+            downloaded: offlineVideos,
+            finished: finished,
+            currentId: id,
+          )
+        : selectUpNext(
+            queue: queue,
+            related: related,
+            finished: finished,
+            currentId: id,
+          );
+    if (!widget.embedded &&
+        service?.state.status == PlayerStatus.ended &&
+        ref.read(contentPrefsProvider).autoplay &&
+        next != null &&
+        cancelledFor != id &&
+        countdownFor != id) {
+      countdownFor = id;
+      seconds = 5;
+      countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted ||
+            service?.state.status != PlayerStatus.ended ||
+            !ref.read(contentPrefsProvider).autoplay) {
+          timer.cancel();
+          countdown = null;
+          countdownFor = null;
+          if (mounted) setState(() {});
+          return;
+        }
+        setState(() => seconds--);
+        if (seconds <= 0) {
+          timer.cancel();
+          final currentQueue = ref
+              .read(sessionQueueProvider)
+              .map((entry) => entry.video)
+              .toList();
+          final target = isOffline
+              ? selectOfflineUpNext(
+                  queue: currentQueue,
+                  downloaded: offlineVideos,
+                  finished: finished,
+                  currentId: id,
+                )
+              : selectUpNext(
+                  queue: currentQueue,
+                  related: related,
+                  finished: finished,
+                  currentId: id,
+                );
+          if (target == null) {
+            countdownFor = null;
+            return;
+          }
+          if (currentQueue.isNotEmpty && currentQueue.first.id == target.id) {
+            ref.read(sessionQueueProvider.notifier).takeNext();
+          }
+          _open(target.id);
+        }
+      });
+    }
+    final viewport = MediaQuery.sizeOf(context);
+    final width = viewport.width;
+    final wide = !ui.isFullscreen && (width >= 900 || width > viewport.height);
+    final videoAspectRatio = videoAspectRatioFromController(
+      service,
+      videoId: id,
+    );
+    final inlineAspectRatio =
+        !_metadataScrolled && videoAspectRatio != null && videoAspectRatio < 1
+        ? videoAspectRatio
+        : AppSpacing.thumbnailRatio;
+    Widget player = widget.placeholderVideo
+        ? const SizedBox.expand()
+        : ColoredBox(
+            color: AppColors.shortsBackground,
+            child: service == null
+                ? const Center(child: CircularProgressIndicator())
+                : SharedPlayer(
+                    service: service,
+                    requestVideoId: id,
+                    thumbnailUrl: info?.thumbnail ?? '',
+                    videoOverride: widget.videoOverride,
+                    chapters: info?.chapters ?? const [],
+                    onChapters: () => _showChapters(info?.chapters ?? const []),
+                    autoplayCountdown: countdownFor == id && seconds > 0
+                        ? seconds
+                        : null,
+                    onReplayFromStart: _cancelCountdownForReplay,
+                    onMinimize: () => unawaited(_back()),
+                    onPrevious: previous.isEmpty
+                        ? null
+                        : () {
+                            final old = previous.removeLast();
+                            _open(old, record: false);
+                          },
+                    onNext: next == null
+                        ? null
+                        : () {
+                            if (queue.isNotEmpty && queue.first.id == next.id) {
+                              ref
+                                  .read(sessionQueueProvider.notifier)
+                                  .takeNext();
+                            }
+                            _open(next.id);
+                          },
+                  ),
+          );
+    if (!ui.isFullscreen) {
+      player = AspectRatio(
+        key: const ValueKey('watchVideoAspectRatio'),
+        aspectRatio: inlineAspectRatio,
+        child: player,
+      );
+    }
+    final details = info == null
+        ? Center(
+            child: infoState.hasError
+                ? TextButton(
+                    onPressed: () => ref.invalidate(watchInfoProvider(id)),
+                    child: const Text('Unable to load video. Retry'),
+                  )
+                : const CircularProgressIndicator(),
+          )
+        : NotificationListener<ScrollStartNotification>(
+            onNotification: (notification) {
+              if (notification.depth == 0 &&
+                  notification.dragDetails != null &&
+                  !_metadataScrolled) {
+                setState(() => _metadataScrolled = true);
+                widget.onMetadataScrollStarted?.call();
+              }
+              return false;
+            },
+            child: _details(
+              info,
+              related,
+              heavyContentReady: heavyContentReady,
+              isOffline: isOffline,
+            ),
+          );
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.escape) {
+          unawaited(_back());
+          return KeyEventResult.handled;
+        }
+        if (ui.locked || service == null) return KeyEventResult.ignored;
+        if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.keyK) {
+          unawaited(service.togglePlay());
+        } else if (key == LogicalKeyboardKey.keyJ ||
+            key == LogicalKeyboardKey.arrowLeft) {
+          final seek = service.state.position - const Duration(seconds: 10);
+          unawaited(service.seek(seek < Duration.zero ? Duration.zero : seek));
+        } else if (key == LogicalKeyboardKey.keyL ||
+            key == LogicalKeyboardKey.arrowRight) {
+          final seek = service.state.position + const Duration(seconds: 10);
+          unawaited(
+            service.seek(
+              service.state.duration > Duration.zero &&
+                      seek > service.state.duration
+                  ? service.state.duration
+                  : seek,
+            ),
+          );
+        } else if (key == LogicalKeyboardKey.keyM) {
+          unawaited(service.setMuted(!service.state.muted));
+        } else if (key == LogicalKeyboardKey.keyC &&
+            service.state.captions.isNotEmpty) {
+          unawaited(
+            service.setCaption(
+              service.state.selectedCaption == null ? 0 : null,
+            ),
+          );
+        } else if (key == LogicalKeyboardKey.keyF) {
+          final fullscreen = !ui.isFullscreen;
+          ref.read(playerUiProvider.notifier).setFullscreen(fullscreen);
+          unawaited(
+            setPlayerFullscreenOrientation(
+              fullscreen,
+              aspectRatio: fullscreen
+                  ? videoAspectRatioFromController(service)
+                  : null,
+            ),
+          );
+        } else {
+          return KeyEventResult.ignored;
+        }
+        return KeyEventResult.handled;
+      },
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) unawaited(_back());
+        },
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: _playerOverlayStyle.copyWith(
+            systemNavigationBarIconBrightness:
+                ui.isFullscreen ||
+                    Theme.of(context).brightness == Brightness.dark
+                ? Brightness.light
+                : Brightness.dark,
+          ),
+          child: ScaffoldMessenger(
+            child: Scaffold(
+              backgroundColor: ui.isFullscreen
+                  ? AppColors.shortsBackground
+                  : Theme.of(context).scaffoldBackgroundColor,
+              body: ui.isFullscreen
+                  ? Center(
+                      child: AspectRatio(
+                        aspectRatio:
+                            videoAspectRatio ?? AppSpacing.thumbnailRatio,
+                        child: player,
+                      ),
+                    )
+                  : SafeArea(
+                      top: false,
+                      child: Column(
+                        children: [
+                          ColoredBox(
+                            color: AppColors.shortsBackground,
+                            child: SizedBox(
+                              height: MediaQuery.paddingOf(context).top,
+                              width: double.infinity,
+                            ),
+                          ),
+                          if (wide)
+                            Expanded(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: width * .64,
+                                    child: Column(
+                                      children: [
+                                        player,
+                                        Expanded(child: details),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: heavyContentReady
+                                        ? isOffline
+                                              ? const SizedBox.shrink()
+                                              : _relatedList(related)
+                                        : const SizedBox.shrink(),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else ...[
+                            player,
+                            if (countdownFor == id &&
+                                seconds > 0 &&
+                                next != null)
+                              ListTile(
+                                title: Text('Up next in $seconds'),
+                                subtitle: Text(next.title, maxLines: 1),
+                                trailing: Wrap(
+                                  children: [
+                                    TextButton(
+                                      onPressed: () {
+                                        countdown?.cancel();
+                                        setState(() {
+                                          cancelledFor = id;
+                                          countdownFor = null;
+                                        });
+                                      },
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _open(next.id),
+                                      child: const Text('Play now'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Expanded(child: details),
+                          ],
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showChapters(List<WatchChapter> chapters) {
+    showAppSheet<void>(
+      context,
+      title: 'Chapters',
+      builder: (context, scrollController) => ListView.builder(
+        controller: scrollController,
+        shrinkWrap: true,
+        itemCount: chapters.length,
+        itemBuilder: (context, index) {
+          final chapter = chapters[index];
+          final minutes = chapter.start.inMinutes;
+          final seconds = (chapter.start.inSeconds % 60).toString().padLeft(
+            2,
+            '0',
+          );
+          return AppSheetRow(
+            icon: LucideIcons.playCircle,
+            label: chapter.title,
+            value: '$minutes:$seconds',
+            onTap: () {
+              unawaited(ref.read(playbackProvider)?.seek(chapter.start));
+              Navigator.pop(context);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showDescriptionSheet(
+    WatchInfo info, {
+    required bool heavyContentReady,
+  }) async {
+    if (_contentSheetOpen) return;
+    _contentSheetOpen = true;
+    try {
+      final maxFraction = _watchVideoAreaFraction();
+      await showAppSheet<void>(
+        context,
+        title: 'Description',
+        showClose: false,
+        initialFraction: maxFraction,
+        minFraction: min(0.25, maxFraction),
+        maxFraction: maxFraction,
+        snapSizes: [maxFraction],
+        useRootNavigator: false,
+        builder: (context, scrollController) => heavyContentReady
+            ? ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                children: [
+                  Text(info.title, style: AppTextStyles.watchTitle),
+                  Text(
+                    [
+                      info.views,
+                      info.likes,
+                      info.date,
+                    ].where((value) => value.isNotEmpty).join(' · '),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _LinkedDescription(
+                    text: info.description,
+                    onSeek: (position) =>
+                        ref.read(playbackProvider)?.seek(position),
+                  ),
+                  for (final chapter in info.chapters)
+                    ListTile(
+                      title: Text(chapter.title),
+                      subtitle: Text(
+                        '${chapter.start.inMinutes}:${(chapter.start.inSeconds % 60).toString().padLeft(2, '0')}',
+                      ),
+                      onTap: () =>
+                          ref.read(playbackProvider)?.seek(chapter.start),
+                    ),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri.parse('https://www.returnyoutubedislike.com/'),
+                    ),
+                    child: const Text('Dislike data: Return YouTube Dislike'),
+                  ),
+                ],
+              )
+            : const Center(child: CircularProgressIndicator()),
+      );
+    } finally {
+      _contentSheetOpen = false;
+    }
+  }
+
+  Future<void> _showCommentsSheet(
+    WatchInfo info, {
+    required bool heavyContentReady,
+  }) async {
+    if (_contentSheetOpen) return;
+    _contentSheetOpen = true;
+    try {
+      final maxFraction = _watchVideoAreaFraction();
+      await showAppSheet<void>(
+        context,
+        title: 'Comments',
+        showClose: false,
+        compactHeader: true,
+        initialFraction: maxFraction,
+        minFraction: min(0.25, maxFraction),
+        maxFraction: maxFraction,
+        snapSizes: [maxFraction],
+        useRootNavigator: false,
+        builder: (context, scrollController) {
+          if (!heavyContentReady) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final token = info.commentsToken;
+          if (token == null) {
+            return const Center(child: Text('Comments unavailable'));
+          }
+          return WatchComments(
+            token: token,
+            scrollController: scrollController!,
+          );
+        },
+      );
+    } finally {
+      _contentSheetOpen = false;
+    }
+  }
+
+  double _watchVideoAreaFraction() {
+    final viewport = MediaQuery.sizeOf(context);
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    final videoAspectRatio = videoAspectRatioFromController(
+      ref.read(playbackProvider),
+      videoId: id,
+    );
+    final aspectRatio =
+        !_metadataScrolled && videoAspectRatio != null && videoAspectRatio < 1
+        ? videoAspectRatio
+        : AppSpacing.thumbnailRatio;
+    final wide = viewport.width >= 900 || viewport.width > viewport.height;
+    final videoWidth = wide ? viewport.width * 0.64 : viewport.width;
+    final videoBottom = viewPadding.top + videoWidth / aspectRatio;
+    final bottomInset = max(viewInsets.bottom, viewPadding.bottom);
+    final sheetLimit =
+        MediaQuery.orientationOf(context) == Orientation.landscape
+        ? AppSpacing.sheetMaxHeightFactor
+        : 1.0;
+    return min(
+      (viewport.height - bottomInset - videoBottom + AppSpacing.xl) /
+          viewport.height,
+      sheetLimit,
+    ).clamp(0.01, sheetLimit);
+  }
+
+  Widget _details(
+    WatchInfo info,
+    List<VideoItem> related, {
+    required bool heavyContentReady,
+    required bool isOffline,
+  }) {
+    final fallback =
+        info.channelName.trim().isEmpty && info.channelId.isNotEmpty
+        ? ref.watch(watchChannelFallbackProvider(info.channelId)).value
+        : null;
+    final resolvedChannelName = info.channelName.trim().isNotEmpty
+        ? info.channelName
+        : fallback?.name.trim().isNotEmpty == true
+        ? fallback!.name
+        : info.handle.isNotEmpty
+        ? info.handle
+        : '';
+    final channelName = resolvedChannelName.isEmpty
+        ? 'Channel'
+        : resolvedChannelName;
+    return CustomScrollView(
+      controller: scroll,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.sm,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  borderRadius: AppRadius.smBorder,
+                  onTap: () => unawaited(
+                    _showDescriptionSheet(
+                      info,
+                      heavyContentReady: heavyContentReady,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        info.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.watchTitle,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              [
+                                if (info.views.isNotEmpty) info.views,
+                                if (info.date.isNotEmpty)
+                                  info.date.replaceFirst(
+                                    RegExp(
+                                      r'^(Published|Premiered|Streamed live on)\s+',
+                                      caseSensitive: false,
+                                    ),
+                                    '',
+                                  ),
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.meta.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text('...more', style: AppTextStyles.bodyStrong),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    InkWell(
+                      borderRadius: AppRadius.pillBorder,
+                      onTap: info.channelId.isNotEmpty
+                          ? () => _openChannel(info.channelId)
+                          : null,
+                      child: ChannelAvatar(
+                        name: channelName,
+                        url: info.avatar.isNotEmpty
+                            ? info.avatar
+                            : (fallback?.avatarUrl ?? ''),
+                        size: AppSizes.avatar,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: InkWell(
+                        onTap: info.channelId.isNotEmpty
+                            ? () => _openChannel(info.channelId)
+                            : null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              channelName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.bodyStrong,
+                            ),
+                            if (info.subscribers.isNotEmpty)
+                              Text(
+                                info.subscribers,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.meta.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    AppSubscribedButton(
+                      onPressed: info.channelId.isEmpty
+                          ? null
+                          : () async {
+                              final value = !subscribed;
+                              await ref
+                                  .read(subscriptionRepoProvider)
+                                  .setSubscribed(
+                                    info.channelId,
+                                    value,
+                                    name: resolvedChannelName,
+                                    avatarUrl: info.avatar.isNotEmpty
+                                        ? info.avatar
+                                        : (fallback?.avatarUrl ?? ''),
+                                    handle: info.handle,
+                                  );
+                              if (mounted) setState(() => subscribed = value);
+                            },
+                      isSubscribed: subscribed,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _reactionGroup(info),
+                      if (ref.watch(
+                        appSettingsProvider.select((s) => s.backgroundPlay),
+                      ))
+                        _action(
+                          LucideIcons.headphones,
+                          ref.watch(
+                                appSettingsProvider.select((s) => s.audioOnly),
+                              )
+                              ? 'Audio only on'
+                              : 'Audio only',
+                          () async {
+                            final enabled = !ref
+                                .read(appSettingsProvider)
+                                .audioOnly;
+                            await ref
+                                .read(appSettingsProvider.notifier)
+                                .setAudioOnlyPlayback(enabled);
+                          },
+                          isSelected: ref.watch(
+                            appSettingsProvider.select((s) => s.audioOnly),
+                          ),
+                        ),
+                      _action(
+                        LucideIcons.share,
+                        'Share',
+                        () => unawaited(
+                          SharePlus.instance.share(
+                            ShareParams(
+                              uri: Uri.parse(
+                                'https://www.youtube.com/watch?v=$id',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Builder(
+                        builder: (actionContext) => _downloadAction(
+                          () => showDownloadChoices(
+                            actionContext,
+                            ref,
+                            MediaCompanion.insert(
+                              videoId: id,
+                              title: info.title,
+                              channelId: info.channelId,
+                              channelName: info.channelName,
+                              thumbUrl: info.thumbnail.isNotEmpty
+                                  ? info.thumbnail
+                                  : 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                              updatedAt: DateTime.now().millisecondsSinceEpoch,
+                              durationSec: Value(info.durationSec),
+                            ),
+                            info: info,
+                          ),
+                          actionContext: actionContext,
+                          title: info.title,
+                        ),
+                      ),
+                      _action(
+                        LucideIcons.bookmark,
+                        'Save',
+                        () => showSaveToPlaylistSheet(
+                          context,
+                          videoId: id,
+                          media: MediaCompanion.insert(
+                            videoId: id,
+                            title: info.title,
+                            channelId: info.channelId,
+                            channelName: info.channelName,
+                            thumbUrl:
+                                'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                            updatedAt: DateTime.now().millisecondsSinceEpoch,
+                          ),
+                        ),
+                      ),
+                      _action(LucideIcons.clock, 'Watch later', () async {
+                        final db = ref.read(dbProvider);
+                        final wl = await db.playlistsDao
+                            .getOrCreateWatchLater();
+                        final inWl = await db.playlistsDao.isInPlaylist(
+                          wl.id,
+                          id,
+                        );
+                        if (inWl) {
+                          await db.playlistsDao.removePlaylistItem(wl.id, id);
+                          if (mounted) {
+                            ScaffoldMessenger.of(_routerContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('Removed from Watch Later'),
+                              ),
+                            );
+                          }
+                        } else {
+                          await db.playlistsDao.addPlaylistItem(
+                            wl.id,
+                            id,
+                            mediaItem: MediaCompanion.insert(
+                              videoId: id,
+                              title: info.title,
+                              channelId: info.channelId,
+                              channelName: info.channelName,
+                              thumbUrl:
+                                  'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                              updatedAt: DateTime.now().millisecondsSinceEpoch,
+                            ),
+                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(_routerContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('Saved to Watch Later'),
+                              ),
+                            );
+                          }
+                        }
+                      }),
+                      _action(
+                        LucideIcons.listVideo,
+                        'Queue',
+                        () => showQueueSheet(
+                          context,
+                          current: VideoItem(
+                            id: info.id,
+                            title: info.title,
+                            channelId: info.channelId,
+                            channelName: info.channelName,
+                            thumbUrl: info.thumbnail,
+                          ),
+                          onPlay: _open,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isOffline &&
+                    heavyContentReady &&
+                    info.commentsToken != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final comments = ref
+                          .watch(watchCommentsProvider(info.commentsToken!))
+                          .value;
+                      final preview = comments?.items.firstOrNull;
+                      final count =
+                          comments?.count.replaceAll(
+                            RegExp(r'\s*[Cc]omments.*$'),
+                            '',
+                          ) ??
+                          '';
+                      return Material(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        borderRadius: AppRadius.mdBorder,
+                        child: InkWell(
+                          borderRadius: AppRadius.mdBorder,
+                          onTap: () => unawaited(
+                            _showCommentsSheet(
+                              info,
+                              heavyContentReady: heavyContentReady,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  key: const ValueKey('commentsPreviewHeader'),
+                                  children: [
+                                    Text(
+                                      'Comments',
+                                      style: AppTextStyles.bodyStrong,
+                                    ),
+                                    if (count.isNotEmpty) ...[
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Text(
+                                        _compactNumber(count),
+                                        style: AppTextStyles.meta.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                    const Spacer(),
+                                    Icon(
+                                      LucideIcons.chevronRight,
+                                      size: AppSizes.iconSm,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ],
+                                ),
+                                if (preview != null) ...[
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Row(
+                                    key: const ValueKey('commentsPreviewItem'),
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      ChannelAvatar(
+                                        name: preview.author,
+                                        url: preview.avatar,
+                                        size: AppSizes.avatarSm,
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Expanded(
+                                        child: Text(
+                                          preview.content,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTextStyles.body,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (!isOffline) ...[
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: AppSizes.chipHeight + AppSpacing.md + AppSpacing.sm,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                ),
+                children: [
+                  for (final label in [
+                    'All',
+                    if (resolvedChannelName.isNotEmpty)
+                      'From $resolvedChannelName',
+                    ...info.chips.keys,
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.sm),
+                      child: AppChip(
+                        label: label,
+                        selected: relatedFilter == label,
+                        onTap: () => _selectRelated(info, label),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.md)),
+          SliverList.builder(
+            itemCount: related.length,
+            itemBuilder: (context, index) => _video(related[index]),
+          ),
+        ],
+        SliverBottomInset(
+          extra: MediaQuery.paddingOf(context).bottom + AppSpacing.lg,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectRelated(WatchInfo info, String label) async {
+    setState(() {
+      relatedFilter = label;
+      filtered = label == 'All' ? null : [];
+      filteredContinuation = null;
+    });
+    if (label == 'All') return;
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final prefs = ref.read(contentPrefsProvider);
+      final page = label.startsWith('From ')
+          ? await api.browse.channelVideos(info.channelId)
+          : await api.next.related(info.id, continuation: info.chips[label]);
+      if (!mounted || relatedFilter != label) return;
+      setState(() {
+        filtered = rankHomeItems(
+          page.items.where((item) => !item.isShort),
+          preferred: prefs.contentLanguages,
+          hidden: prefs.hiddenLanguages,
+          seen: const {},
+          strictHome: false,
+          source: 'watch_related',
+          random: Random(id.hashCode ^ prefs.prefsVersion ^ page.items.length),
+        );
+        filteredContinuation = page.continuation;
+      });
+    } catch (_) {
+      if (mounted) _soon();
+    }
+  }
+
+  String _compactNumber(String value) {
+    final trimmed = value.trim();
+    if (!RegExp(r'^\d[\d,]*$').hasMatch(trimmed)) return trimmed;
+    final number = int.tryParse(trimmed.replaceAll(',', ''));
+    if (number == null || number < 1000) return trimmed;
+    final divisor = number >= 1000000 ? 1000000 : 1000;
+    final suffix = divisor == 1000000 ? 'M' : 'K';
+    final scaled = number / divisor;
+    return '${scaled >= 10 || scaled == scaled.roundToDouble() ? scaled.toStringAsFixed(0) : scaled.toStringAsFixed(1)}$suffix';
+  }
+
+  Widget _reactionGroup(WatchInfo info) {
+    final dislikes = ref.watch(dislikeCountProvider(id)).value;
+    final dislikeText = dislikes != null ? _compactNumber('$dislikes') : '';
+    return AppLikeDislikeSegment(
+      likeCount: info.likes,
+      dislikeCount: dislikeText,
+      reaction: reaction,
+      onLike: () async {
+        final next = reaction == 1 ? null : 1;
+        setState(() {
+          reaction = next ?? 0;
+          reactions[id] = reaction;
+        });
+        final db = ref.read(dbProvider);
+        await db.reactionsDao.setReaction(id, next);
+        if (next != null) {
+          await db
+              .into(db.media)
+              .insertOnConflictUpdate(
+                MediaCompanion.insert(
+                  videoId: id,
+                  title: info.title,
+                  channelId: info.channelId,
+                  channelName: info.channelName,
+                  thumbUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                  updatedAt: DateTime.now().millisecondsSinceEpoch,
+                ),
+              );
+        }
+      },
+      onDislike: () async {
+        final next = reaction == -1 ? null : -1;
+        setState(() {
+          reaction = next ?? 0;
+          reactions[id] = reaction;
+        });
+        final db = ref.read(dbProvider);
+        await db.reactionsDao.setReaction(id, next);
+      },
+    );
+  }
+
+  Widget _action(
+    IconData icon,
+    String label,
+    VoidCallback action, {
+    bool isSelected = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.sm),
+      child: AppButton(
+        label: label,
+        icon: icon,
+        variant: AppButtonVariant.tonal,
+        isSelected: isSelected,
+        onPressed: action,
+      ),
+    );
+  }
+
+  Widget _downloadAction(
+    VoidCallback action, {
+    required BuildContext actionContext,
+    required String title,
+  }) {
+    final db = ref.read(dbProvider);
+    return StreamBuilder<List<DownloadRow>>(
+      stream: (db.select(
+        db.downloads,
+      )..where((row) => row.videoId.equals(id))).watch(),
+      builder: (context, snapshot) {
+        final rows = snapshot.data ?? const <DownloadRow>[];
+        final statuses = rows.map((row) => row.status).toSet();
+        final label = statuses.contains('downloading')
+            ? 'Downloading'
+            : statuses.contains('queued')
+            ? 'Queued'
+            : statuses.contains('paused')
+            ? 'Paused'
+            : statuses.contains('failed')
+            ? 'Download failed'
+            : statuses.contains('completed')
+            ? 'Downloaded'
+            : 'Download';
+        final downloading = statuses.contains('downloading');
+        final icon = downloading
+            ? LucideIcons.loaderCircle
+            : label == 'Downloaded'
+            ? LucideIcons.check
+            : LucideIcons.download;
+        Future<void> openSavedDownloads() async {
+          final completed = rows
+              .where((row) => row.status == 'completed')
+              .toList();
+          if (completed.isEmpty) return;
+          final selected = completed.length == 1
+              ? completed.single
+              : await showAppSheet<DownloadRow>(
+                  actionContext,
+                  title: 'Downloads',
+                  fit: true,
+                  builder: (sheetContext, _) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final row in completed)
+                        AppSheetRow(
+                          icon: row.kind == 'audio'
+                              ? LucideIcons.music
+                              : LucideIcons.video,
+                          label: row.kind == 'audio'
+                              ? 'Audio only'
+                              : row.height == null
+                              ? 'Video'
+                              : 'Video · ${row.height}p',
+                          onTap: () => Navigator.pop(sheetContext, row),
+                        ),
+                    ],
+                  ),
+                );
+          if (selected != null && actionContext.mounted) {
+            showDownloadActions(actionContext, ref, selected, title);
+          }
+        }
+
+        return _action(
+          icon,
+          label,
+          label == 'Downloaded'
+              ? () => unawaited(openSavedDownloads())
+              : action,
+          isSelected: downloading,
+        );
+      },
+    );
+  }
+
+  void _soon() => ScaffoldMessenger.of(
+    _routerContext,
+  ).showSnackBar(const SnackBar(content: Text('Coming soon')));
+  Widget _relatedList(List<VideoItem> related) => ListView.builder(
+    itemCount: related.length,
+    itemBuilder: (context, i) => _video(related[i]),
+  );
+  Widget _video(VideoItem item) => RepaintBoundary(
+    key: ValueKey(item.id),
+    child: VideoCard.feed(
+      video: item,
+      onTap: () => _open(item.id),
+      onChannelTap: _openChannel,
+      trailing: _menu(item),
+    ),
+  );
+  Widget _menu(VideoItem item) => IconButton(
+    tooltip: 'More options',
+    icon: const Icon(LucideIcons.ellipsisVertical),
+    onPressed: () => showVideoOptionsMenu(
+      context,
+      videoId: item.id,
+      ref: ref,
+      video: item,
+      media: MediaCompanion.insert(
+        videoId: item.id,
+        title: item.title,
+        channelId: item.channelId,
+        channelName: item.channelName,
+        thumbUrl: item.thumbUrl,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ),
+  );
+}
+
+class _LinkedDescription extends StatefulWidget {
+  const _LinkedDescription({required this.text, required this.onSeek});
+  final String text;
+  final ValueChanged<Duration> onSeek;
+  @override
+  State<_LinkedDescription> createState() => _LinkedDescriptionState();
+}
+
+class _LinkedDescriptionState extends State<_LinkedDescription> {
+  final recognizers = <TapGestureRecognizer>[];
+  @override
+  void dispose() {
+    for (final recognizer in recognizers) {
+      recognizer.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    for (final recognizer in recognizers) {
+      recognizer.dispose();
+    }
+    recognizers.clear();
+    final children = <InlineSpan>[];
+    final pattern = RegExp(r'https?://[^\s]+|\b(?:\d{1,2}:)?\d{1,2}:\d{2}\b');
+    var cursor = 0;
+    for (final match in pattern.allMatches(widget.text)) {
+      if (match.start > cursor) {
+        children.add(
+          TextSpan(text: widget.text.substring(cursor, match.start)),
+        );
+      }
+      final value = match.group(0)!;
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () {
+          if (value.startsWith('http')) {
+            unawaited(launchUrl(Uri.parse(value)));
+          } else {
+            final parts = value.split(':').map(int.parse).toList();
+            final seconds = parts.reversed.indexed.fold<int>(
+              0,
+              (sum, entry) =>
+                  sum +
+                  entry.$2 *
+                      (entry.$1 == 0
+                          ? 1
+                          : entry.$1 == 1
+                          ? 60
+                          : 3600),
+            );
+            widget.onSeek(Duration(seconds: seconds));
+          }
+        };
+      recognizers.add(recognizer);
+      children.add(
+        TextSpan(
+          text: value,
+          style: TextStyle(color: Theme.of(context).colorScheme.primary),
+          recognizer: recognizer,
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < widget.text.length) {
+      children.add(TextSpan(text: widget.text.substring(cursor)));
+    }
+    return Text.rich(TextSpan(children: children));
+  }
+}
+
+class WatchComments extends ConsumerStatefulWidget {
+  const WatchComments({
+    super.key,
+    required this.token,
+    required this.scrollController,
+  });
+  final String token;
+  final ScrollController scrollController;
+  @override
+  ConsumerState<WatchComments> createState() => _CommentsState();
+}
+
+class _CommentsState extends ConsumerState<WatchComments> {
+  CommentPage? page;
+  final items = <WatchComment>[];
+  final replies = <String, List<WatchComment>>{};
+  final replyCursors = <String, String?>{};
+  final expanded = <String>{};
+  late final ScrollController controller;
+  bool loading = false;
+  String selected = 'Top';
+  Object? error;
+  @override
+  void initState() {
+    super.initState();
+    controller = widget.scrollController;
+    controller.addListener(_onScroll);
+    unawaited(_fetch(widget.token, replace: true));
+  }
+
+  void _onScroll() {
+    if (controller.hasClients && controller.position.extentAfter < 300) {
+      unawaited(_more());
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  Future<void> _fetch(String token, {bool replace = false}) async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final result = await (await ref.read(
+        ytApiProvider.future,
+      )).comments.page(token);
+      if (!mounted) return;
+      setState(() {
+        if (replace) items.clear();
+        final seen = items.map((c) => c.id).toSet();
+        items.addAll(result.items.where((c) => seen.add(c.id)));
+        page = CommentPage(
+          items,
+          result.count.isEmpty ? page?.count ?? '' : result.count,
+          result.continuation,
+          result.sorts.isEmpty ? page?.sorts ?? {} : result.sorts,
+        );
+      });
+    } catch (e) {
+      if (mounted) setState(() => error = e);
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _more() async {
+    final next = page?.continuation;
+    if (next != null && !loading) await _fetch(next);
+  }
+
+  Future<void> _reply(WatchComment comment) async {
+    if (expanded.contains(comment.id)) {
+      setState(() => expanded.remove(comment.id));
+      return;
+    }
+    final token = comment.replyToken;
+    if (token == null) return;
+    if (!replies.containsKey(comment.id)) {
+      try {
+        final result = await (await ref.read(
+          ytApiProvider.future,
+        )).comments.page(token);
+        if (!mounted) return;
+        replies[comment.id] = result.items;
+        replyCursors[comment.id] = result.continuation;
+      } catch (_) {
+        return;
+      }
+    }
+    if (mounted) setState(() => expanded.add(comment.id));
+  }
+
+  Future<void> _moreReplies(WatchComment comment) async {
+    final token = replyCursors[comment.id];
+    if (token == null) return;
+    try {
+      final result = await (await ref.read(
+        ytApiProvider.future,
+      )).comments.page(token);
+      if (!mounted) return;
+      setState(() {
+        final target = replies[comment.id]!;
+        final ids = target.map((r) => r.id).toSet();
+        target.addAll(result.items.where((r) => ids.add(r.id)));
+        replyCursors[comment.id] = result.continuation == token
+            ? null
+            : result.continuation;
+      });
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = page;
+    if (current == null) {
+      return Center(
+        child: error != null
+            ? TextButton(
+                onPressed: () => _fetch(widget.token, replace: true),
+                child: const Text('Comments unavailable. Retry'),
+              )
+            : const CircularProgressIndicator(),
+      );
+    }
+    if (items.isEmpty && !loading) {
+      return const Center(child: Text('No comments yet'));
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Row(
+            key: const ValueKey('commentsSortRow'),
+            children: [
+              if (current.count.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    current.count,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.meta.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              for (final value in ['Top', 'Newest'])
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xs),
+                  child: AppChip(
+                    label: value,
+                    selected: selected == value,
+                    onTap: () {
+                      final token = current.sorts.entries
+                          .where(
+                            (entry) => value == 'Top'
+                                ? entry.key.toLowerCase().contains('top')
+                                : entry.key.toLowerCase().contains('new'),
+                          )
+                          .firstOrNull
+                          ?.value;
+                      if (token != null) {
+                        setState(() => selected = value);
+                        unawaited(_fetch(token, replace: true));
+                      }
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Expanded(
+          child: ListView.builder(
+            controller: controller,
+            padding: EdgeInsets.zero,
+            itemCount: items.length + (loading ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == items.length) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final c = items[i];
+              return Column(
+                children: [
+                  ListTile(
+                    key: ValueKey('commentItem:${c.id}'),
+                    titleAlignment: ListTileTitleAlignment.top,
+                    leading: ChannelAvatar(
+                      key: ValueKey('commentAvatar:${c.id}'),
+                      name: c.author,
+                      url: c.avatar,
+                    ),
+                    title: Text(
+                      key: ValueKey('commentTitle:${c.id}'),
+                      '${c.pinned.isNotEmpty ? '${c.pinned}\n' : ''}${c.author} ${c.verified ? '✓' : ''} · ${c.age}',
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          c.content,
+                          maxLines: expanded.contains('text:${c.id}')
+                              ? null
+                              : 4,
+                          overflow: expanded.contains('text:${c.id}')
+                              ? null
+                              : TextOverflow.ellipsis,
+                        ),
+                        if (c.content.length > 160)
+                          TextButton(
+                            onPressed: () => setState(() {
+                              final key = 'text:${c.id}';
+                              if (!expanded.add(key)) expanded.remove(key);
+                            }),
+                            child: const Text('Read more'),
+                          ),
+                        Text('♡ ${c.likes}'),
+                        if (c.replyToken != null)
+                          TextButton(
+                            onPressed: () => _reply(c),
+                            child: Text('${c.replies} replies'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (expanded.contains(c.id))
+                    for (final r in replies[c.id] ?? <WatchComment>[])
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppSpacing.xxxl),
+                        child: ListTile(
+                          titleAlignment: ListTileTitleAlignment.top,
+                          leading: ChannelAvatar(
+                            key: ValueKey('commentAvatar:${r.id}'),
+                            name: r.author,
+                            url: r.avatar,
+                          ),
+                          title: Text(
+                            key: ValueKey('commentTitle:${r.id}'),
+                            '${r.author} · ${r.age}',
+                          ),
+                          subtitle: Text(r.content),
+                        ),
+                      ),
+                  if (expanded.contains(c.id) && replyCursors[c.id] != null)
+                    TextButton(
+                      onPressed: () => _moreReplies(c),
+                      child: const Text('More replies'),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}

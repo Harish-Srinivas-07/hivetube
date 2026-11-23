@@ -1,0 +1,89 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hivetube/core/streams/stream_selector.dart';
+
+Map<String, dynamic> format(
+  int id,
+  String mime, {
+  int? height,
+  int? width,
+  int bitrate = 1,
+  bool drc = false,
+  Map<String, dynamic>? track,
+}) => {
+  'itag': id,
+  'url': 'https://example.com/media?expire=2000000000',
+  'mimeType': mime,
+  'bitrate': bitrate,
+  'height': ?height,
+  'width': ?width,
+  if (drc) 'isDrc': true,
+  'audioTrack': ?track,
+};
+void main() {
+  final data = {
+    'streamingData': {
+      'adaptiveFormats': [
+        format(1, 'video/mp4; codecs="avc1"', height: 1080),
+        format(2, 'video/mp4; codecs="avc1"', height: 720, bitrate: 2),
+        format(3, 'video/mp4; codecs="avc1"', height: 720, bitrate: 5),
+        format(4, 'video/mp4; codecs="avc1"', height: 240),
+        format(5, 'video/webm; codecs="vp9"', height: 1080),
+        format(140, 'audio/mp4', drc: true),
+        format(140, 'audio/mp4'),
+        format(251, 'audio/webm', drc: true),
+        format(250, 'audio/webm'),
+        format(249, 'audio/webm'),
+      ],
+    },
+  };
+  test('H.264 wins, best bitrate per tier, and AAC audio is selected', () {
+    final result = selectStreams(data, PlaybackMode.video);
+    expect(result.videos.map((e) => e.itag), [1, 3, 4]);
+    expect(result.audio?.itag, 140);
+    expect(result.audio?.json['isDrc'], isNull);
+    expect(
+      result.videos.first.expires,
+      DateTime.fromMillisecondsSinceEpoch(2000000000 * 1000),
+    );
+  });
+  test('shorts support 1080p and audio mode skips DRC', () {
+    expect(selectStreams(data, PlaybackMode.short).videos.map((v) => v.itag), [
+      1,
+      3,
+      4,
+    ]);
+    expect(selectStreams(data, PlaybackMode.audio).audio?.itag, 140);
+    final opusOnly = {
+      'streamingData': {
+        'adaptiveFormats': [
+          format(251, 'audio/webm'),
+          format(250, 'audio/webm'),
+        ],
+      },
+    };
+    expect(selectStreams(opusOnly, PlaybackMode.audio).audio?.itag, 251);
+  });
+  test('portrait shorts use the shorter side for the 1080p cap', () {
+    final input = {
+      'streamingData': {
+        'adaptiveFormats': [
+          format(1, 'video/mp4; codecs="avc1"', width: 1080, height: 1920),
+          format(2, 'video/mp4; codecs="avc1"', width: 720, height: 1280),
+          format(3, 'video/mp4; codecs="avc1"', width: 1440, height: 2560),
+        ],
+      },
+    };
+    expect(selectStreams(input, PlaybackMode.short).videos.map((v) => v.itag), [
+      1,
+      2,
+    ]);
+  });
+  test('VP9 is not selected when no H.264 video is available', () {
+    final input = {
+      'streamingData': {
+        'adaptiveFormats': [format(5, 'video/webm; codecs="vp9"', height: 720)],
+      },
+    };
+    expect(selectStreams(input, PlaybackMode.video).videos, isEmpty);
+  });
+}

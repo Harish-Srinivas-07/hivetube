@@ -1,0 +1,102 @@
+name: hivetube
+description: "HiveTube is a Flutter client for browsing and watching YouTube videos and Shorts."
+publish_to: 'none'
+
+version: 1.16.0+27
+
+environment:
+  sdk: ">3.12.0 < 4.0.0"
+
+dependencies:
+  # Core and navigation
+  flutter:
+    sdk: flutter
+  meta:
+  go_router: ^18.1.4
+  flutter_riverpod: ^3.5.0
+
+  # Networking and data formats
+  dio:
+  http:
+  connectivity_plus:
+  crypto:
+  xml:
+  intl:
+
+  # Storage and files
+  drift: ^2.35.4
+  drift_flutter:
+  path_provider:
+  file_picker:
+  file_saver: ^0.7.0
+  open_filex:
+
+  # UI
+  cached_network_image:
+  flutter_markdown_plus:
+  lucide_icons_flutter:
+  visibility_detector:
+
+  # Media playback
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video:
+  audio_service:
+  ffmpeg_kit_flutter_new_min:
+  screen_brightness:
+  volume_controller:
+  wakelock_plus:
+
+  # Platform integration
+  flutter_local_notifications:
+  package_info_plus:
+  device_info_plus:
+  share_plus:
+  url_launcher:
+
+  material_ui: any
+  cupertino_ui: any
+dependency_overrides:
+  # file_saver 0.7 requires a newer meta than Flutter 3.44 pins.
+  meta: ^1.19.0
+  media_kit:
+    path: third_party/media_kit
+
+dev_dependencies:
+  # Testing
+  fake_async:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+
+  # Linting and code generation
+  flutter_lints:
+  flutter_launcher_icons:
+  drift_dev:
+  build_runner:
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/brand/launcher.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/brand/launcher-foreground.png
+  adaptive_icon_foreground_inset: 16
+  adaptive_icon_monochrome: assets/brand/launcher-monochrome.png
+  image_path_ios_dark_transparent: assets/brand/launcher-dark.png
+  image_path_ios_tinted_grayscale: assets/brand/launcher-tinted.png
+  remove_alpha_ios: true
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/innertube_clients.json
+    - assets/brand/logo.png
+    - assets/languages/
+    - assets/lexicons/
+
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope[wght].ttf

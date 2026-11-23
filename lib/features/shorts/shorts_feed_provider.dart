@@ -1,0 +1,267 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/playback/playback_service.dart';
+import '../../core/providers.dart';
+import '../../core/settings/app_settings.dart';
+import '../../core/db/history_entry.dart';
+import '../../core/yt/models.dart';
+import '../../widgets/logger.dart';
+import '../home/home_variety.dart';
+import '../home/home_shorts.dart';
+
+class ShortsFeedState {
+  const ShortsFeedState({
+    this.items = const [],
+    this.cursor,
+    this.isLoading = false,
+    this.hasLoaded = false,
+  });
+
+  final List<ShortItem> items;
+  final String? cursor;
+  final bool isLoading;
+  final bool hasLoaded;
+}
+
+final shortsFeedProvider =
+    NotifierProvider<ShortsFeedController, ShortsFeedState>(
+      ShortsFeedController.new,
+    );
+
+class ShortsFeedController extends Notifier<ShortsFeedState> {
+  Future<void>? _inFlight;
+  int _generation = 0;
+  PlaybackService? _warmedService;
+  bool _retryAfterFlight = false;
+
+  @override
+  ShortsFeedState build() {
+    ref.listen(contentPrefsProvider, (previous, next) {
+      if (previous != null && previous.prefsVersion != next.prefsVersion) {
+        clear();
+      }
+    });
+    ref.onDispose(() {
+      _warmedService?.cancelShortPreloads(disposePlayer: true);
+    });
+    return const ShortsFeedState();
+  }
+
+  void seed(List<ShortItem> items) {
+    if (items.isEmpty || state.items.isNotEmpty) return;
+    state = ShortsFeedState(
+      items: List.unmodifiable(items),
+      isLoading: state.isLoading,
+      hasLoaded: state.hasLoaded,
+    );
+  }
+
+  void adoptSelection(List<ShortItem> items, {int startIndex = 0}) {
+    if (items.isEmpty) return;
+    if (_sameItems(state.items, items)) {
+      return;
+    }
+    state = ShortsFeedState(
+      items: List.unmodifiable(items),
+      isLoading: state.isLoading,
+      hasLoaded: false,
+    );
+  }
+
+  Future<void> prefetch({List<ShortItem> seedItems = const []}) async {
+    seed(seedItems);
+    final started = Stopwatch()..start();
+    Logger.log(
+      'ShortsPrefetch',
+      'start items=${state.items.length} ms=${started.elapsedMilliseconds}',
+    );
+    await _startFetch(cursor: null, merge: true);
+    Logger.log(
+      'ShortsPrefetch',
+      'done items=${state.items.length} ms=${started.elapsedMilliseconds}',
+    );
+  }
+
+  Future<void> loadInitial({bool refresh = false}) {
+    if (!refresh && state.items.isNotEmpty) return Future<void>.value();
+    return _startFetch(cursor: null, merge: true);
+  }
+
+  Future<void> loadMore() {
+    if (_inFlight != null) return _inFlight!;
+    if (state.cursor == null && state.hasLoaded) {
+      return Future<void>.value();
+    }
+    return _startFetch(cursor: state.cursor, merge: true);
+  }
+
+  Future<void> refresh() => _startFetch(cursor: null, merge: true);
+
+  Future<void> refreshForTab() async {
+    final pending = _inFlight;
+    if (pending != null) await pending;
+    await _startFetch(cursor: null, merge: false);
+  }
+
+  void clear() {
+    _generation++;
+    _retryAfterFlight = _inFlight != null;
+    state = const ShortsFeedState();
+    _warmedService?.cancelShortPreloads(disposePlayer: true);
+    _warmedService = null;
+  }
+
+  void releaseWarmWindow() {
+    _warmedService?.cancelShortPreloads(disposePlayer: true);
+    _warmedService = null;
+  }
+
+  void prepareCachedWindow({int startIndex = 0}) {
+    _warmedService = ref.read(playbackProvider);
+  }
+
+  Future<void> _startFetch({required String? cursor, required bool merge}) {
+    final pending = _inFlight;
+    if (pending != null) {
+      if (!_retryAfterFlight) return pending;
+      _retryAfterFlight = false;
+      return pending.then((_) => _startFetch(cursor: cursor, merge: merge));
+    }
+
+    final requestGeneration = ++_generation;
+    state = ShortsFeedState(
+      items: state.items,
+      cursor: state.cursor,
+      isLoading: true,
+      hasLoaded: state.hasLoaded,
+    );
+
+    late final Future<void> task;
+    task = _fetch(cursor: cursor, merge: merge, generation: requestGeneration)
+        .whenComplete(() {
+          if (identical(_inFlight, task)) _inFlight = null;
+        });
+    _inFlight = task;
+    return task;
+  }
+
+  Future<void> _fetch({
+    required String? cursor,
+    required bool merge,
+    required int generation,
+  }) async {
+    try {
+      final api = await ref.read(ytApiProvider.future);
+      final prefs = ref.read(contentPrefsProvider);
+      final historyFuture = cursor == null
+          ? ref.read(historyRepoProvider).recent()
+          : Future.value(const <HistoryEntry>[]);
+      final pageFuture = api.reel.fetch(continuation: cursor, count: 24);
+      final history = await historyFuture;
+      final page = await pageFuture;
+      final regional = <ShortItem>[];
+      if (cursor == null) {
+        final queries = shortsQueries(
+          chip: 'All',
+          channels: const [],
+          random: Random(DateTime.now().microsecondsSinceEpoch ^ generation),
+          localRatio: prefs.localRatio,
+          shownLanguages: prefs.contentLanguages,
+          hasHistory: history.isNotEmpty,
+        );
+        final pages = await Future.wait(
+          queries.map((query) async {
+            try {
+              return await api.search.shortsPage(query);
+            } catch (_) {
+              return const ShortPage([], null);
+            }
+          }),
+        );
+        regional.addAll(pages.expand((result) => result.items).take(36));
+      }
+
+      final candidates = <String, ShortItem>{};
+      for (final item in [...regional, ...page.items]) {
+        candidates.putIfAbsent(item.id, () => item);
+      }
+      final enriched = await Future.wait(
+        candidates.values.take(60).map((item) async {
+          try {
+            final metadata = await api.reel.metadata(item.id);
+            if (metadata == null) return item;
+            return ShortItem(
+              id: item.id,
+              thumbUrl: item.thumbUrl,
+              title: item.title ?? metadata.title,
+              channelName: metadata.channelName,
+              channelId: metadata.channelId,
+              channelAvatarUrl: metadata.channelAvatarUrl,
+              viewsText: item.viewsText ?? metadata.viewsText,
+            );
+          } catch (_) {
+            return item;
+          }
+        }),
+      );
+      final seen = SeenVideos.decode(
+        await ref.read(dbProvider).getValue('home_seen_videos_v1'),
+        DateTime.now(),
+      );
+      final rankedIds = rankHomeItems(
+        [
+          for (final item in enriched)
+            VideoItem(
+              id: item.id,
+              title: item.title ?? '',
+              channelId: item.channelId ?? '',
+              channelName: item.channelName ?? '',
+              channelAvatarUrl: item.channelAvatarUrl ?? '',
+              thumbUrl: item.thumbUrl,
+              isShort: true,
+            ),
+        ],
+        preferred: prefs.contentLanguages,
+        hidden: prefs.hiddenLanguages,
+        seen: seen.ids,
+        random: Random(prefs.prefsVersion ^ generation),
+      ).map((item) => item.id).toList();
+      final byId = {for (final item in enriched) item.id: item};
+      final filteredItems = rankedIds.map((id) => byId[id]!).toList();
+      if (generation != _generation) return;
+
+      final existing = merge || filteredItems.isEmpty
+          ? state.items
+          : const <ShortItem>[];
+      final existingIds = existing.map((item) => item.id).toSet();
+      final nextItems = [
+        ...existing,
+        ...filteredItems.where((item) => existingIds.add(item.id)),
+      ];
+      state = ShortsFeedState(
+        items: List.unmodifiable(nextItems),
+        cursor: page.continuation,
+        isLoading: false,
+        hasLoaded: true,
+      );
+    } catch (_) {
+      if (generation != _generation) return;
+      state = ShortsFeedState(
+        items: state.items,
+        cursor: state.cursor,
+        isLoading: false,
+        hasLoaded: true,
+      );
+    }
+  }
+
+  bool _sameItems(List<ShortItem> left, List<ShortItem> right) =>
+      left.length == right.length &&
+      List.generate(
+        left.length,
+        (index) => left[index].id == right[index].id,
+      ).every((same) => same);
+}

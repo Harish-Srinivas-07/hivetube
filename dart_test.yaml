@@ -1,0 +1,6 @@
+timeout: 10s
+tags:
+  full-audit:
+    timeout: 60s
+  slow:
+    timeout: 30s

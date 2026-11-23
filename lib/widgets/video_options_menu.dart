@@ -1,0 +1,125 @@
+import 'dart:async';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../core/db/app_db.dart';
+import '../core/playback/session_queue.dart';
+import '../core/providers.dart';
+import '../core/yt/models.dart';
+import '../features/playlist/save_to_playlist_sheet.dart';
+import '../features/downloads/downloads_screen.dart';
+import 'sheets/app_sheet.dart';
+import 'ui/app_feedback.dart';
+
+/// Content actions can be supplied by the caller; unavailable actions are omitted.
+Future<void> showVideoOptionsMenu(
+  BuildContext context, {
+  required String videoId,
+  VoidCallback? onPlayNext,
+  VoidCallback? onAddToQueue,
+  bool onVideo = false,
+  WidgetRef? ref,
+  MediaCompanion? media,
+  VideoItem? video,
+}) async {
+  final queueController = ref?.read(sessionQueueProvider.notifier);
+  final playNext =
+      onPlayNext ??
+      (queueController != null && video != null
+          ? () {
+              queueController.playNext(video, media: media);
+              AppSnackbar.show(context, 'Will play next');
+            }
+          : null);
+  final addToQueue =
+      onAddToQueue ??
+      (queueController != null && video != null
+          ? () {
+              queueController.add(video, media: media);
+              AppSnackbar.show(context, 'Added to queue');
+            }
+          : null);
+  final action = await showAppMenuSheet<String>(
+    context,
+    onVideo: onVideo,
+    builder: (sheetContext, _) => ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      children: [
+        if (playNext != null)
+          AppSheetRow(
+            icon: LucideIcons.listStart,
+            label: 'Play next',
+            onTap: () => Navigator.pop(sheetContext, 'next'),
+          ),
+        if (addToQueue != null)
+          AppSheetRow(
+            icon: LucideIcons.listPlus,
+            label: 'Add to queue',
+            onTap: () => Navigator.pop(sheetContext, 'queue'),
+          ),
+        AppSheetRow(
+          icon: LucideIcons.bookmark,
+          label: 'Save to playlist',
+          onTap: () => Navigator.pop(sheetContext, 'save_playlist'),
+        ),
+        AppSheetRow(
+          icon: LucideIcons.clock,
+          label: 'Save to Watch Later',
+          onTap: () => Navigator.pop(sheetContext, 'watch_later'),
+        ),
+        if (ref != null && (media != null || video != null))
+          AppSheetRow(
+            icon: LucideIcons.download,
+            label: 'Download',
+            onTap: () => Navigator.pop(sheetContext, 'download'),
+          ),
+        AppSheetRow(
+          icon: LucideIcons.share,
+          label: 'Share',
+          onTap: () => Navigator.pop(sheetContext, 'share'),
+        ),
+      ],
+    ),
+  );
+  if (!context.mounted || action == null) return;
+  switch (action) {
+    case 'next':
+      playNext?.call();
+    case 'queue':
+      addToQueue?.call();
+    case 'save_playlist':
+      await showSaveToPlaylistSheet(context, videoId: videoId, media: media);
+    case 'watch_later':
+      if (ref != null) {
+        final db = ref.read(dbProvider);
+        final wl = await db.playlistsDao.getOrCreateWatchLater();
+        await db.playlistsDao.addPlaylistItem(wl.id, videoId, mediaItem: media);
+        if (context.mounted) {
+          AppSnackbar.show(context, 'Saved to Watch Later');
+        }
+      }
+    case 'download':
+      final item =
+          media ??
+          MediaCompanion.insert(
+            videoId: videoId,
+            title: video!.title,
+            channelId: video.channelId,
+            channelName: video.channelName,
+            thumbUrl: video.thumbUrl,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          );
+      await showDownloadChoices(context, ref!, item, video: video);
+    case 'share':
+      unawaited(
+        SharePlus.instance.share(
+          ShareParams(
+            uri: Uri.https('www.youtube.com', '/watch', {'v': videoId}),
+          ),
+        ),
+      );
+  }
+}

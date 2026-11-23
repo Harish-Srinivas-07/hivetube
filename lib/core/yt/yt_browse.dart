@@ -1,0 +1,176 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+import '../innertube/innertube_http.dart';
+import 'models.dart';
+import 'parser.dart';
+
+class YtBrowse {
+  YtBrowse(this.http);
+  final InnertubeHttp http;
+
+  Future<ChannelAboutData> channelAbout(String channelId) async {
+    final response = await http.dio
+        .getUri<String>(
+          Uri.https('www.youtube.com', '/channel/$channelId/about', {
+            'hl': 'en',
+          }),
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: {'User-Agent': http.clients['WEB']['ua']},
+          ),
+        )
+        .timeout(const Duration(seconds: 8));
+    final html = response.data ?? '';
+    const marker = 'var ytInitialData = ';
+    final start = html.indexOf(marker);
+    if (start < 0) throw const FormatException('Channel About data not found');
+    final jsonStart = start + marker.length;
+    final end = html.indexOf(';</script>', jsonStart);
+    if (end < 0) throw const FormatException('Channel About data incomplete');
+    return parseChannelAbout(jsonDecode(html.substring(jsonStart, end)));
+  }
+
+  static const tabParamsVideos = 'EgZ2aWRlb3PyBgQKAjoA';
+  static const tabParamsShorts = 'EgZzaG9ydHPyBgUKA5oBAA%3D%3D';
+  static const tabParamsLive = 'EgdzdHJlYW1z8gYECgJ6AA%3D%3D';
+  static const tabParamsReleases = 'EghyZWxlYXNlc_IGBQoDsgEA';
+  static const tabParamsPlaylists = 'EglwbGF5bGlzdHPyBgQKAkIA';
+  static const tabParamsPodcasts = 'Eghwb2RjYXN0c_IGBQoDugEA';
+
+  static const tabParamsMap = {
+    'Videos': tabParamsVideos,
+    'Shorts': tabParamsShorts,
+    'Live': tabParamsLive,
+    'Releases': tabParamsReleases,
+    'Playlists': tabParamsPlaylists,
+    'Podcasts': tabParamsPodcasts,
+  };
+  Future<String> resolveUrl(String url, {CancelToken? cancelToken}) async {
+    final json = await http.post('navigation/resolve_url', {
+      'url': url,
+    }, cancelToken: cancelToken);
+    return parseBrowseIdFromResolve(json);
+  }
+
+  Future<ChannelPageData> channelPage(
+    String channelId, {
+    String? params,
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async {
+    final json = await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': channelId, 'params': ?params}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    );
+    final tab = params == tabParamsPlaylists
+        ? 'Playlists'
+        : (params == tabParamsLive ? 'Live' : null);
+    return parseChannelPage(json, channelId, tab: tab);
+  }
+
+  Future<PlaylistPageData> playlistPage(
+    String playlistId, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async {
+    final rawId = playlistId.startsWith('VL')
+        ? playlistId.substring(2)
+        : playlistId;
+    final isMix = rawId.startsWith('RD');
+    if (isMix) {
+      final json = await http.post(
+        'next',
+        continuation == null
+            ? {'playlistId': rawId}
+            : {'continuation': continuation, 'playlistId': rawId},
+        cancelToken: cancelToken,
+      );
+      return parsePlaylistPanel(
+        json,
+        playlistId,
+        continuation: continuation != null,
+      );
+    }
+    final browseId = 'VL$rawId';
+    final json = await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': browseId}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    );
+    return parsePlaylistPage(json, playlistId);
+  }
+
+  Future<String> channelAvatar(
+    String channelId, {
+    CancelToken? cancelToken,
+  }) async {
+    final json = await http.post('browse', {
+      'browseId': channelId,
+    }, cancelToken: cancelToken);
+    return parseChannelHeaderAvatar(json);
+  }
+
+  Future<List<ShortItem>> channelShorts(
+    String channelId, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) async => parseShorts(
+    await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': channelId, 'params': 'EgZzaG9ydHPyBgUKA5oBAA%3D%3D'}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    ),
+  );
+  Future<VideoPage> channelVideos(
+    String id, {
+    String? continuation,
+    CancelToken? cancelToken,
+  }) => _browse(id, 'EgZ2aWRlb3PyBgQKAjoA', continuation, cancelToken);
+  Future<VideoPage> home({String? continuation, CancelToken? cancelToken}) =>
+      _browse('FEwhat_to_watch', null, continuation, cancelToken);
+  Future<VideoPage> live({String? continuation, CancelToken? cancelToken}) =>
+      _browse(
+        'UC4R8DWoMoI7CAwX8_LjQHig',
+        'EgdsaXZldGFikgEDCKEK',
+        continuation,
+        cancelToken,
+      );
+  Future<VideoPage> gaming({String? continuation, CancelToken? cancelToken}) =>
+      _browse(
+        'UCOpNcN46UbXVtpKMrmU4Abg',
+        'Egh0cmVuZGluZw%3D%3D',
+        continuation,
+        cancelToken,
+      );
+  Future<VideoPage> podcasts({
+    String? continuation,
+    CancelToken? cancelToken,
+  }) => _browse(
+    'FEpodcasts_destination',
+    'qgcCCAM%3D',
+    continuation,
+    cancelToken,
+  );
+  Future<VideoPage> _browse(
+    String id,
+    String? params,
+    String? continuation,
+    CancelToken? cancelToken,
+  ) async => parseVideos(
+    await http.post(
+      'browse',
+      continuation == null
+          ? {'browseId': id, 'params': ?params}
+          : {'continuation': continuation},
+      cancelToken: cancelToken,
+    ),
+  );
+}

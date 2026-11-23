@@ -1,0 +1,155 @@
+import 'package:go_router/go_router.dart';
+import '../features/home/home_screen.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/watch/watch_panel.dart';
+import '../features/shorts/shorts_screen.dart';
+import '../features/subscriptions/subscriptions_screen.dart';
+import '../features/library/library_screen.dart';
+import '../features/search/search_screen.dart';
+import '../features/settings/settings_screen.dart';
+import '../features/channel/channel_screen.dart';
+import '../features/playlist/playlist_screen.dart';
+import '../features/history/history_screen.dart';
+import '../features/subscriptions/manage_subscriptions_screen.dart';
+import '../core/playback/preview_coordinator.dart';
+import '../core/orientation/orientation_policy.dart';
+import 'app_shell.dart';
+import '../features/onboarding/onboarding_screen.dart';
+import '../theme/app_motion.dart';
+
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+bool onboardingComplete = false;
+
+final appRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
+  initialLocation: '/home',
+  redirect: (context, state) {
+    if (!onboardingComplete && state.matchedLocation != '/onboarding') {
+      return '/onboarding';
+    }
+    if (onboardingComplete && state.matchedLocation == '/onboarding') {
+      return '/home';
+    }
+    return null;
+  },
+  observers: [previewNavigatorObserver, appRouteObserver],
+  routes: [
+    GoRoute(
+      path: '/onboarding',
+      builder: (context, state) => const OnboardingScreen(),
+    ),
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) =>
+          AppShell(navigationShell: navigationShell),
+      branches: [
+        StatefulShellBranch(
+          observers: [homeRouteObserver],
+          routes: [
+            GoRoute(
+              path: '/home',
+              pageBuilder: (context, state) => CustomTransitionPage<void>(
+                key: state.pageKey,
+                transitionDuration: AppMotion.base,
+                child: const HomeScreen(),
+                transitionsBuilder: (context, animation, secondary, child) =>
+                    FadeTransition(opacity: animation, child: child),
+              ),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/shorts',
+              builder: (context, state) => const ShortsScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/subscriptions',
+              builder: (context, state) => const SubscriptionsScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/library',
+              builder: (context, state) => const LibraryScreen(),
+            ),
+          ],
+        ),
+      ],
+    ),
+    GoRoute(
+      path: '/shorts-player',
+      builder: (context, state) => const Material(
+        type: MaterialType.transparency,
+        child: ShortsScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/watch/:id',
+      builder: (context, state) =>
+          _WatchDeepLink(id: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/settings',
+      builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/channel/:id',
+      builder: (context, state) =>
+          ChannelScreen(channelId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/playlist/:id',
+      builder: (context, state) =>
+          PlaylistScreen(playlistId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/search',
+      builder: (context, state) =>
+          SearchScreen(initialQuery: state.uri.queryParameters['q']),
+    ),
+    GoRoute(
+      path: '/history',
+      builder: (context, state) => const HistoryScreen(),
+    ),
+    GoRoute(
+      path: '/subscriptions/manage',
+      builder: (context, state) => const ManageSubscriptionsScreen(),
+    ),
+  ],
+);
+
+class _WatchDeepLink extends ConsumerStatefulWidget {
+  const _WatchDeepLink({required this.id});
+  final String id;
+  @override
+  ConsumerState<_WatchDeepLink> createState() => _WatchDeepLinkState();
+}
+
+class _WatchDeepLinkState extends ConsumerState<_WatchDeepLink> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      openWatchPanel(ref, widget.id);
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: CircularProgressIndicator()));
+}
